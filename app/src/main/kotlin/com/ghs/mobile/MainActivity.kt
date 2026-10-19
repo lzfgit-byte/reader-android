@@ -21,6 +21,7 @@ import androidx.compose.ui.unit.dp
 import com.ghs.mobile.core.engine.config.InlineConfigScanner
 import com.ghs.mobile.core.engine.text.PlainTextToBlocks
 import com.ghs.mobile.core.model.BlockType
+import com.ghs.mobile.core.script.ScriptProbe
 
 /**
  * 当前阶段的最小壳层：把引擎模块的真实输出直接显示出来。
@@ -68,6 +69,7 @@ private fun EngineProbeScreen() {
     val blocks = remember { PlainTextToBlocks.convert(SAMPLE_TEXT) }
     val scan = remember { InlineConfigScanner.scan(SAMPLE_CONFIG) }
     val validation = remember { InlineConfigScanner.validate(SAMPLE_CONFIG) }
+    val scriptLines = remember { ScriptProbe.run() }
 
     Column(
         modifier = Modifier
@@ -95,6 +97,29 @@ private fun EngineProbeScreen() {
                     val body = if (block.type == BlockType.P) block.text else block.src
                     Text(
                         "[$index] $label · $body",
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                    )
+                }
+            }
+        }
+
+        Card {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Text("脚本运行时 · QuickJS", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    "共 ${scriptLines.size} 项 · 通过 ${scriptLines.count { it.ok == true }} · " +
+                        "失败 ${scriptLines.count { it.ok == false }}",
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+                scriptLines.forEach { line ->
+                    val mark = when (line.ok) {
+                        true -> "✓"
+                        false -> "✗"
+                        null -> "·"
+                    }
+                    Text(
+                        "$mark ${line.label}：${line.value}",
                         style = MaterialTheme.typography.bodySmall,
                         fontFamily = FontFamily.Monospace,
                     )
