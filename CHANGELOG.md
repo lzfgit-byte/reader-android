@@ -13,6 +13,10 @@
 
 ### Added
 
+- **施工开工**：`web/console/`（首个代码目录）
+  - `config-api.d.ts`：GHS Script API v1 类型声明，供 Monaco 注入以提供补全/hover/签名/诊断（ADR-0014）
+  - `scripts/check-dts.mjs`：**零依赖**一致性检查器，从 `config-spec` §3/§8 与 `rest-contract` §3 解析规范要求，与 d.ts 逐项比对；已通过负向测试（删必需方法即失败）
+  - `README.md` / `package.json`（仅 `check:dts`，无依赖）
 - 文档体系：`AGENTS.md`、`README.md`、`docs/README.md`、`docs/00-process/document-policy.md`
 - `docs/01-product/design.md` v2.1：配置驱动的内容容器定位、底座分层、F01–F26 功能范围、引擎架构、内置服务架构、里程碑
 - `docs/01-product/feature-registry.md` v0.4：F01–F26 功能登记（含类别、dropped 追溯）
@@ -38,6 +42,10 @@
 
 ### Changed
 
+- **设计阶段收口：`design.md` 置为 `approved`（v3.0）**，开工闸门打开
+- `AGENTS.md` §0 由「设计定稿期红线」改为「实施期规则」：允许写代码，但实现与设计冲突时**先改文档并记录**；新增 DoD 约束"不得提交无法构建/测试的代码"
+- `AGENTS.md` §1 代码目录新增 `web/console/`
+- `.gitignore` 新增 `.toolchain/`（便携工具链，不入库）
 - 产品重定位为「配置驱动的内容容器」：配置决定内容来源、卡片形态、入口显隐、阅读器默认模式
 - **配置编写能力进入 v1**：应用内置 HTTP 服务 + 浏览器编辑 + JSON 调试台（此前设想为应用内编辑器）
 - 数据模型改为 `config_unit`（`config_json` + `script` 双段式）
