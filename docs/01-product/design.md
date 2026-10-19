@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v2.9
+> **版本**：v2.10
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v2.8
+> **取代/被取代**：取代同文件 v2.9
 
 # 主设计文档
 
@@ -403,13 +403,13 @@ D2 与 D6 是本文档的**主要复杂度来源**：前者决定要在手机上
 
 ### 5.21 F27 文本阅读器
 
-- **数据**：`getContents(url)` 取章节目录 → `getTextContent(url)` 取正文。正文可以是**任意 HTML**（`{ html }`）或结构块（`{ blocks }`）；给 HTML 时引擎按 §8.15 清洗并转为结构块，UI 只渲染结构块。
+- **数据**：`getContents(url)` 取章节目录 → `getTextContent(url)` 取正文。正文的实际形态是**纯文本 + 内嵌 `<img src="…">`**（除此之外没有别的 HTML 结构）；也接受作者已拆好的 `{ blocks }`。引擎按 §8.15 转成结构块，UI 只渲染结构块。
 - **默认定位**：本地**无进度 → 第一章**；有进度 → 记录的 `chapterIndex` 与 `chapterOffset`（语义见 [local-store](../03-api/local-store.md) §3.3）。
 - **阅读页**：章节标题 + 正文、章节内进度、上一章/下一章、目录抽屉（当前章高亮）、字号/行距/背景（跟随 F21 阅读设置）、`textMode` 决定滚动或分页（配置给默认值，用户可覆盖）。
 - **记录**：滚动停止 500ms 或翻页时写进度（节流）；切章、退到后台、退出各补写一次。
 - **预加载**：下一章正文。
 - **离线**：已读章节正文进缓存（§5.12），无网也能回看。
-- **边界**：超长章节分段渲染；正文只渲染清洗后的结构块，**不执行任何脚本**；来源样式（`style`、`<style>`）一律丢弃，排版由阅读器设置决定（[ADR-0012](../02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md)）。
+- **边界**：超长章节分段渲染；正文只渲染结构块，**不执行任何脚本**；来源样式（`style`、`<style>`）一律丢弃，排版由阅读器设置决定（[ADR-0012](../02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md)）。
 - **验收**：首次打开落在第一章；退出重进回到原章原位置；杀进程后仍能恢复；无进度数据时不报错；切章顺序不乱。
 
 ### 5.22 F28 网络代理（HTTP）
@@ -786,6 +786,10 @@ getHtml(url)
 
 文本正文允许配置直接返回 HTML（Q13），但**不直接渲染**，一律经清洗与结构归一（[ADR-0012](../02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md)）：
 
+> **实际形态（决定实现重点）**：正文是**纯文本**，唯一的标记是内嵌的 `<img src="…">`，除此之外没有别的 HTML 结构。
+> 因此实现只需做三件事：**HTML 实体解码 → 换行归一与分段 → `<img>` 提取与 URL 校验**。
+> 下表的白名单作为**防御性上限**保留（正常内容不会触发），不需要为它做额外设计。
+
 ```
 getTextContent → { html } 或 { blocks }
                    │ html
@@ -799,6 +803,7 @@ getTextContent → { html } 或 { blocks }
 
 | 项 | 规则 |
 |---|---|
+| **实际内容** | 纯文本 + 内嵌 `<img src="…">`；重点只有图片提取与实体解码 |
 | 允许标签 | `p` `br` `h1`–`h4` `blockquote` `ul` `ol` `li` `strong` `em` `u` `s` `code` `pre` `a` `img` `hr` `table` `thead` `tbody` `tr` `th` `td` `figure` `figcaption` |
 | 允许属性 | `a[href]`、`img[src]`、`img[alt]`、`*[class]`（仅排版提示） |
 | 整棵删除 | `script` `style` `iframe` `object` `embed` `form` `input` `button` `svg` `canvas`，以及所有 `on*` 事件属性 |
