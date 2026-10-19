@@ -65,6 +65,11 @@
 - **正文接受任意 HTML**（Q13）：`getTextContent` 支持 `{ html }`，引擎白名单清洗（标签/属性/URL scheme）后统一转结构块，新增设计文档 §8.15
 - **WebDAV 不走代理**（Q14）：独立 `OkHttpClient` + `Proxy.NO_PROXY`，不参与代理白名单判定
 - Web 管理界面新增「诊断（日志与缓存）」与「备份与恢复」两块；§6.4 改为职责对照表
+- **配置规范按 3 份既有配置查漏补缺（v1.5）**：新增 `inputWidth`、`ifWinExecCode`、§3.5 兼容字段；必需方法 6→7（补 `getUrlReplace`）；明确 `this` 绑定、第二参为 `cheerio`（含 `.load`）、`net.request` 仅 Promise 形态（旧事件式给 `E-CFG-030`）、`getHtml` 以 `hashString(url)` 广播取页进度、`Tag.url` 空值占位、`url`/`fullUrl` 语义、引擎不去重不排序、`adapterGetHtml` 完全接管取页
+- GHS Select 补齐 `hasClass`、`toString`、属性等值选择器，并规定取值返回 `''` 而非 `undefined`
+- UI 规范同步：标签空 url 占位与固定列网格、分页项按返回项渲染、图片条目 `fullUrl` 优先
+- 内核 API 契约同步：`Tag.url` 空值语义、`Detail.url`/`fullUrl` 说明
+- M0 出口标准新增「至少 2 份既有配置零改动跑通列表 + 详情」
 
 ### Removed
 

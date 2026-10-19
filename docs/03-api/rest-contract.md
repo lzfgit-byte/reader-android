@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v0.5
+> **版本**：v0.6
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v0.4
+> **取代/被取代**：取代同文件 v0.5
 
 # 数据层契约
 
@@ -88,7 +88,7 @@
 |---|---|
 | `Page` | `items: Item[]`、`pagination: Pagination[]`、`tags: Tag[]`、`urlReplace: UrlReplace[]` |
 | `Pagination` | `title`、`url`、`isCurrent: boolean` |
-| `Tag` | `title`、`url` |
+| `Tag` | `title`、`url`（**为空表示占位/分隔，不可点击**；引擎不得丢弃） |
 | `UrlReplace` | `schema: string`（分组名）、`urlAppend: UrlAppend[]` |
 | `UrlAppend` | `value`、`param`、`title`、`current: boolean` |
 
@@ -103,6 +103,9 @@
 | `analysis` | Analysis[]? | 剧集总表 |
 
 `Detail`：`type`、`url`、`fullUrl`、`title`、`quality`、`comments: Comment[]`、`uniqueKey`。
+
+- `url` = 展示地址（缩略图或直链）；`fullUrl` = 原图地址。
+- 阅读器优先用 `fullUrl`，失败或为空时回落 `url`。
 
 `Comment`：`datetime`、`comment`、`image?`。
 
@@ -242,3 +245,4 @@ m3u8 重写规则（必须严格按以下规范实现，否则加密流会失败
 | v0.3 | 2026-10-19 | 术语对齐配置驱动定位：`WebConfig`→`ConfigUnit`、`webKey`→`configKey`；新增 `/getConfigScript`；接口表重排为 27 项；字段级定义统一指向配置规范 |
 | v0.4 | 2026-10-19 | 新增文本内容类型：`detailType = text`、`/getTextContent`（`TextContent`/`TextBlock`）；进度统一为 `ReadingProgress`，`/getCurrentContentUrl`、`/getSeriesCurrentContent`、`/updateCurrentComic` 收敛为 `/getReadingProgress`、`/updateReadingProgress`；补注本机 `/engine` 前缀映射 |
 | v0.5 | 2026-10-19 | 契约定性改为「内核 API」：删除远程服务模式表述，§8 改为「进程内调用与 `/engine` 出口的差异」；`TextContent` 增加可选 `html` |
+| v0.6 | 2026-10-19 | 明确 `Tag.url` 为空表示占位/分隔（不得丢弃）、`Detail.url` 与 `fullUrl` 的展示/原图语义 |

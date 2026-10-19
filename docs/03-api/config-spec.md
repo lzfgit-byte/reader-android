@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.4
+> **版本**：v1.5
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.3
+> **取代/被取代**：取代同文件 v1.4
 
 # 配置规范（Config Unit）
 
@@ -128,6 +128,7 @@ my-source/
 | `imgHeight` | string | 否 | `147px` | 卡片高度（决定宽高比） |
 | `cardStyle` | enum | 否 | `cover-title` | `cover`（仅封面）/ `cover-title`（封面 + 标题）/ `list`（左图右文横向列表） |
 | `drawWidth` | string | 否 | `auto` | 详情页内容最大宽度 |
+| `inputWidth` | string | 否 | `auto` | 首页搜索框宽度；`auto` 表示占满剩余空间 |
 | `readerMode` | enum | 否 | `vertical` | 多图阅读器默认模式：`vertical`（连续滚动）/ `horizontal`（分页）/ `auto`（按图片宽高比自动选） |
 | `textMode` | enum | 否 | `scroll` | 文本阅读器默认模式：`scroll`（滚动）/ `paged`（分页） |
 | `comicImgMaxWidth` | string | 否 | `1080px` | 图集单图解码宽度上限 |
@@ -146,6 +147,7 @@ my-source/
 | `useWebView` | boolean | 否 | `false` | 强制走无头浏览器通道（JS 渲染页面/需要浏览器环境时） |
 | `headers` | object | 否 | `{}` | 附加请求头，如 `{"Referer": "https://example.com/"}`；`User-Agent` 可覆盖 |
 | `challengeMarkers` | string[] | 否 | `[]` | 追加的人机校验特征（HTML 关键词），与内置特征合并后判定；命中即触发顶层校验窗口（§7、设计文档 §8.14） |
+| `ifWinExecCode` | string | 否 | 空 | **JS 片段**：当取页必须降级到无头浏览器通道时，先注入执行这段代码（常用于在窗口里直接改写 DOM 或提示"不支持"），再取 `outerHTML` |
 
 ### 3.4 `setTags` 取值
 
@@ -161,22 +163,44 @@ my-source/
 
 > 缺失的入口不渲染（不是置灰）。这是 UI 由配置驱动的核心一环，见 [ui-implementation.md](../02-architecture/ui-implementation.md) §4.2。
 
+> `日志` 在 v1 只影响 **Web 管理界面**的入口显隐（App 端不提供日志页，见设计文档 §2.6）。
+
+### 3.5 兼容字段（引擎接受但忽略）
+
+既有配置里常见的运行时状态字段，引擎**接受但自行管理**，不参与语义：
+
+| 字段 | 处理 |
+|---|---|
+| `currentUrlReplace` | 忽略；排序状态由引擎的 `Page.urlReplace` 维护 |
+| `currentUrl` | 忽略；当前列表地址由 `EngineSession` 持有 |
+| `setTags` 之外的未知字段 | 忽略并记 `warn`，不阻断加载 |
+
+这保证手写配置（顶层直接写 `currentUrlReplace: null`）无需改动即可导入。
+
 ---
 
 ## 4. 脚本规范
 
 脚本必须是一个**返回配置对象的表达式**，由引擎执行后得到含方法的对象。
 
-### 4.1 必需方法
+### 4.1 必需方法（共 7 个）
 
 | 方法 | 签名 | 调用时机 | 返回值 |
 |---|---|---|---|
 | `getItems` | `($) => Item[]` | 列表页载入完成后 | 条目数组，见 [rest-contract](rest-contract.md) §3.2 |
 | `getPagination` | `($) => Pagination[]` | 同一次列表页载入 | 分页数组，可返回 `[]` |
 | `getTags` | `($) => Tag[]` | 同一次列表页载入 | 标签数组，可返回 `[]` |
-| `getDetailInfo` | `(item, engine) => Promise<DetailInfo>` | 用户点击条目 | 详情，决定跳哪个渲染器 |
+| `getUrlReplace` | `($) => UrlReplace[]` | 同一次列表页载入 | 排序/筛选分组，可返回 `[]` |
+| `getDetailInfo` | `(item, cheerio) => Promise<DetailInfo \| null>` | 用户点击条目 | 详情；返回 `null` 表示"不支持该类型"，UI 提示后返回 |
 | `adapterLoadUrl` | `(url, urlReplaces) => string` | 翻页/排序 | 最终请求地址 |
 | `adapterSearchUrl` | `(keyword) => string` | 用户提交搜索 | 搜索结果页地址 |
+
+### 4.1.1 调用约定
+
+1. **`this` 绑定为配置对象**：方法内可用 `this.homeUrl`、`this.searchUrl`，因此 `getItems` 里写 `this.homeUrl + href` 是合法的。
+2. **第二个参数是 `cheerio` 对象**：`getDetailInfo(item, cheerio)` 的第二参可直接 `cheerio.load(html)`；它同时挂载 §8 的全部能力（`cheerio.getHtml`、`cheerio.net` 等）。全局也暴露同名 `cheerio`，两种写法等价。
+3. **允许异步**：所有方法可以是 `async`，引擎会 `await`。
+4. **顺序与副作用**：`getItems`/`getPagination`/`getTags`/`getUrlReplace` 在一次载入中**依次**调用，共享同一个 `$`；不要依赖它们之间的隐式全局变量（并行/重入时不可靠）。
 
 ### 4.2 可选方法
 
@@ -187,9 +211,13 @@ my-source/
 | `getAnalysisDetail` | `(item, engine) => Promise<AnalysisDetail[]>` | 系列面板不显示分集 |
 | `getAnalysisVideoDetail` | `(item, engine) => Promise<AnalysisVideoDetail[]>` | 分集无播放源 |
 | `adapterRemoteSearch` | `(keyword, engine) => Promise<string[]>` | 搜索无联想词 |
-| `adapterGetHtml` | `(url) => Promise<string>` | 走默认取页管线 |
+| `adapterGetHtml` | `(url) => Promise<string>` | 走默认取页管线（见下方优先级说明） |
 | `getTextContent` | `(url, engine) => Promise<TextContent>` | 该来源不支持文本阅读（`detailType = text` 时无正文，报 `E-CFG-021`） |
 | `adapterImageCode` | string（JS 片段） | 图片按原地址直取 |
+
+**`adapterGetHtml` 优先级**：一旦定义，引擎**完全接管取页**——不再走默认的 OkHttp / WebView 管线，直接使用其返回值（它内部通常会调用 `getHtml`、`executeJs` 或带特殊请求）。返回值仍会写入 HTML 缓存，仍受代理与白名单约束。
+
+**"JS 片段"型配置项**（`adapterImageCode`、`ifWinExecCode`）是**字符串代码**，不是函数：引擎在无头页面上下文中 `evaluateJavascript` 执行它，并用其返回值/执行后的 DOM。
 
 ### 4.3 脚本约束
 
@@ -199,7 +227,8 @@ my-source/
 | 内存 | 单次脚本分配上限 32MB | 中止并报 `E-CFG-022` |
 | 全局副作用 | 禁止修改原型链、禁止注册持久定时器 | 沙箱拦截 |
 | 外部依赖 | 不可 `require`/`import` | 沙箱拦截 |
-| 网络 | 只能经 `getHtml` / `net.request` / `request_string_get` | 直接网络调用不可用 |
+| 网络 | 只能经 `getHtml` / `net.request` / `request_string_get` / `executeJs`；`net.request` **仅允许与 `homeUrl` 同源** | 越界请求被拒绝并记 `error` |
+| 缺失的运行时能力 | 沙箱内**没有** `fetch`、`Buffer`、`require`、`process`、`window`、`document` | 调用即 `ReferenceError` |
 
 ---
 
@@ -214,6 +243,12 @@ my-source/
 5. 数组类返回值必须是数组，返回 `null`/`undefined` 视为 `[]` 并记 `warn`。
 6. `getDetailInfo` 返回的 `detailType` 必须是 §5.2 之一，否则报 `E-CFG-021`。
 7. `getTextContent` 可返回 `{ blocks }`、`{ html }` 或两者（`blocks` 优先）。给 `html` 时引擎按设计文档 §8.15 清洗并转为结构块；**UI 永远只收到结构块**。
+8. **`url` 与 `fullUrl`**：`details[].url` 是"展示用地址"（缩略图或直链），`fullUrl` 是"原图地址"。阅读器优先用 `fullUrl`，失败回落 `url`；`fullUrl` 为空时用 `url`。
+9. **`Tag.url` 为空字符串表示占位/分隔**：不可点击，`title` 原样展示（既有配置广泛用它做分栏对齐与分隔线）。引擎不得丢弃这类项。
+10. **引擎不去重、不排序**：顺序与内容保持脚本返回的 `Item[]` 原样；去重是脚本自己的责任（例如按 `jumpUrl` 判重）。
+11. `getDetailInfo` 返回 `null` 视为"不支持该内容类型"，UI 提示后返回上一页，不报错误码。
+12. `Analysis.total` 仅表示"已知集数"，`0` 表示未知/只有一集；分集列表由 `getAnalysisDetail` 自行兜底。
+13. **`searchUrl` 为空字符串表示不支持搜索**：隐藏搜索入口，不报错。
 
 ### 5.1 URL 补全规则
 
@@ -272,7 +307,7 @@ my-source/
 | `E-CFG-002` | 缺少必填字段 | `key` / `name` / `homeUrl` 为空 | 指出缺哪个字段 |
 | `E-CFG-003` | `key` 格式非法 | 不满足 §3.1 正则 | 显示期望格式 |
 | `E-CFG-004` | 脚本缺失 | `script` 为空或无法构造函数 | 提示必须提供脚本 |
-| `E-CFG-005` | 必需方法缺失 | 6 个必需方法任一不存在 | 指出方法名 |
+| `E-CFG-005` | 必需方法缺失 | 7 个必需方法任一不存在 | 指出方法名 |
 | `E-CFG-006` | 字段类型错误 | 类型与 §3 不符（如 `imgWidth` 传数字对象） | 指出字段路径 |
 | `E-CFG-007` | 枚举值非法 | `cardStyle`/`readerMode`/`setTags` 取值不在白名单 | 列出合法值 |
 | `E-CFG-008` | 数值越界 | `concurrency` 超出 1–5 等 | 显示范围 |
@@ -281,6 +316,7 @@ my-source/
 | `E-CFG-020` | 脚本执行超时 | 超过 10s | — |
 | `E-CFG-021` | 返回值不符合模型 | `detailType` 非法、`getItems` 非数组 | 指出字段 |
 | `E-CFG-022` | 内存超限 | 单次脚本分配 > 32MB | — |
+| `E-CFG-030` | 使用了不支持的旧式 API | 如 `net.request(...).on('response', …)` 事件式调用 | 警告（不阻断），提示改写为 Promise 形态 |
 | `E-CHALLENGE-001` | 需要人机校验 | 取页返回挑战页，等待用户完成 | 在设备上完成校验后自动继续 |
 | `E-CHALLENGE-002` | 用户取消校验 | 用户关闭校验窗口 | 已取消，可重试 |
 | `E-CHALLENGE-003` | 校验超时 | 超过等待上限（默认 5 分钟） | 校验超时，可重试 |
@@ -301,29 +337,35 @@ my-source/
 
 | API | 签名 | 说明 |
 |---|---|---|
-| `$` | `(selector) => Selection` | 选择器，语义见 [design.md §8.4](../01-product/design.md) |
-| `parse` | `(html) => Selection` | 把 HTML 字符串解析为选择器根，供二次取页后解析 |
-| `getHtml` | `(url, forceWebView?) => Promise<string>` | 取 HTML，含自动兜底 |
-| `getHtmlWithProcess` | `(url) => Promise<string>` | 带进度上报的取 HTML |
-| `net.request` | `(options) => Promise<Response>` | 通用请求：`url`/`method`/`headers`/`body` |
+| `$` | `(selector) => Selection` | 选择器，语义见 [design.md §8.4](../01-product/design.md)（含 `hasClass` / `toString` / 属性等值） |
+| `parse` | `(html) => Selection` | 把 HTML 字符串解析为选择器根 |
+| `cheerio` | `{ load(html) }` | 与 `parse` 等价；**既有脚本以 `cheerio.load(html)` 写法为主**，两者都要支持 |
+| `getHtml` | `(url, forceWebView?) => Promise<string>` | 取 HTML，含自动兜底；**取页过程中以 `hashString(url)` 为 key 向 `eventEmitter` 广播进度字符串** |
+| `getHtmlWithProcess` | `(url) => Promise<string>` | 同上，进度另经 `ProgressMsgUtil` 上报 |
+| `net.request` | `(options) => Promise<{status, headers, body}>` | 通用请求：`url` / `method` / `headers` / `body`（字符串或对象）；**仅允许与 `homeUrl` 同源** |
 | `request_string_get` | `(url) => Promise<string>` | 原始文本 GET |
-| `hashString` | `(input) => string` | 稳定哈希，用于缓存键 |
-| `helpElAttr` | `(el, name) => string` | 取属性 |
-| `helpElText` | `(el) => string` | 取文本 |
-| `ElementAttr` | object | 常见属性名常量 |
-| `ElementTypes` | object | 常见标签名常量 |
-| `LogMsgUtil` | `log(...args)` | 写运行日志（进日志页） |
+| `hashString` | `(input) => string` | 稳定哈希：同一输入在任何进程与版本下恒定（缓存键与事件 key 依赖它） |
+| `helpElAttr` | `(el, name) => string` | 取属性；空值返回 `''` 而非 `undefined` |
+| `helpElText` | `(el) => string` | 取文本；空值返回 `''` |
+| `ElementAttr` | object | `src` `href` `title` `alt` `class` `poster` `dataSrc` `dataOriginal` `dataWebp` `dataType` `dataEcho` `dataSource` `dataError` |
+| `ElementTypes` | object | `a` `img` `h1` `h4` `p` `span` `div` `video` `source` |
+| `LogMsgUtil` | `sendLogMsg(...args)` | 写运行日志；参数任意类型按 `String()` 化（传对象请先 `JSON.stringify`） |
 | `ConsoleLogUtil` | `log(...args)` | 兼容 `console` 用法 |
-| `NotifyMsgUtil` | `sendNotifyMsg(title, msg, key)` / `close(key)` | 状态胶囊通知 |
+| `NotifyMsgUtil` | `sendNotifyMsg(title, msg, key)` / `close(key)` | 状态胶囊通知；`key` 通常取 `hashString(url)` |
 | `ProgressMsgUtil` | `sendProgress(pct, key, title?)` / `close(key)` | 进度上报 |
 | `MessageUtil` | `info/error/success/warning(msg)` | 轻提示 |
-| `eventEmitter` | `on/off/emit` | 脚本内事件总线 |
-| `executeJs` | `(url, code, show?) => Promise<any>` | 无头执行脚本 |
+| `eventEmitter` | `on(key, fn)` / `off(key, fn)` / `emit(key, ...args)` | 脚本内事件总线；**订阅取页进度就靠它** |
+| `executeJs` | `(url, code, show?) => Promise<any>` | 在无头页面上下文执行脚本；返回值经 JSON 序列化传递（不支持 DOM / Buffer） |
 | `getCurrentItems` | `() => Item[]` | 取当前列表已解析条目 |
 
 `requiresApi: 1` 表示依赖上表全部内容；后续新增 API 时递增，旧配置不受影响。
 
-`getDetailInfo` / `getContents` 等方法的第二个参数 `engine` 暴露上表全部能力（如 `engine.getHtml`、`engine.parse`、`engine.$` 指向当前已载入文档）。
+补充约定：
+
+- **第二参数就是 `cheerio`**：`getDetailInfo(item, cheerio)` 的第二参可直接 `cheerio.load(html)`，并额外挂载上表全部能力（`cheerio.getHtml`、`cheerio.net` 等）；全局也暴露同名对象，两种写法等价。
+- **`this` 绑定为配置对象**：方法内可用 `this.homeUrl` / `this.searchUrl`。
+- **沙箱内不存在的 Node/浏览器能力**：`Buffer`、`fetch`、`require`、`process`、`window`、`document` —— 需要请求用 `net.request` / `getHtml`，需要解析用 `cheerio.load`。
+- **旧式事件 API 不支持**：`net.request(...).on('response', …)` 这类 Electron 风格写法会给出 `E-CFG-030` 警告，请改成 Promise 形态。
 
 ---
 
@@ -337,6 +379,37 @@ my-source/
 | 修改 `detailType` 或 `setTags` 取值 | **不兼容** | 同上 |
 
 引擎对不兼容配置的行为：拒绝加载并报 `E-CFG-011`，**不做静默降级**。
+
+### 9.1 兼容性核对（既有配置）
+
+用 3 份不同形态的既有配置逐行核对后，本轮补齐/明确了下列能力（只列能力，不列来源与选择器）：
+
+| # | 既有用法 | 之前状态 | 现在 |
+|---|---|---|---|
+| 1 | 顶层写 `currentUrlReplace: null` / `currentUrl` | 未定义 | §3.5 兼容字段：接受并忽略 |
+| 2 | `inputWidth` | 缺失 | §3.2 新增 |
+| 3 | `ifWinExecCode`（无头窗口注入代码） | 缺失 | §3.3 新增 |
+| 4 | `getUrlReplace($)` | 未列为必需 | §4.1 改为 **7 个** 必需方法 |
+| 5 | `getDetailInfo(item, cheerio)` 内 `cheerio.load(html)` | 第二参叫作 `engine` | §8：第二参就是 `cheerio`，同时挂载 engine 能力 |
+| 6 | 方法内使用 `this.homeUrl` / `this.searchUrl` | 未定义 | §4.1.1 明确 `this` 绑定为配置对象 |
+| 7 | `$el.hasClass('current')` | 选择器 API 未列 | design §8.4 补 `hasClass` |
+| 8 | `$el.toString()` 取 `outerHTML` | 未列 | design §8.4 补 `toString` |
+| 9 | `[itemprop="name"]` 这类属性等值选择器 | 只支持 `[href]` | design §8.4 补属性等值 |
+| 10 | `net.request(...).on('response')` 事件式 | 规范只写了 Promise 形态 | §8 明确不支持，给 `E-CFG-030` 警告 |
+| 11 | 订阅 `eventEmitter.on(hashString(url))` 看取页进度 | 契约未写 | §8 固化"`getHtml` 按 `hashString(url)` 广播进度" |
+| 12 | `Tag.url === ''` 作占位/分隔 | 未定义 | §5.9 明确不可点、不得丢弃 |
+| 13 | `details[].url` 与 `fullUrl` 并用 | 未说明关系 | §5.8 明确"展示地址 / 原图地址" |
+| 14 | `getDetailInfo` 返回 `null` | 未定义 | §5.11 视为不支持该类型 |
+| 15 | `searchUrl: ''` | 未定义 | §5.13 隐藏搜索入口 |
+| 16 | 脚本自行 `findIndex` 去重 | 未说明引擎是否去重 | §5.10 明确引擎不去重、不排序 |
+| 17 | `adapterGetHtml` 自行取页 | 优先级未写明 | §4.2 明确"完全接管取页" |
+| 18 | `ElementAttr.alt` / `.class` | 常量表未列全 | §8 列全 13 个属性名 |
+
+补充结论：
+
+- 三份配置在**沙箱内**都没有实际调用 `fetch` / `Buffer`（仅出现在被注释或未调用的代码里），因此把二者排除在沙箱外是安全且可行的；
+- 三份都不要 `net.request` 的事件式 API 完成必需功能，所以 v1 只提供 Promise 形态是合理的，旧写法给警告而不阻断；
+- 三份都用 `cheerio.load` 而非 `parse`，第二参数的命名因此必须兼容 `cheerio`。
 
 ---
 
@@ -492,3 +565,4 @@ my-source/
 | v1.2 | 2026-10-19 | 新增 `detailType = text` 与可选方法 `getTextContent`（返回规范化段落块）；`render` 增加 `textMode` 字段 |
 | v1.3 | 2026-10-19 | 新增 `behavior.challengeMarkers`（自定义人机校验特征）与 `E-CHALLENGE-*` 运行时中断错误码；区分配置校验错误与运行时可重试错误 |
 | v1.4 | 2026-10-19 | `getTextContent` 允许返回任意 `html`（引擎清洗转结构块，见 ADR-0012）；明确 blocks 优先 |
+| v1.5 | 2026-10-19 | **按 3 份既有配置查漏补缺**：新增 `inputWidth`、`ifWinExecCode`、§3.5 兼容字段；必需方法 6→7（`getUrlReplace`）；明确 `this` 绑定、第二参为 `cheerio`、`net.request` Promise 形态与 `E-CFG-030`、`getHtml` 进度广播契约、`Tag` 空 url 占位、`url`/`fullUrl` 语义、引擎不去重、`adapterGetHtml` 优先级；API 表补全 `ElementAttr`/`ElementTypes` 与 `hashString` 稳定性 |
