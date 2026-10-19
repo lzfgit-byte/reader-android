@@ -88,7 +88,7 @@
 |---|---|
 | `Page` | `items: Item[]`、`pagination: Pagination[]`、`tags: Tag[]`、`urlReplace: UrlReplace[]` |
 | `Pagination` | `title`、`url`、`isCurrent: boolean` |
-| `Tag` | `title`、`url`（**为空表示占位/分隔，不可点击**；引擎不得丢弃） |
+| `Tag` | `title`、`url`（**为空或缺失都表示占位/分隔，不可点击**；入库前 `trim()`，引擎不得丢弃） |
 | `UrlReplace` | `schema: string`（分组名）、`urlAppend: UrlAppend[]` |
 | `UrlAppend` | `value`、`param`、`title`、`current: boolean` |
 

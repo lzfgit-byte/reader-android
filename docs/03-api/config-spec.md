@@ -249,6 +249,7 @@ my-source/
 11. `getDetailInfo` 返回 `null` 视为"不支持该内容类型"，UI 提示后返回上一页，不报错误码。
 12. `Analysis.total` 仅表示"已知集数"，`0` 表示未知/只有一集；分集列表由 `getAnalysisDetail` 自行兜底。
 13. **`searchUrl` 为空字符串表示不支持搜索**：隐藏搜索入口，不报错。
+14. **空白与缺失一律按"空"处理**：`url` / `fullUrl` / `coverImg` / `jumpUrl` / `favicon` 在入库前统一 `trim()`（既有配置出现过带前导空格的地址）；`Tag.url` 为 `undefined` 与 `''` 等价，均渲染为占位。
 
 ### 5.1 URL 补全规则
 
