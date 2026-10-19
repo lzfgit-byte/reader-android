@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.3
+> **版本**：v1.4
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.2
+> **取代/被取代**：取代同文件 v1.3
 
 # Web 管理界面实现规范
 
@@ -24,12 +24,18 @@
 |---|---|---|
 | 框架 | Vue 3 + TypeScript | 与宿主应用完全解耦的纯静态产物，体积小、构建链成熟 |
 | 构建 | Vite → 静态资源打入 `app/src/main/assets/webconsole/` | 无运行时依赖，离线可用 |
-| 编辑器 | CodeMirror 6（`@codemirror/lang-javascript`） | 轻量、可按需加 lint/diagnostic |
+| 编辑器 | **Monaco Editor**（`monaco-editor` ESM + TypeScript 语言服务） | 补全/hover/签名/诊断由语言服务提供，与规范同源（[ADR-0014](adr/ADR-0014-monaco-editor-intellisense.md)） |
+| 智能提示 | 注入 `config-api.d.ts`（`addExtraLib`） | d.ts 是 [config-spec](../03-api/config-spec.md) §3/§8 的派生物，改规范即改提示 |
 | 状态 | Pinia | 配置列表、草稿、调试结果三块状态 |
 | 请求 | 原生 `fetch` | 无需额外依赖 |
 | 样式 | 原生 CSS + CSS 变量（复用应用色板语义） | 避免引入 UI 库拖体积 |
 
-**约束**：产物必须能在 Android WebView 与桌面浏览器（Chrome/Edge/Safari 近两年版本）一致工作；不使用需要 Node 运行时的能力。
+**约束**：
+
+- 产物必须能在桌面浏览器（Chrome/Edge/Safari 近两年版本）工作；**窄屏与 WebView 降级为只读**（见 §2 断点）。
+- 不使用需要 Node 运行时的能力；**Monaco 与 worker 必须本地打包，禁止 CDN**（离线可用）。
+- **Monaco 只在"源码模式"按需加载**，首屏不加载。
+- 控制台静态产物上限 **8MB**（含 Monaco），超出则拆独立 chunk 延迟加载。
 
 ---
 
@@ -57,7 +63,7 @@
 |---|---|
 | ≥ 1280px | 三栏 |
 | 900–1279px | 两栏：列表抽屉 + 编辑区；调试台改为底部可拖拽面板 |
-| < 900px | 单栏 + 顶部 Tab（列表 / 编辑 / 调试），列表变抽屉 |
+| < 900px | 单栏 + 顶部 Tab（列表 / 编辑 / 调试），列表变抽屉；**源码模式降级为只读预览**，提示"请用桌面浏览器编辑" |
 
 ---
 
@@ -83,7 +89,7 @@
 | 模式 | 用途 | 行为 |
 |---|---|---|
 | **表单模式**（默认） | 改字段、调渲染参数 | 按 `meta` / `render` / `behavior` 分组；每字段带默认值、范围提示、枚举下拉 |
-| **源码模式** | 写解析脚本、粘贴整份配置 | CodeMirror 编辑 JS；左侧行号、错误标记、括号匹配 |
+| **源码模式** | 写解析脚本、粘贴整份配置 | **Monaco** 编辑 JS（语言服务驱动）；行号、红波浪线诊断、括号匹配、折叠、多光标 |
 
 两模式**双向同步**：表单改动即时反映到源码视图；源码语法错误时表单只读并提示"先修复语法"。
 
@@ -116,13 +122,47 @@
 - `warnings` 用黄色条展示，不阻塞保存；
 - 保存成功后显示"已保存 · 可试跑"，并提供"立即试跑"按钮。
 
-### 4.4 源码编辑器
+### 4.4 源码编辑器（Monaco）
 
-- 语言：JavaScript（ES2020）；
-- 诊断：括号/引号不匹配、`await` 在非 async 函数中、`return` 缺失（自定义规则）；
-- 格式化：内置 prettier 简版（仅缩进与分号），不强制；
-- Tab 插入两个空格；Enter 自动缩进；
-- 代码片段模板：新建内联配置时注入 6 个必需方法的骨架。
+| 项 | 实现 |
+|---|---|
+| 实例 | `monaco-editor` ESM，语言 `javascript`（`typescript` 语言服务，`allowNonTsExtensions: true`） |
+| 加载 | **动态 `import()`**：进入源码模式才加载；首次加载显示骨架条，避免布局跳动 |
+| Worker | Vite `?worker` 方式本地打包，`MonacoEnvironment.getWorker` 指向本地 chunk，**禁止 CDN** |
+| 主题 | 跟随控制台明暗；字体与字号继承阅读设置中的代码字号 |
+| 编辑体验 | 行号、折叠、括号匹配、多光标、查找替换（`Ctrl/Cmd+F`）、命令面板（`F1`）、Tab 两空格、`Enter` 自动缩进 |
+| 格式化 | 内置简化格式化（缩进/分号），不强制；不引入完整 prettier 以控体积 |
+| 校验标记 | 语言服务诊断（红波浪线）+ 服务端 `errors[]` 映射到行号（黄/红点，见 §4.3） |
+| 降级 | 宽度 < 900px 或检测到不支持 ES2020 的环境 → 只读预览 + 一键复制 |
+
+### 4.5 智能提示（由类型定义驱动）
+
+**原则：提示不是手写的，而是把配置规范"翻译"成一份 `.d.ts` 交给语言服务。**
+
+```
+config-spec §3（字段） ─┐
+config-spec §8（注入 API） ├─► config-api.d.ts ─► addExtraLib ─► Monaco JS 语言服务
+rest-contract §3（模型） ─┘                                      ├─ 补全
+                                                                  ├─ hover 文档
+                                                                  ├─ 参数签名
+                                                                  └─ 诊断
+```
+
+| 能力 | 覆盖内容 |
+|---|---|
+| **补全** | 19 个注入能力；7 个必需方法 + 7 个可选方法；`ElementAttr.*` / `ElementTypes.*` 的**枚举值**（`dataSrc` → `'data-src'` 注释）；配置对象字段（`meta`/`render`/`behavior`，含枚举与范围注释）；`Item`/`Page`/`DetailInfo`/`CComic`/`TextContent` 的字段 |
+| **hover 文档** | 每个 API 的签名、一句话说明、返回值；对应 `config-spec` 章节号；常见误用（如"`net.request` 是 Promise 形态，不是事件式"） |
+| **参数签名** | `helpElAttr(el, name)`、`net.request(options)`、`executeJs(url, code, show?)`、`getTextContent(url, engine)` 等 |
+| **诊断** | 拼错方法名、缺少必需方法、字段类型不符、`@deprecated` 的旧式写法（`net.request(...).on(...)` → 提示 `E-CFG-030`） |
+| **snippet** | 新建内联配置时注入 7 个必需方法骨架；空数组/空字符串/`null` 三种"无数据"返回值示例 |
+
+实现要点：
+
+1. `config-api.d.ts` 随控制台打包，**不联网获取**；
+2. 它是 [config-spec](../03-api/config-spec.md) §3/§8 与 [rest-contract](../03-api/rest-contract.md) §3 的**派生物**——**不得以 d.ts 反推修改规范**；
+3. 一致性由单测保障：解析 d.ts 导出的成员名与文档表格逐项比对，缺一即失败；
+4. **诊断不替代服务端校验**：保存仍以 `POST /api/validate` 为准（§4.3），两者结论不一致时提示"以服务端校验为准"；
+5. 自定义成员（`this.thatGethtml` 之类）不报错：配置对象类型对未知成员开放（索引签名），只对**已知字段的类型错误**报警。
 
 ---
 
@@ -290,7 +330,15 @@
 - [ ] 导出再导入，配置内容完全一致（含脚本）
 - [ ] WebDAV 拉取出现冲突时，可逐条选择保留哪一侧
 - [ ] 断开服务后页面显示遮罩并在恢复后自动重连
-- [ ] 桌面 Chrome / Safari 与 Android WebView 表现一致
+- [ ] 源码模式输入 `getH` 可补全出 `getHtml`，hover 显示签名与说明
+- [ ] `ElementAttr.` 后能补全出 `dataSrc` / `dataOriginal` 等枚举
+- [ ] 漏写 `getUrlReplace` 时编辑器有诊断，且 `/api/validate` 返回 `E-CFG-005`
+- [ ] 写 `net.request(...).on(` 时标记 `@deprecated` 并提示 `E-CFG-030`
+- [ ] 自定义成员（`this.xxx()`）不报错
+- [ ] Monaco 按需加载：列表页不含 Monaco；首次进入源码模式 < 3s（局域网）
+- [ ] 断网后编辑器仍可用（无 CDN 依赖）
+- [ ] 窄屏（< 900px）源码模式为只读并给出提示
+- [ ] `config-api.d.ts` 的成员名与 `config-spec` §3/§8 一致（单测）
 
 ---
 
@@ -302,3 +350,4 @@
 | v1.1 | 2026-10-19 | 收敛界面边界：WebDAV 面板改为**只读状态 + 动作触发**，地址与凭证只在应用端配置；新增 §6.4「界面边界」明确本界面不提供应用级设置 |
 | v1.2 | 2026-10-19 | 调试台新增「命中人机校验」等待态：显示域名与计时，`challengeResolved` 后自动继续 |
 | v1.3 | 2026-10-19 | 按「阅读归 App、复杂操作归 Web」重划边界：新增 §6.5 诊断（日志/缓存）与 §6.6 备份恢复；§6.4 改为职责对照表 |
+| v1.4 | 2026-10-19 | **编辑器换为 Monaco，新增类型驱动的智能提示**：§1 选型与体积约束、§2 窄屏降级、§4.4 重写为 Monaco 集成、新增 §4.5（`config-api.d.ts` 驱动补全/hover/签名/诊断）、§9 验收补充；理由见 [ADR-0014](adr/ADR-0014-monaco-editor-intellisense.md) |

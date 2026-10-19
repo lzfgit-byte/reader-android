@@ -25,6 +25,7 @@
 - `docs/02-architecture/adr/ADR-0010-challenge-top-activity.md`：人机校验用独立顶层 Activity，校验后带 Cookie 优先 OkHttp 重试
 - `docs/02-architecture/adr/ADR-0011-drop-remote-mode.md`：移除远程服务模式（部分取代 ADR-0002）
 - `docs/02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md`：正文接受任意 HTML，清洗后转结构块
+- `docs/02-architecture/adr/ADR-0014-monaco-editor-intellisense.md`：Web 编辑器选用 Monaco，智能提示由注入的 `config-api.d.ts` 驱动
 - `docs/02-architecture/web-console.md`：Web 管理界面实现（三栏布局、双模式编辑、JSON 调试台、同步面板）
 - `docs/02-architecture/ui-implementation.md` v1.1：移动端 UI 实现规范
 - `docs/03-api/rest-contract.md` v0.3：数据层契约
@@ -74,6 +75,8 @@
 - **配置规范第二轮补齐（v1.6，图集类）**：新增 §4.2.1 `adapterImageCode` 完整契约（5 参 `imgSrc`/`extra`/`Md5`/`url`/`canvas`、异步回写、50ms 轮询、10s 超时）、页面上下文注入 `Md5` 与离屏 canvas；尺寸支持 `vw`/`%`；允许自定义成员方法（`this.xxx()`）；`ElementAttr` 键为 camelCase 值为真实属性名；`Item.author`、`CComic.info`（解图参数，区别于 `extra` 评论）、`CContent.time`、`Selection.toString()` 空集返回 `''`、日志单条 4KB 截断、分页项空 url 禁用；**修正搜索判定为看 `adapterSearchUrl` 返回值**（`searchUrl: ''` 不再等于不支持搜索）
 - 图片管线接口变更：`imageUrl(url)` → 增加 `imageData(url, info)`，以 `EngineImage(url, info)` 作为 Coil 的 data，避免解图参数在 URL 传递中丢失
 - M0 出口标准提高：至少 2 份既有配置零改动跑通，**其中 1 份必须含图集与解图**
+- **Web 编辑器由 CodeMirror 换为 Monaco，并接入类型驱动的智能提示**（ADR-0014）：源码模式使用 Monaco + TypeScript 语言服务；注入 `config-api.d.ts` 后获得补全（19 个注入 API、7 必需/7 可选方法、`ElementAttr`/`ElementTypes` 枚举、配置字段、返回模型）、hover 文档、参数签名与诊断（含旧式 `net.request(...).on` 的 `@deprecated` 提示）；d.ts 是配置规范的派生物、不得反向修改；Monaco 本地打包禁止 CDN、仅源码模式按需加载、控制台产物上限 8MB；窄屏（<900px）源码模式降级为只读
+- 新增 `config-spec` §8.1：编辑器智能提示的数据源与一致性约束
 
 ### Removed
 
@@ -88,3 +91,4 @@
 - `AGENTS.md` §7 新增红线：禁止在应用内新增「配置编辑」能力
 - `AGENTS.md` §7 新增红线：禁止把应用级设置（端口/绑定/令牌、WebDAV 凭证、开关类设置）暴露到 Web 端
 - `AGENTS.md` §3 功能增删必改清单保持三处强制（design / registry / CHANGELOG）
+- 编号说明：**ADR-0013 为废弃空号**（曾草拟后撤销、从未入库），按「编号永不复用」原则不再分配

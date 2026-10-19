@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.7
+> **版本**：v1.8
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.6
+> **取代/被取代**：取代同文件 v1.7
 
 # 配置规范（Config Unit）
 
@@ -404,6 +404,17 @@ my-source/
 - **页面上下文才有**：`document`、`Image`、`canvas`、`Md5` —— 只在 `executeJs` 注入代码与 `adapterImageCode` 中可用。
 - **旧式事件 API 不支持**：`net.request(...).on('response', …)` 这类 Electron 风格写法会给出 `E-CFG-030` 警告，请改成 Promise 形态。
 
+### 8.1 编辑器智能提示的数据源
+
+Web 管理界面的源码编辑器（Monaco）通过注入一份 `config-api.d.ts` 获得补全、hover、参数签名与诊断（见 [ADR-0014](../02-architecture/adr/ADR-0014-monaco-editor-intellisense.md)）。
+
+| 项 | 约定 |
+|---|---|
+| 数据来源 | 本节 API 表 + §3 字段表 + [rest-contract](rest-contract.md) §3 的返回模型 |
+| 关系 | d.ts 是**派生物**：改规范必须同步改 d.ts；**不得以 d.ts 反推修改本文件** |
+| 一致性 | 用单测比对 d.ts 导出成员名与本表逐项比对，缺一即失败 |
+| 判定权 | d.ts 诊断只是编辑期快速反馈，**保存前仍以 `/api/validate` 为准** |
+
 ---
 
 ## 9. 版本与兼容
@@ -626,3 +637,5 @@ my-source/
 | v1.4 | 2026-10-19 | `getTextContent` 允许返回任意 `html`（引擎清洗转结构块，见 ADR-0012）；明确 blocks 优先 |
 | v1.5 | 2026-10-19 | **按 3 份既有配置查漏补缺**：新增 `inputWidth`、`ifWinExecCode`、§3.5 兼容字段；必需方法 6→7（`getUrlReplace`）；明确 `this` 绑定、第二参为 `cheerio`、`net.request` Promise 形态与 `E-CFG-030`、`getHtml` 进度广播契约、`Tag` 空 url 占位、`url`/`fullUrl` 语义、引擎不去重、`adapterGetHtml` 优先级；API 表补全 `ElementAttr`/`ElementTypes` 与 `hashString` 稳定性 |
 | v1.6 | 2026-10-19 | **按 2 份图集类配置第二轮补齐**：新增 §4.2.1 `adapterImageCode` 完整契约（5 参、异步回写、Md5/canvas 注入、轮询超时）；尺寸支持 `vw`/`%`；允许自定义成员；`ElementAttr` 键值映射；`Item.author`、`CComic.info`、`CContent.time`、`Selection.toString()` 空集、日志截断、分页禁用语义；**修正搜索判定为看 `adapterSearchUrl`**；新增 §9.2 核对表 |
+| v1.7 | 2026-10-19 | 补充文本正文实际形态（**纯文本 + 内嵌 `<img>`**）的说明，未新增字段或解析器 |
+| v1.8 | 2026-10-19 | 新增 §8.1：编辑器智能提示的数据源为 `config-api.d.ts`（本节与 §3、rest-contract §3 的派生物），明确"改规范必须同步 d.ts、不得反向修改规范" |

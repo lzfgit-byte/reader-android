@@ -1,7 +1,7 @@
 > **状态**：approved
-> **版本**：v1.8
+> **版本**：v1.9
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.7
+> **取代/被取代**：取代同文件 v1.8
 
 # 文档总索引
 
@@ -33,7 +33,8 @@ docs/
 │       ├── ADR-0009-proxy-whitelist-single-decision.md
 │       ├── ADR-0010-challenge-top-activity.md
 │       ├── ADR-0011-drop-remote-mode.md
-│       └── ADR-0012-html-sanitize-to-blocks.md
+│       ├── ADR-0012-html-sanitize-to-blocks.md
+│       └── ADR-0014-monaco-editor-intellisense.md
 ├── 03-api/                        # 契约与规范
 │   ├── config-spec.md             # ★ 动态配置规范（配置 SSOT）
 │   ├── local-store.md             # ★ 本地仓库（数据/导出/同步 SSOT）
@@ -66,6 +67,7 @@ docs/
 | [02-architecture/adr/ADR-0010-challenge-top-activity.md](02-architecture/adr/ADR-0010-challenge-top-activity.md) | 决策：人机校验用独立顶层 Activity；校验后带 Cookie 优先 OkHttp 重试 | approved | 2026-10-19 |
 | [02-architecture/adr/ADR-0011-drop-remote-mode.md](02-architecture/adr/ADR-0011-drop-remote-mode.md) | 决策：移除远程服务模式，只保留内置引擎（部分取代 ADR-0002） | approved | 2026-10-19 |
 | [02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md](02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md) | 决策：正文接受任意 HTML，清洗后统一转结构块 | approved | 2026-10-19 |
+| [02-architecture/adr/ADR-0014-monaco-editor-intellisense.md](02-architecture/adr/ADR-0014-monaco-editor-intellisense.md) | 决策：Web 编辑器用 Monaco，智能提示由注入的 `.d.ts` 驱动 | approved | 2026-10-19 |
 | [03-api/config-spec.md](03-api/config-spec.md) | 动态配置规范：形态、字段、脚本方法、加载协议、错误码、脚本 API、交换文件格式 | draft | 2026-10-19 |
 | [03-api/local-store.md](03-api/local-store.md) | 本地仓库：数据分类与同步归属、表结构、统一进度模型、导出/导入、WebDAV 同步、保留策略、版本迁移 | draft | 2026-10-19 |
 | [03-api/web-admin-api.md](03-api/web-admin-api.md) | 内置 Web 服务 API：命名空间、配置 CRUD、校验、导入导出、调试 run/fetch/events、WebDAV、安全边界 | draft | 2026-10-19 |
@@ -114,3 +116,4 @@ docs/
 | v1.6 | 2026-10-19 | 代理进 v1 并引入白名单：ADR-0009；索引同步 |
 | v1.7 | 2026-10-19 | 新增人机校验通道：ADR-0010；索引同步 |
 | v1.8 | 2026-10-19 | 收敛四处决策：ADR-0011（移除远程模式）、ADR-0012（HTML 清洗）；索引同步 |
+| v1.9 | 2026-10-19 | 新增 ADR-0014（Web 编辑器 Monaco + 类型驱动智能提示）；索引同步 |
