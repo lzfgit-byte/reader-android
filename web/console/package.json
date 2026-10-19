@@ -1,0 +1,10 @@
+{
+  "name": "ghs-web-console",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "GHS Mobile 的浏览器端配置管理界面（技术选型见 docs/02-architecture/web-console.md）",
+  "scripts": {
+    "check:dts": "node scripts/check-dts.mjs"
+  }
+}

@@ -27,6 +27,7 @@ webconsole/dist/
 
 # ---- 临时产物（见 AGENTS.md §1） ----
 tmp/
+.toolchain/
 
 # ---- 用户数据与抓取产物（禁止入库） ----
 *.db
