@@ -61,6 +61,7 @@ cd web\console; node scripts/check-dts.mjs
 | `Failed to load native library 'native-platform.dll'` + "系统找不到指定的路径" | `%USERPROFILE%\.gradle` 不存在，Gradle 首次解压本地库失败 | 显式设置 `GRADLE_USER_HOME` 到工作区内（上面第 2 节） |
 | 下载的 zip 只有 150MB 却打不开 | `curl.exe` 经 PowerShell 管道（`\| Select-Object`）被缓冲，进程被中断后留下截断文件 | 用 `Invoke-WebRequest -OutFile`；**下载后先用 `ZipFile.OpenRead` 校验条目数再解压** |
 | `npm.ps1` / `pnpm.ps1` 无法运行 | 系统执行策略禁止脚本 | 用 `cmd /c npm …` 或直接 `node <cli>.js` |
+| `AccessDeniedException: …\AppData\Local\org.graalvm.polyglot` | GraalJS 的 Truffle 会把 native 库解压到 `%LOCALAPPDATA%`，受限环境不可写 | 在 `tasks.test` 里重定向 `java.io.tmpdir` / `LOCALAPPDATA` / `APPDATA` / **`user.home`**（Truffle 从 `user.home` 推导，只改环境变量无效） |
 
 ---
 
@@ -69,8 +70,11 @@ cd web\console; node scripts/check-dts.mjs
 | 目标 | 结果 |
 |---|---|
 | `:core:model` 单测 | 9 通过 |
-| `:core:engine` 单测 | 50 通过（选择器 16 / 文本解析 13 / 配置预检 14 / 归一化 7） |
+| `:core:engine` 单测 | 57 通过（选择器 16 / 文本解析 13 / 配置预检 14 / 归一化 7 / 脚本运行时 spike 7） |
 | `web/console` 的 d.ts 一致性 | 8 项全绿，并通过负向测试（删必需方法即失败） |
+
+> 脚本运行时 spike 的结论见 [spike-script-runtime.md](spike-script-runtime.md)：5 份真实配置在 JVM 侧 GraalJS 上
+> 全部可求值、7 个必需方法齐全、`this` 与句柄式 `$` 桥接都成立。
 
 `InlineConfigScanner` 的两个真实样本测试会读取 `tmp/configs/*.js`（不入库）：
 

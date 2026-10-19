@@ -1,7 +1,7 @@
 > **状态**：approved
-> **版本**：v1.10
+> **版本**：v1.11
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.9
+> **取代/被取代**：取代同文件 v1.10
 
 # 文档总索引
 
@@ -41,7 +41,8 @@ docs/
 │   ├── web-admin-api.md           # ★ 内置 Web 服务 API（服务 SSOT）
 │   └── rest-contract.md           # ★ 数据层契约（接口 SSOT）
 ├── 04-engineering/                # 工程实践
-│   └── build.md                   # 本地构建与验证（含便携工具链与踩坑）
+│   ├── build.md                   # 本地构建与验证（含便携工具链与踩坑）
+│   └── spike-script-runtime.md    # Spike 报告：脚本运行时（JVM 侧）
 └── 99-archive/                    # 按需创建：已废弃文档
 ```
 
@@ -74,6 +75,7 @@ docs/
 | [03-api/web-admin-api.md](03-api/web-admin-api.md) | 内置 Web 服务 API：命名空间、配置 CRUD、校验、导入导出、调试 run/fetch/events、WebDAV、安全边界 | draft | 2026-10-19 |
 | [03-api/rest-contract.md](03-api/rest-contract.md) | 数据层契约：接口路径、字段、参数编码、响应语义、双模式差异 | draft | 2026-10-19 |
 | [04-engineering/build.md](04-engineering/build.md) | 本地构建与验证：便携工具链（JDK/Gradle）、环境变量、踩坑、当前验证基线 | draft | 2026-10-19 |
+| [04-engineering/spike-script-runtime.md](04-engineering/spike-script-runtime.md) | Spike 报告：JVM 侧脚本运行时（5 份真实配置可求值、句柄式 `$` 桥接、未验证项） | draft | 2026-10-19 |
 
 ## 状态图例
 
@@ -120,3 +122,4 @@ docs/
 | v1.8 | 2026-10-19 | 收敛四处决策：ADR-0011（移除远程模式）、ADR-0012（HTML 清洗）；索引同步 |
 | v1.9 | 2026-10-19 | 新增 ADR-0014（Web 编辑器 Monaco + 类型驱动智能提示）；索引同步 |
 | v1.10 | 2026-10-19 | `design.md` 置为 approved；新增 `04-engineering/build.md`（本地构建与验证）并登记索引 |
+| v1.11 | 2026-10-19 | 新增 `04-engineering/spike-script-runtime.md`（脚本运行时 Spike 报告）并登记索引 |

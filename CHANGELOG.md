@@ -13,6 +13,10 @@
 
 ### Added
 
+- **脚本运行时 spike（JVM 侧 GraalJS，7 个测试）**
+  - `JsConfigRuntime`（仅测试期）：按 `break 标记` 切分配置、求值、绑定 `this`、以**整型句柄 + 方法派发**暴露 `$`
+  - 桥接协议与真机 QuickJS 走 JNI 的形态一致（只传基本类型与句柄），结论可直接迁移到 ADR-0003 的实现
+  - 验证结论：5/5 份真实配置可求值、7 个必需方法齐全、`this` 绑定成立、静态 `getTags` 条数符合预期（12/22/18/0）、含旧式 `net.request(...).on` 的配置求值不炸
 - **GHS Select（Jsoup 桥）+ 配置预检 + 键归一化（新增 42 个单测，累计 59 全绿）**
   - `core/engine/select`：`GhsSelect` / `Selection` —— 覆盖设计 §8.4 的选择器与取值语义：`hasClass`、`toString()`（outerHTML，空集为 `''`）、属性等值、`:eq`/`:first`/`:last`（含中间位置）、逗号与子代选择器、`each`/`find`/`parent`/`children`/`next`/`prev`/`closest`/`filter`；**取值一律返回 `''`，永不返回 null**
   - `core/engine/config`：`InlineConfigScanner` —— 内联脚本的**文本级预检**（抽 key/name/homeUrl 与方法集、检出 7 必需方法缺失、旧式 `net.request(...).on` 警告、1MB 上限），并带两个读取 `tmp/configs` 的真实样本测试（缺失自动跳过）
@@ -106,7 +110,8 @@
 
 ### Docs
 
-- 新增 `docs/04-engineering/build.md`：便携工具链形态（JDK 21 / Gradle 8.9 解压在工作区）、必需环境变量（`GRADLE_USER_HOME` 必须指到工作区）、三个踩过的坑（native-platform.dll、截断 zip、执行策略）与当前验证基线
+- 新增 `docs/04-engineering/build.md`：便携工具链形态（JDK 21 / Gradle 8.9 解压在工作区）、必需环境变量（`GRADLE_USER_HOME` 必须指到工作区）、踩过的坑（native-platform.dll、截断 zip、执行策略、Truffle 的 AppData/user.home）与当前验证基线
+- 新增 `docs/04-engineering/spike-script-runtime.md`：脚本运行时 spike 报告（6 项假设的验证结论、句柄式桥接协议、`user.home` 环境坑、未验证项）
 
 - `AGENTS.md` §2.5「文档独立性」：禁止外部引用，提取的需求必须重写为本项目功能条目
 - `AGENTS.md` §2.1 SSOT 清单新增四项：配置规范、Web 服务 API、Web 管理界面、UI 实现规范
