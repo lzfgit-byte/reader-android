@@ -1,14 +1,15 @@
 pluginManagement {
     repositories {
         gradlePluginPortal()
+        google()
         mavenCentral()
     }
 }
 
 dependencyResolutionManagement {
     repositories {
-        mavenCentral()
         google()
+        mavenCentral()
     }
 }
 
@@ -18,4 +19,5 @@ rootProject.name = "ghs-mobile"
 include(":core:model")
 include(":core:engine")
 
-// Android 模块（:app / :feature:*）在 Android SDK 就绪后加入
+// Android 应用（壳层）
+include(":app")
