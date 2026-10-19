@@ -8,6 +8,7 @@ kotlin {
 
 dependencies {
     implementation(project(":core:model"))
+    implementation("org.jsoup:jsoup:1.17.2")
 
     testImplementation(kotlin("test"))
     testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
