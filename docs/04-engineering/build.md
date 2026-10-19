@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.0
+> **版本**：v1.1
 > **最后更新**：2026-10-19
-> **取代/被取代**：无
+> **取代/被取代**：取代同文件 v1.0
 
 # 本地构建与验证
 
@@ -17,6 +17,8 @@
 .toolchain/                ← 已被 .gitignore 忽略，不入库
 ├── jdk/                   Temurin 21（解压即用）
 ├── gradle/                Gradle 8.9（解压即用）
+├── android-sdk/           Android SDK（cmdline-tools + platforms + build-tools）
+├── android-home/          ANDROID_USER_HOME（sdkmanager 的配置与缓存）
 ├── gradle-home/           GRADLE_USER_HOME（缓存、依赖）
 ├── tmp/                   TMP/TEMP
 └── dl/                    下载的压缩包（可删）
@@ -26,9 +28,12 @@
 |---|---|---|
 | JDK | Temurin 21.0.12.1+LTS | `api.adoptium.net` 的 windows-x64 zip |
 | Gradle | 8.9 | `services.gradle.org` 的 `gradle-8.9-bin.zip` |
-| Android SDK | **尚未安装** | 需要时再拉 `commandlinetools` + `platforms` / `build-tools` |
+| Android SDK | cmdline-tools 12.0 | `dl.google.com` 的 `commandlinetools-win-*_latest.zip` |
+| 已装 SDK 组件 | `platform-tools` 37.0.1 / `platforms;android-34` / `build-tools;34.0.0` | `sdkmanager` |
+| Android NDK | **尚未安装** | QuickJS 落地时再装 |
 
-> 这也意味着：**现在只能构建 JVM 模块**（`:core:model`、`:core:engine`）；`:app` 等 Android 模块要等 Android SDK 就位后加入 `settings.gradle.kts`。
+> `local.properties` 里的 `sdk.dir` 指向 `.toolchain/android-sdk`，该文件已被 `.gitignore` 忽略。
+> 换机器时重建工具链后需要重写 `local.properties`。
 
 ---
 
@@ -52,6 +57,22 @@ Web 端的类型定义一致性检查（零依赖，不需要上面这套工具�
 cd web\console; node scripts/check-dts.mjs
 ```
 
+## 2.1 构建 APK
+
+在上面的环境变量之外，追加 SDK 相关变量：
+
+```powershell
+$env:ANDROID_HOME      = "$tc\android-sdk"
+$env:ANDROID_SDK_ROOT  = "$tc\android-sdk"
+$env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFILE%\.android
+
+& "$tc\gradle\bin\gradle.bat" -p $root --console=plain --no-daemon :app:assembleDebug
+```
+
+产物：`app/build/outputs/apk/debug/app-debug.apk`（约 9MB，`minSdk 26` / `targetSdk 34`）。
+
+首次构建会从 Google Maven 拉 AGP 与 Compose 依赖，约 7 分钟；之后增量构建在十几秒量级。
+
 ---
 
 ## 3. 踩过的坑
@@ -71,7 +92,11 @@ cd web\console; node scripts/check-dts.mjs
 |---|---|
 | `:core:model` 单测 | 9 通过 |
 | `:core:engine` 单测 | 57 通过（选择器 16 / 文本解析 13 / 配置预检 14 / 归一化 7 / 脚本运行时 spike 7） |
+| `:app` 调试包 | `:app:assembleDebug` 成功，`app-debug.apk` 9.2MB（`com.ghs.mobile` 0.1.0，minSdk 26 / targetSdk 34），启动页为"引擎探针" |
 | `web/console` 的 d.ts 一致性 | 8 项全绿，并通过负向测试（删必需方法即失败） |
+
+> `:app` 的"引擎探针"页直接显示 `PlainTextToBlocks` 与 `InlineConfigScanner` 的真实输出，
+> 用来证明 `:core:model` / `:core:engine` 能在 Android 运行时被调用——不是演示界面。
 
 > 脚本运行时 spike 的结论见 [spike-script-runtime.md](spike-script-runtime.md)：5 份真实配置在 JVM 侧 GraalJS 上
 > 全部可求值、7 个必需方法齐全、`this` 与句柄式 `$` 桥接都成立。
@@ -91,3 +116,4 @@ cd web\console; node scripts/check-dts.mjs
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-10-19 | 建立构建说明：便携工具链形态、环境变量、踩坑与当前验证基线 |
+| v1.1 | 2026-10-19 | 补 Android SDK（cmdline-tools 12.0 + android-34 + build-tools 34）、`sdkmanager` 免交互许可证、APK 构建步骤与产物基线 |

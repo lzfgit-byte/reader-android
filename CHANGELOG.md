@@ -13,6 +13,11 @@
 
 ### Added
 
+- **`:app` 壳层 + 可安装 APK（M1 里程碑）**
+  - Kotlin + Compose 应用模块（AGP 8.5.2 / Kotlin 2.0.21 / Compose BOM 2024.09.03），`minSdk 26`（与设计 Q4 一致）/ `targetSdk 34`
+  - 启动页为「引擎探针」：直接渲染 `PlainTextToBlocks` 与 `InlineConfigScanner` 的**真实输出**，用于证明 `:core:*` 在 Android 运行时可用；不是演示界面
+  - `:app:assembleDebug` → `app-debug.apk` 9.2MB（`com.ghs.mobile` 0.1.0，launcher activity 就位）
+  - 工具链补齐 Android SDK：cmdline-tools 12.0 + platform-tools 37.0.1 + `platforms;android-34` + `build-tools;34.0.0`（解压在 `.toolchain/`，不入库）；NDK 待 QuickJS 落地时再装
 - **脚本运行时 spike（JVM 侧 GraalJS，7 个测试）**
   - `JsConfigRuntime`（仅测试期）：按 `break 标记` 切分配置、求值、绑定 `this`、以**整型句柄 + 方法派发**暴露 `$`
   - 桥接协议与真机 QuickJS 走 JNI 的形态一致（只传基本类型与句柄），结论可直接迁移到 ADR-0003 的实现
