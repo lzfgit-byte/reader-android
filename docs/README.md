@@ -1,7 +1,7 @@
 > **状态**：approved
-> **版本**：v1.11
+> **版本**：v1.12
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.10
+> **取代/被取代**：取代同文件 v1.11
 
 # 文档总索引
 
@@ -34,7 +34,8 @@ docs/
 │       ├── ADR-0010-challenge-top-activity.md
 │       ├── ADR-0011-drop-remote-mode.md
 │       ├── ADR-0012-html-sanitize-to-blocks.md
-│       └── ADR-0014-monaco-editor-intellisense.md
+│       ├── ADR-0014-monaco-editor-intellisense.md
+│       └── ADR-0015-quickjs-binding-choice.md
 ├── 03-api/                        # 契约与规范
 │   ├── config-spec.md             # ★ 动态配置规范（配置 SSOT）
 │   ├── local-store.md             # ★ 本地仓库（数据/导出/同步 SSOT）
@@ -70,6 +71,7 @@ docs/
 | [02-architecture/adr/ADR-0011-drop-remote-mode.md](02-architecture/adr/ADR-0011-drop-remote-mode.md) | 决策：移除远程服务模式，只保留内置引擎（部分取代 ADR-0002） | approved | 2026-10-19 |
 | [02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md](02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md) | 决策：正文接受任意 HTML，清洗后统一转结构块 | approved | 2026-10-19 |
 | [02-architecture/adr/ADR-0014-monaco-editor-intellisense.md](02-architecture/adr/ADR-0014-monaco-editor-intellisense.md) | 决策：Web 编辑器用 Monaco，智能提示由注入的 `.d.ts` 驱动 | approved | 2026-10-19 |
+| [02-architecture/adr/ADR-0015-quickjs-binding-choice.md](02-architecture/adr/ADR-0015-quickjs-binding-choice.md) | 决策：QuickJS 选用支持宿主回调的封装（taoweiji），用 `ScriptEngine` 接口隔离 | approved | 2026-10-19 |
 | [03-api/config-spec.md](03-api/config-spec.md) | 动态配置规范：形态、字段、脚本方法、加载协议、错误码、脚本 API、交换文件格式 | draft | 2026-10-19 |
 | [03-api/local-store.md](03-api/local-store.md) | 本地仓库：数据分类与同步归属、表结构、统一进度模型、导出/导入、WebDAV 同步、保留策略、版本迁移 | draft | 2026-10-19 |
 | [03-api/web-admin-api.md](03-api/web-admin-api.md) | 内置 Web 服务 API：命名空间、配置 CRUD、校验、导入导出、调试 run/fetch/events、WebDAV、安全边界 | draft | 2026-10-19 |
@@ -123,3 +125,4 @@ docs/
 | v1.9 | 2026-10-19 | 新增 ADR-0014（Web 编辑器 Monaco + 类型驱动智能提示）；索引同步 |
 | v1.10 | 2026-10-19 | `design.md` 置为 approved；新增 `04-engineering/build.md`（本地构建与验证）并登记索引 |
 | v1.11 | 2026-10-19 | 新增 `04-engineering/spike-script-runtime.md`（脚本运行时 Spike 报告）并登记索引 |
+| v1.12 | 2026-10-19 | 新增 ADR-0015（QuickJS 封装选型）；索引同步 |

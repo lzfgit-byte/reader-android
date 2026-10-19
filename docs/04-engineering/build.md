@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.1
+> **版本**：v1.2
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.0
+> **取代/被取代**：取代同文件 v1.1
 
 # 本地构建与验证
 
@@ -91,12 +91,12 @@ $env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFI
 | 目标 | 结果 |
 |---|---|
 | `:core:model` 单测 | 9 通过 |
-| `:core:engine` 单测 | 57 通过（选择器 16 / 文本解析 13 / 配置预检 14 / 归一化 7 / 脚本运行时 spike 7） |
-| `:app` 调试包 | `:app:assembleDebug` 成功，`app-debug.apk` 9.2MB（`com.ghs.mobile` 0.1.0，minSdk 26 / targetSdk 34），启动页为"引擎探针" |
+| `:core:engine` 单测 | 72 通过（选择器 16 / 文本解析 13 / 配置预检 14 / 归一化 7 / 脚本桥 15 / GraalJS spike 7） |
+| `:app` 调试包 | `:app:assembleDebug` 成功，`app-debug.apk` 13.8MB（含 QuickJS 四 ABI 的 `libquickjs*.so`；`com.ghs.mobile` 0.1.0，minSdk 26 / targetSdk 34） |
 | `web/console` 的 d.ts 一致性 | 8 项全绿，并通过负向测试（删必需方法即失败） |
 
-> `:app` 的"引擎探针"页直接显示 `PlainTextToBlocks` 与 `InlineConfigScanner` 的真实输出，
-> 用来证明 `:core:model` / `:core:engine` 能在 Android 运行时被调用——不是演示界面。
+> `:app` 的"引擎探针"页显示三组**真实输出**：文本→结构块、配置预检、脚本运行时自检
+> （QuickJS 启动耗时、ES2020 探测、选择器取值、配置求值与 `this` 绑定）。它不是演示界面。
 
 > 脚本运行时 spike 的结论见 [spike-script-runtime.md](spike-script-runtime.md)：5 份真实配置在 JVM 侧 GraalJS 上
 > 全部可求值、7 个必需方法齐全、`this` 与句柄式 `$` 桥接都成立。
@@ -117,3 +117,4 @@ $env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFI
 |---|---|---|
 | v1.0 | 2026-10-19 | 建立构建说明：便携工具链形态、环境变量、踩坑与当前验证基线 |
 | v1.1 | 2026-10-19 | 补 Android SDK（cmdline-tools 12.0 + android-34 + build-tools 34）、`sdkmanager` 免交互许可证、APK 构建步骤与产物基线 |
+| v1.2 | 2026-10-19 | 模块与基线更新：新增 `:core:script`（QuickJS 适配层），引擎测试 72 个，APK 13.8MB（含 QuickJS 四 ABI） |

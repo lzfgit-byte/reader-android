@@ -13,6 +13,11 @@
 
 ### Added
 
+- **QuickJS 运行时接入（真机主通道）**
+  - `:core:engine` 新增 `ScriptEngine` 接口 + `GhsScriptBridge` + `ConfigSource`：句柄表、方法派发、JS prelude、18 个宿主函数、`break` 标记切分，**纯 JVM 可单测**（新增 15 个测试）
+  - `:core:script`（Android library）：`QuickJsScriptEngine` 把 `io.github.taoweiji.quickjs:quickjs-android:1.4.6` 适配到 `ScriptEngine`；`ScriptProbe` 提供真机自检（启动耗时 / ES2020 探测 / 选择器取值 / 配置求值与 `this` 绑定）
+  - `:app` 引擎探针页新增"脚本运行时 · QuickJS"卡片；APK 13.8MB（含 arm64-v8a / armeabi-v7a / x86 / x86_64 的 `libquickjs*.so`）
+  - 选型理由与排除项（`app.cash.quickjs` 无函数注入能力）见 ADR-0015
 - **`:app` 壳层 + 可安装 APK（M1 里程碑）**
   - Kotlin + Compose 应用模块（AGP 8.5.2 / Kotlin 2.0.21 / Compose BOM 2024.09.03），`minSdk 26`（与设计 Q4 一致）/ `targetSdk 34`
   - 启动页为「引擎探针」：直接渲染 `PlainTextToBlocks` 与 `InlineConfigScanner` 的**真实输出**，用于证明 `:core:*` 在 Android 运行时可用；不是演示界面
