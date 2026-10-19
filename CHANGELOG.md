@@ -13,6 +13,10 @@
 
 ### Added
 
+- **Gradle 骨架 + 首批 JVM 代码（22 个单测全绿）**
+  - `settings.gradle.kts` / `build.gradle.kts` / `gradle.properties`：Kotlin JVM 多模块，`jvmToolchain(21)`
+  - `core/model`：领域模型（Item/Tag/Page/Detail/CComic/TextBlock/TextContent/ReadingProgress…）与错误码（`E-CFG-*` / `E-CHALLENGE-*`），含归一化、占位判定、`fullUrl` 回落等语义方法
+  - `core/engine`：`PlainTextToBlocks` —— 纯文本＋内嵌 `<img>` 转结构块（实体解码、`<br>` 归一、分段、图片提取与 scheme 校验、2MB 截断）
 - **施工开工**：`web/console/`（首个代码目录）
   - `config-api.d.ts`：GHS Script API v1 类型声明，供 Monaco 注入以提供补全/hover/签名/诊断（ADR-0014）
   - `scripts/check-dts.mjs`：**零依赖**一致性检查器，从 `config-spec` §3/§8 与 `rest-contract` §3 解析规范要求，与 d.ts 逐项比对；已通过负向测试（删必需方法即失败）
@@ -93,6 +97,8 @@
 - 移除文档中与特定内容类型相关的表述
 
 ### Docs
+
+- 新增 `docs/04-engineering/build.md`：便携工具链形态（JDK 21 / Gradle 8.9 解压在工作区）、必需环境变量（`GRADLE_USER_HOME` 必须指到工作区）、三个踩过的坑（native-platform.dll、截断 zip、执行策略）与当前验证基线
 
 - `AGENTS.md` §2.5「文档独立性」：禁止外部引用，提取的需求必须重写为本项目功能条目
 - `AGENTS.md` §2.1 SSOT 清单新增四项：配置规范、Web 服务 API、Web 管理界面、UI 实现规范

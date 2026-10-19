@@ -1,7 +1,7 @@
 > **状态**：approved
-> **版本**：v1.9
+> **版本**：v1.10
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.8
+> **取代/被取代**：取代同文件 v1.9
 
 # 文档总索引
 
@@ -40,7 +40,8 @@ docs/
 │   ├── local-store.md             # ★ 本地仓库（数据/导出/同步 SSOT）
 │   ├── web-admin-api.md           # ★ 内置 Web 服务 API（服务 SSOT）
 │   └── rest-contract.md           # ★ 数据层契约（接口 SSOT）
-├── 04-engineering/                # 按需创建：编码规范、测试策略、发布流程
+├── 04-engineering/                # 工程实践
+│   └── build.md                   # 本地构建与验证（含便携工具链与踩坑）
 └── 99-archive/                    # 按需创建：已废弃文档
 ```
 
@@ -51,7 +52,7 @@ docs/
 | 文档 | 内容 | 状态 | 更新 |
 |---|---|---|---|
 | [00-process/document-policy.md](00-process/document-policy.md) | 文档分类、生命周期、编号、命名、评审、功能增删联动协议 | approved | 2026-10-19 |
-| [01-product/design.md](01-product/design.md) | 产品定位、F01–F22 功能范围、信息架构、引擎架构、里程碑、开放问题 | draft | 2026-10-19 |
+| [01-product/design.md](01-product/design.md) | 产品定位、配置驱动的内容容器、F01–F29 功能范围、引擎/代理/校验架构、里程碑、开放问题 | **approved** | 2026-10-19 |
 | [01-product/feature-registry.md](01-product/feature-registry.md) | F01–F22 功能登记：类别、优先级、状态、里程碑、关联章节 | draft | 2026-10-19 |
 | [02-architecture/ui-implementation.md](02-architecture/ui-implementation.md) | 设计系统、断点、应用骨架、组件契约、页面要点、四态与手势、性能预算 | draft | 2026-10-19 |
 | [02-architecture/web-console.md](02-architecture/web-console.md) | Web 管理界面：三栏布局、表单/源码双模式编辑、JSON 调试台、导入导出与同步面板、快捷键 | draft | 2026-10-19 |
@@ -72,6 +73,7 @@ docs/
 | [03-api/local-store.md](03-api/local-store.md) | 本地仓库：数据分类与同步归属、表结构、统一进度模型、导出/导入、WebDAV 同步、保留策略、版本迁移 | draft | 2026-10-19 |
 | [03-api/web-admin-api.md](03-api/web-admin-api.md) | 内置 Web 服务 API：命名空间、配置 CRUD、校验、导入导出、调试 run/fetch/events、WebDAV、安全边界 | draft | 2026-10-19 |
 | [03-api/rest-contract.md](03-api/rest-contract.md) | 数据层契约：接口路径、字段、参数编码、响应语义、双模式差异 | draft | 2026-10-19 |
+| [04-engineering/build.md](04-engineering/build.md) | 本地构建与验证：便携工具链（JDK/Gradle）、环境变量、踩坑、当前验证基线 | draft | 2026-10-19 |
 
 ## 状态图例
 
@@ -117,3 +119,4 @@ docs/
 | v1.7 | 2026-10-19 | 新增人机校验通道：ADR-0010；索引同步 |
 | v1.8 | 2026-10-19 | 收敛四处决策：ADR-0011（移除远程模式）、ADR-0012（HTML 清洗）；索引同步 |
 | v1.9 | 2026-10-19 | 新增 ADR-0014（Web 编辑器 Monaco + 类型驱动智能提示）；索引同步 |
+| v1.10 | 2026-10-19 | `design.md` 置为 approved；新增 `04-engineering/build.md`（本地构建与验证）并登记索引 |
