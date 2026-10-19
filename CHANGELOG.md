@@ -13,6 +13,10 @@
 
 ### Added
 
+- **GHS Select（Jsoup 桥）+ 配置预检 + 键归一化（新增 42 个单测，累计 59 全绿）**
+  - `core/engine/select`：`GhsSelect` / `Selection` —— 覆盖设计 §8.4 的选择器与取值语义：`hasClass`、`toString()`（outerHTML，空集为 `''`）、属性等值、`:eq`/`:first`/`:last`（含中间位置）、逗号与子代选择器、`each`/`find`/`parent`/`children`/`next`/`prev`/`closest`/`filter`；**取值一律返回 `''`，永不返回 null**
+  - `core/engine/config`：`InlineConfigScanner` —— 内联脚本的**文本级预检**（抽 key/name/homeUrl 与方法集、检出 7 必需方法缺失、旧式 `net.request(...).on` 警告、1MB 上限），并带两个读取 `tmp/configs` 的真实样本测试（缺失自动跳过）
+  - `core/engine/net`：`UrlNormalizer` —— 进度/收藏/历史的键归一化（去 fragment、去 `utm_*`/`from`/`spm`、去尾斜杠、幂等）
 - **Gradle 骨架 + 首批 JVM 代码（22 个单测全绿）**
   - `settings.gradle.kts` / `build.gradle.kts` / `gradle.properties`：Kotlin JVM 多模块，`jvmToolchain(21)`
   - `core/model`：领域模型（Item/Tag/Page/Detail/CComic/TextBlock/TextContent/ReadingProgress…）与错误码（`E-CFG-*` / `E-CHALLENGE-*`），含归一化、占位判定、`fullUrl` 回落等语义方法
@@ -43,6 +47,10 @@
 - 功能 **F28 网络代理（HTTP）**：一份代理配置同时作用于 OkHttp 通道（取页/图片/视频/WebDAV）与无头 WebView 通道
 - 功能 **F29 人机校验交互**：取页命中校验页时在顶层弹出独立窗口，完成后自动继续加载并解析
 - 功能 F19 配置编辑器、F20 数据备份与恢复、F21 外观与显示、F22 应用更新检查（前期补齐）
+
+### Fixed
+
+- **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
 
 ### Changed
 

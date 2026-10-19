@@ -69,8 +69,16 @@ cd web\console; node scripts/check-dts.mjs
 | 目标 | 结果 |
 |---|---|
 | `:core:model` 单测 | 9 通过 |
-| `:core:engine` 单测 | 13 通过 |
+| `:core:engine` 单测 | 50 通过（选择器 16 / 文本解析 13 / 配置预检 14 / 归一化 7） |
 | `web/console` 的 d.ts 一致性 | 8 项全绿，并通过负向测试（删必需方法即失败） |
+
+`InlineConfigScanner` 的两个真实样本测试会读取 `tmp/configs/*.js`（不入库）：
+
+- 本地有样本 → 跑真实预检，并打印每个样本的 key / 方法数 / 缺失 / 警告
+- 本地没有 → 自动 `assumeTrue` 跳过，不污染干净克隆
+
+> 该预检曾直接暴露一处**规范缺陷**：`key` 正则原先只允许小写，导致 3 份真实配置被判非法；
+> 已按"实现回流文档"放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`（见 `config-spec` §9.2 第 32 条）。
 
 ---
 

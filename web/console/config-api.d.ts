@@ -323,7 +323,7 @@ interface ReadingProgress {
 // ───────────────────────────── 配置对象 ─────────────────────────────
 
 interface ConfigMeta {
-  /** 唯一标识，`^[a-z0-9][a-z0-9_-]{1,31}$` */
+  /** 唯一标识，`^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`（允许大小写） */
   key: string
   name: string
   version?: string
