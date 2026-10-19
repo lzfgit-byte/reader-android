@@ -70,6 +70,9 @@
 - UI 规范同步：标签空 url 占位与固定列网格、分页项按返回项渲染、图片条目 `fullUrl` 优先
 - 内核 API 契约同步：`Tag.url` 空值语义、`Detail.url`/`fullUrl` 说明
 - M0 出口标准新增「至少 2 份既有配置零改动跑通列表 + 详情」
+- **配置规范第二轮补齐（v1.6，图集类）**：新增 §4.2.1 `adapterImageCode` 完整契约（5 参 `imgSrc`/`extra`/`Md5`/`url`/`canvas`、异步回写、50ms 轮询、10s 超时）、页面上下文注入 `Md5` 与离屏 canvas；尺寸支持 `vw`/`%`；允许自定义成员方法（`this.xxx()`）；`ElementAttr` 键为 camelCase 值为真实属性名；`Item.author`、`CComic.info`（解图参数，区别于 `extra` 评论）、`CContent.time`、`Selection.toString()` 空集返回 `''`、日志单条 4KB 截断、分页项空 url 禁用；**修正搜索判定为看 `adapterSearchUrl` 返回值**（`searchUrl: ''` 不再等于不支持搜索）
+- 图片管线接口变更：`imageUrl(url)` → 增加 `imageData(url, info)`，以 `EngineImage(url, info)` 作为 Coil 的 data，避免解图参数在 URL 传递中丢失
+- M0 出口标准提高：至少 2 份既有配置零改动跑通，**其中 1 份必须含图集与解图**
 
 ### Removed
 

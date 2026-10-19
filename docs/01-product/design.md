@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v2.8
+> **版本**：v2.9
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v2.7
+> **取代/被取代**：取代同文件 v2.8
 
 # 主设计文档
 
@@ -500,7 +500,8 @@ interface GhsRepository {                       // UI 只依赖这一层
     suspend fun search(keyword: String, item: Item?): String
     suspend fun searchRecommend(keyword: String): List<String>
     suspend fun clearCache(suffix: String?)
-    fun imageUrl(url: String): String              // 交给 Coil 的 DataSource
+    fun imageUrl(url: String): String              // 无需解图的图片：直接交给 Coil
+    fun imageData(url: String, info: Map<String, Any>?): Any  // 需解图：EngineImage(url, info) 作为 Coil 的 data
     fun videoUrl(url: String): String              // 交给 ExoPlayer 的 DataSource
     val events: SharedFlow<EngineEvent>
 }
@@ -608,9 +609,11 @@ interface GhsRepository {                       // UI 只依赖这一层
 ### 8.6 图片管线
 
 - 识别 `data:image/*` 内联图与需要脚本解图的图片（`adapterImageCode`）；
+- **请求数据是 `EngineImage(url, info?)`，不是裸字符串**：`getComicImages` 返回的 `info` 必须一路传到 Fetcher，否则解图参数丢失、整组图变成乱图（§7.1）；
+- 解图执行模型（详见 [config-spec](../03-api/config-spec.md) §4.2.1）：把 `info` 作为 `extra`，注入 `Md5` 与离屏 `canvas`，在页面上下文执行 `adapterImageCode`（5 参），以 **50ms 轮询 `imgSrc.value`** 等待异步回写，超时 10s 后回落原图；
 - `EngineImageFetcher`（Coil `Fetcher`）：直连拉字节 → 落盘 → 交给 Coil；
-- 命中防盗链/需 JS 解图 → 走 `adapterImageCode`（无头 WebView 解出真图）；
-- 缓存目录 `cacheDir/img/<sha1>`，LRU 可配；
+- 图集逐张解图很慢：解图并发受 `behavior.concurrency` 限制，并优先解可视区与预加载区；
+- 缓存目录 `cacheDir/img/<sha1>`，LRU 可配（解图结果按 `url + info` 建键）；
 - 大图按控件尺寸 `inSampleSize` 采样；超长图分段解码；
 - **base64 兼容**：内联图（`data:image/*`）与脚本解图结果都走同一 `Fetcher` 归一，UI 无差异。
 
@@ -827,7 +830,7 @@ getTextContent → { html } 或 { blocks }
 
 | 阶段 | 内容 | 交付物 | 出口标准 |
 |---|---|---|---|
-| **M0 可行性验证** | QuickJS 跑通真实配置；Jsoup→GHS Select 覆盖 §8.4；黄金样本比对 | 技术验证报告 | 与人工标注期望逐字段一致；**至少 2 份既有配置零改动跑通列表 + 详情**；失败则改方案 A 并更新 ADR |
+| **M0 可行性验证** | QuickJS 跑通真实配置；Jsoup→GHS Select 覆盖 §8.4；黄金样本比对；**图集链路**（`getContents` → `getComicImages` → `adapterImageCode` 解图） | 技术验证报告 | 与人工标注期望逐字段一致；**至少 2 份既有配置零改动跑通列表 + 详情，其中 1 份必须含图集与解图**；失败则改方案 A 并更新 ADR |
 | **M1 底座** | `:core:config` 配置加载与校验 + `:core:engine` + `:core:database`，无 UI | 可跑单测的底座 | 配置校验错误码全覆盖；首页/详情/图组/收藏/历史 6 条链路单测通过 |
 | **M2 浏览主链路** | 首页、详情、收藏、历史、设置骨架、网络代理、人机校验 | 可安装 APK | 真机能导入配置并浏览；开启代理后四条路径正常；命中校验能弹窗并继续 |
 | **M3 阅读器与播放器** | 图集阅读器、文本阅读器、视频播放器、单图查看器 | — | 手势/续读/进度记忆达标（三种媒介共用一套进度） |
@@ -915,3 +918,4 @@ M0 是**唯一允许回退架构的阶段**，必须先做并产出书面结论�
 | v2.6 | 2026-10-19 | **新增人机校验通道**：F29 与 D12/ADR-0010；顶层 `ChallengeActivity` + 单飞合并 + Cookie 双向同步 + 优先 OkHttp 重试；新增 §8.14 流程与 `E-CHALLENGE-*` 错误码；§8.5 增「人机校验」；M2 出口补充 |
 | v2.7 | 2026-10-19 | **收敛四处决策**（Q8/Q12/Q13/Q14）：① 移除远程服务模式，删除 F18 与 `RemoteRepository`（D13/ADR-0011）；② §2.6 按「阅读是 App 唯一主业」重划归属，日志/缓存/备份/批量管理改由 Web 承担，App 设置页大幅收敛；③ 正文接受任意 HTML 并清洗转结构块（D14/ADR-0012，新增 §8.15）；④ WebDAV 固定直连、不走代理 |
 | v2.8 | 2026-10-19 | **按 3 份既有配置查漏补缺**：GHS Select 补 `hasClass` / `toString` / 属性等值选择器与"取值不返回 undefined"；§12.2 去掉"两种模式"表述；M0 出口标准增加"至少 2 份既有配置零改动跑通" |
+| v2.9 | 2026-10-19 | **按 2 份图集类配置第二轮补齐**：§7.1 图片接口改为 `EngineImage(url, info)`（`imageData`）；§8.6 重写解图模型（5 参 `adapterImageCode`、Md5/canvas 注入、50ms 轮询回写、并发受限）；M0 出口标准要求覆盖图集与解图链路 |

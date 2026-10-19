@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.5
+> **版本**：v1.6
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.4
+> **取代/被取代**：取代同文件 v1.5
 
 # 配置规范（Config Unit）
 
@@ -135,6 +135,8 @@ my-source/
 | `setTags` | string[] | 否 | `["收藏","历史","系统配置"]` | 启用哪些入口，见 §3.4 |
 | `themeColor` | string | 否 | 空 | 主题强调色（`#RRGGBB`），为空则用应用默认色 |
 
+> **尺寸单位**：`imgWidth` / `imgHeight` / `drawWidth` / `inputWidth` / `comicImgMaxWidth` 接受 `px`、`dp`、**`vw`**（视口宽度百分比）、**`%`**（父容器百分比）、纯数字（按 dp）。`auto` 表示由布局决定。既有配置里出现过 `comicImgMaxWidth: '80vw'` 这种写法。
+
 ### 3.3 `behavior`（行为参数）
 
 | 字段 | 类型 | 必填 | 默认 | 说明 |
@@ -201,6 +203,8 @@ my-source/
 2. **第二个参数是 `cheerio` 对象**：`getDetailInfo(item, cheerio)` 的第二参可直接 `cheerio.load(html)`；它同时挂载 §8 的全部能力（`cheerio.getHtml`、`cheerio.net` 等）。全局也暴露同名 `cheerio`，两种写法等价。
 3. **允许异步**：所有方法可以是 `async`，引擎会 `await`。
 4. **顺序与副作用**：`getItems`/`getPagination`/`getTags`/`getUrlReplace` 在一次载入中**依次**调用，共享同一个 `$`；不要依赖它们之间的隐式全局变量（并行/重入时不可靠）。
+5. **允许自定义成员**：配置对象除 7 个必需方法与若干可选方法外，可以定义**任意自定义方法/属性**（如 `thatGethtml(url)`、`toggleUrl(url)`），并在其他方法里通过 `this.xxx()` 调用。引擎只校验必需方法存在，不限制多余成员。
+6. **`ElementAttr` 的键是 camelCase，值是真实属性名**：`ElementAttr.dataSrc === 'data-src'`、`ElementAttr.dataOriginal === 'data-original'`、`ElementAttr.dataWebp === 'data-webp'`，其余（`src`/`href`/`title`/`alt`/`class`/`poster`）键值同名。
 
 ### 4.2 可选方法
 
@@ -217,7 +221,31 @@ my-source/
 
 **`adapterGetHtml` 优先级**：一旦定义，引擎**完全接管取页**——不再走默认的 OkHttp / WebView 管线，直接使用其返回值（它内部通常会调用 `getHtml`、`executeJs` 或带特殊请求）。返回值仍会写入 HTML 缓存，仍受代理与白名单约束。
 
-**"JS 片段"型配置项**（`adapterImageCode`、`ifWinExecCode`）是**字符串代码**，不是函数：引擎在无头页面上下文中 `evaluateJavascript` 执行它，并用其返回值/执行后的 DOM。
+**"JS 片段"型配置项**（`adapterImageCode`、`ifWinExecCode`）是**字符串代码**，不是函数：引擎在无头页面上下文中 `evaluateJavascript` 执行它。
+
+### 4.2.1 `adapterImageCode` 契约（关键）
+
+字符串内容必须是**一段返回函数的表达式**（形如 `return (…) => { … }` 或 `(…) => { … }`）。引擎执行 `new Function(code)()` 得到函数后，用**固定 5 个参数**在页面上下文调用：
+
+```js
+(imgSrc, extra, Md5, url, canvas) => void
+```
+
+| 参数 | 类型 | 方向 | 说明 |
+|---|---|---|---|
+| `imgSrc` | `{ value: string }` | 入 + **出** | 传入原图地址；脚本把处理结果（通常是 `data:image/jpeg;base64,…`）**回写到 `imgSrc.value`** |
+| `extra` | object | 入 | 来自 `CComic.info`（如 `{ aid, scrambleId }`） |
+| `Md5` | object | 入 | 注入的 spark-md5，提供 `Md5.hashStr(str)` |
+| `url` | string | 入 | 当前图片的原始地址（用于从 URL 中提取分片参数） |
+| `canvas` | `{ value: HTMLCanvasElement }` | 入 | 引擎预先创建的离屏 canvas，脚本用其 2D 上下文重绘 |
+
+执行模型：
+
+1. **允许异步回写**：脚本通常在 `img.onload` 回调里改 `imgSrc.value`，因此引擎不能同步读取；
+2. 引擎以 **50ms 间隔轮询** `imgSrc.value`，值发生变化即视为完成；默认超时 **10s**；
+3. 超时未回写 → 记 `E-CFG-020` 并**回落到原图直取**（不阻断整组图）；
+4. 该代码只在**页面上下文**运行（需要 `Image`/`Canvas`/`document`），**不在 QuickJS 沙箱内**；
+5. 同一张图只执行一次，结果进图片缓存。
 
 ### 4.3 脚本约束
 
@@ -248,8 +276,14 @@ my-source/
 10. **引擎不去重、不排序**：顺序与内容保持脚本返回的 `Item[]` 原样；去重是脚本自己的责任（例如按 `jumpUrl` 判重）。
 11. `getDetailInfo` 返回 `null` 视为"不支持该内容类型"，UI 提示后返回上一页，不报错误码。
 12. `Analysis.total` 仅表示"已知集数"，`0` 表示未知/只有一集；分集列表由 `getAnalysisDetail` 自行兜底。
-13. **`searchUrl` 为空字符串表示不支持搜索**：隐藏搜索入口，不报错。
+13. **是否支持搜索看 `adapterSearchUrl` 的返回值，不看 `searchUrl`**：`searchUrl` 只是作者自行使用的前缀变量，允许为空字符串（既有配置普遍是 `searchUrl: ''` + 硬编码的 `adapterSearchUrl`）。只有 `adapterSearchUrl` 返回空串时才隐藏搜索入口。
 14. **空白与缺失一律按"空"处理**：`url` / `fullUrl` / `coverImg` / `jumpUrl` / `favicon` 在入库前统一 `trim()`（既有配置出现过带前导空格的地址）；`Tag.url` 为 `undefined` 与 `''` 等价，均渲染为占位。
+15. **`Item.author`**：可选字段（作者/上传者），有则展示、无则不占位。
+16. **`CComic.info` 与 `CComic.extra` 是两件事**：`info` 是传给 `adapterImageCode` 的**解图参数**；`extra` 是该图关联的**评论数组**。两者可同时存在（图集常见）。
+17. **额外字段保留但 UI 可忽略**：如 `CContent.time`（章节时间）、`Item.author`。`E-CFG-006` 只针对**已知字段的类型错误**，未知字段不报错。
+18. **`Selection.toString()` 空集返回 `''`**（不返回 `undefined`、不抛错），使 `$img.toString().trim() !== ''` 这类存在性判断成立。
+19. **日志单条截断**：`LogMsgUtil` / `ConsoleLogUtil` 单条上限 **4KB**，超出截断并标注；传入 `Selection` 时按其 `toString()` 输出（既有配置会把整页 HTML 打进日志）。
+20. **分页项 `url` 为空表示禁用**（既有写法 `isCurrent: urlX === ''`）；`isCurrent: true` 且 `url: ''` 表示"当前页、不可点"。引擎不过滤分页项，UI 按返回项渲染。
 
 ### 5.1 URL 补全规则
 
@@ -356,6 +390,7 @@ my-source/
 | `ProgressMsgUtil` | `sendProgress(pct, key, title?)` / `close(key)` | 进度上报 |
 | `MessageUtil` | `info/error/success/warning(msg)` | 轻提示 |
 | `eventEmitter` | `on(key, fn)` / `off(key, fn)` / `emit(key, ...args)` | 脚本内事件总线；**订阅取页进度就靠它** |
+| `Md5` | `{ hashStr(v) }` | **仅在 `adapterImageCode` 的页面上下文注入**（spark-md5）；沙箱内不存在 |
 | `executeJs` | `(url, code, show?) => Promise<any>` | 在无头页面上下文执行脚本；返回值经 JSON 序列化传递（不支持 DOM / Buffer） |
 | `getCurrentItems` | `() => Item[]` | 取当前列表已解析条目 |
 
@@ -366,6 +401,7 @@ my-source/
 - **第二参数就是 `cheerio`**：`getDetailInfo(item, cheerio)` 的第二参可直接 `cheerio.load(html)`，并额外挂载上表全部能力（`cheerio.getHtml`、`cheerio.net` 等）；全局也暴露同名对象，两种写法等价。
 - **`this` 绑定为配置对象**：方法内可用 `this.homeUrl` / `this.searchUrl`。
 - **沙箱内不存在的 Node/浏览器能力**：`Buffer`、`fetch`、`require`、`process`、`window`、`document` —— 需要请求用 `net.request` / `getHtml`，需要解析用 `cheerio.load`。
+- **页面上下文才有**：`document`、`Image`、`canvas`、`Md5` —— 只在 `executeJs` 注入代码与 `adapterImageCode` 中可用。
 - **旧式事件 API 不支持**：`net.request(...).on('response', …)` 这类 Electron 风格写法会给出 `E-CFG-030` 警告，请改成 Promise 形态。
 
 ---
@@ -411,6 +447,28 @@ my-source/
 - 三份配置在**沙箱内**都没有实际调用 `fetch` / `Buffer`（仅出现在被注释或未调用的代码里），因此把二者排除在沙箱外是安全且可行的；
 - 三份都不要 `net.request` 的事件式 API 完成必需功能，所以 v1 只提供 Promise 形态是合理的，旧写法给警告而不阻断；
 - 三份都用 `cheerio.load` 而非 `parse`，第二参数的命名因此必须兼容 `cheerio`。
+
+### 9.2 兼容性核对（第二轮：图集类配置）
+
+第二批 2 份配置都是**图集**（走 `getContents` / `getComicImages` / `adapterImageCode`），补齐了此前完全没有真实用例的链路：
+
+| # | 既有用法 | 之前状态 | 现在 |
+|---|---|---|---|
+| 19 | `comicImgMaxWidth: '80vw'` | 单位只有 px/dp | §3.2 支持 `vw` / `%`，所有尺寸字段统一 |
+| 20 | 配置内定义 `thatGethtml` / `toggleUrl` 并在其他方法里 `this.xxx()` | 未说明是否允许 | §4.1.1 第 5 条：允许任意自定义成员 |
+| 21 | `ElementAttr.dataSrc` / `dataOriginal` | 常量表只写了连字符形式 | §4.1.1 第 6 条：键 camelCase、值为真实属性名 |
+| 22 | `Item.author`（作者/上传者） | 未定义 | §5.15 支持为可选字段 |
+| 23 | `CComic.info`（解图参数）与 `CComic.extra`（评论）**并存** | 只定义了 `extra` 作评论 | §5.16 明确两者分工，契约补 `info` |
+| 24 | `CContent.time`（章节时间） | 未定义 | §5.17 归为"额外字段：保留、UI 可忽略" |
+| 25 | 用 `$sel.toString().trim() !== ''` 判断节点存在 | 补了 `toString`，但未定空集行为 | §5.18 空集返回 `''` |
+| 26 | 把整页 HTML 传进 `LogMsgUtil` | 无上限 | §5.19 单条 4KB 截断 |
+| 27 | `searchUrl: ''`，但 `adapterSearchUrl` 返回可用地址 | 上一轮误定为"空则隐藏搜索" | §5.13 改为**看 `adapterSearchUrl` 返回值** |
+| 28 | `adapterImageCode` 是"返回函数的表达式"，签名 5 参 | 只写了"JS 片段" | §4.2.1 完整契约（`imgSrc`/`extra`/`Md5`/`url`/`canvas` + 轮询回写） |
+| 29 | 解图代码依赖 `Md5.hashStr` 与离屏 canvas | 未提供 | §8 注入 `Md5` 与 `canvas` |
+| 30 | 图片必须带解图参数才能出图 | `imageUrl(url)` 会丢掉 `info` | 设计文档 §7.1 / §8.6 改为 `EngineImage(url, info)` |
+| 31 | `ProgressMsgUtil` 用任意字符串作 key（如 `'all'`） | 未说明 | §8 明确 key 可为任意字符串 |
+
+结论：**图集链路的三个真实难点**是"解图参数要跟着图片走""解图是异步回写""依赖注入的 Md5/canvas"，都已在规范里定死；M0 必须把图集类配置纳入回归集。
 
 ---
 
@@ -567,3 +625,4 @@ my-source/
 | v1.3 | 2026-10-19 | 新增 `behavior.challengeMarkers`（自定义人机校验特征）与 `E-CHALLENGE-*` 运行时中断错误码；区分配置校验错误与运行时可重试错误 |
 | v1.4 | 2026-10-19 | `getTextContent` 允许返回任意 `html`（引擎清洗转结构块，见 ADR-0012）；明确 blocks 优先 |
 | v1.5 | 2026-10-19 | **按 3 份既有配置查漏补缺**：新增 `inputWidth`、`ifWinExecCode`、§3.5 兼容字段；必需方法 6→7（`getUrlReplace`）；明确 `this` 绑定、第二参为 `cheerio`、`net.request` Promise 形态与 `E-CFG-030`、`getHtml` 进度广播契约、`Tag` 空 url 占位、`url`/`fullUrl` 语义、引擎不去重、`adapterGetHtml` 优先级；API 表补全 `ElementAttr`/`ElementTypes` 与 `hashString` 稳定性 |
+| v1.6 | 2026-10-19 | **按 2 份图集类配置第二轮补齐**：新增 §4.2.1 `adapterImageCode` 完整契约（5 参、异步回写、Md5/canvas 注入、轮询超时）；尺寸支持 `vw`/`%`；允许自定义成员；`ElementAttr` 键值映射；`Item.author`、`CComic.info`、`CContent.time`、`Selection.toString()` 空集、日志截断、分页禁用语义；**修正搜索判定为看 `adapterSearchUrl`**；新增 §9.2 核对表 |
