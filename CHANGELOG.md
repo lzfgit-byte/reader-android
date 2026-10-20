@@ -70,6 +70,10 @@
   - `ConfigEngine.detailInfo` / `contents` / `comicImages` / `textContent`：把 `async getDetailInfo` 等方法的返回值映射为 `DetailInfo` / `CContent` / `CComic` / `TextContent`
   - 文本正文：作者 `blocks` 优先，否则 `PlainTextToBlocks` 切分；`fullUrl` 优先、`isCurrent`/`quality`/`info` 全量保留
   - instrumented test 增至 13 个（新增详情 5 项）
+- **本地仓库 `:core:data`（Room + KSP）**
+  - 六张表按 `local-store.md` §3.2 落地：`app_setting` / `reading_progress` / `collect` / `viewed_history` / `search_history` / `config_unit`
+  - `LocalRepository`：进度以 `itemUrl` 唯一且"旧时间戳不覆盖新进度"；设置按 `prefs`/`device` 隔离；收藏累加 `count`；历史 `trimHistory(keep)`；搜索历史按 `(configKey,value)` 去重
+  - instrumented test 增至 22 个（新增仓库 9 项）
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -83,6 +87,10 @@
   - `ConfigEngine.detailInfo` / `contents` / `comicImages` / `textContent`：把 `async getDetailInfo` 等方法的返回值映射为 `DetailInfo` / `CContent` / `CComic` / `TextContent`
   - 文本正文：作者 `blocks` 优先，否则 `PlainTextToBlocks` 切分；`fullUrl` 优先、`isCurrent`/`quality`/`info` 全量保留
   - instrumented test 增至 13 个（新增详情 5 项）
+- **本地仓库 `:core:data`（Room + KSP）**
+  - 六张表按 `local-store.md` §3.2 落地：`app_setting` / `reading_progress` / `collect` / `viewed_history` / `search_history` / `config_unit`
+  - `LocalRepository`：进度以 `itemUrl` 唯一且"旧时间戳不覆盖新进度"；设置按 `prefs`/`device` 隔离；收藏累加 `count`；历史 `trimHistory(keep)`；搜索历史按 `(configKey,value)` 去重
+  - instrumented test 增至 22 个（新增仓库 9 项）
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**

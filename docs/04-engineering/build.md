@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.7
+> **版本**：v1.8
 > **最后更新**：2026-10-20
-> **取代/被取代**：取代同文件 v1.6
+> **取代/被取代**：取代同文件 v1.7
 
 # 本地构建与验证
 
@@ -30,6 +30,7 @@
 | Gradle | 8.9 | `services.gradle.org` 的 `gradle-8.9-bin.zip` |
 | Android SDK | cmdline-tools 12.0 | `dl.google.com` 的 `commandlinetools-win-*_latest.zip` |
 | 已装 SDK 组件 | `platform-tools` 37.0.1 / `platforms;android-34` / `build-tools;34.0.0` | `sdkmanager` |
+| KSP | 2.0.21-1.0.25 | Room 注解处理（Gradle 插件） |
 | Android NDK | **尚未安装** | QuickJS 落地时再装 |
 
 > `local.properties` 里的 `sdk.dir` 指向 `.toolchain/android-sdk`，该文件已被 `.gitignore` 忽略。
@@ -162,6 +163,10 @@ await getHtml(url) -> cheerio.load(html) -> helpElText(...)
 **详情页三条链路**：`DetailChainInstrumentedTest`（5 项）验证图集 / 文本 / 视频：
 `fullUrl` 优先于 `url`、文本正文经 `PlainTextToBlocks` 成块（含内嵌图）、
 视频 `quality` 映射、章节 `isCurrent`、未知类型返回空。
+**本地仓库（Room）**：`LocalRepositoryInstrumentedTest`（9 项，内存库）验证
+进度往返与"旧时间戳不覆盖新进度"、`itemUrl` 唯一、最近进度排序、
+设置 `prefs`/`device` 隔离、收藏计数累加与移除、历史按 `url` 去重与 `trimHistory`、
+搜索历史去重与置顶。
 **QuickJS 微任务能力探测**（`AsyncCapabilityProbeTest` / `RawQuickJsAsyncTest`，作为证据保留）：
 
 | 探测 | 实测 |
@@ -225,3 +230,4 @@ WHPX 报告 operational，qemu 却几乎不耗 CPU（虚拟机未真正执行）
 | v1.5 | 2026-10-20 | 第 5.2 节补：异步桥（WebView）验证链路与 QuickJS 微任务探测的实测结论 |
 | v1.6 | 2026-10-20 | 5.2 节补宿主能力与列表页端到端的验证项（共 8 个 instrumented test） |
 | v1.7 | 2026-10-20 | 5.2 节补详情页三条链路的验证项（instrumented test 合计 13 个） |
+| v1.8 | 2026-10-20 | 5.2 节补本地仓库（Room）验证项（instrumented test 合计 22 个）；工具链补 KSP |
