@@ -69,7 +69,8 @@ object ScriptProbe {
                 val href = engine.eval("\$('.item a').attr('href')")
                 lines += Line("取值 \$('a').attr('href')", describe(href), ok = describe(href) == "/1")
 
-                val title = engine.eval("helpElText(\$('.item .title'))")
+                // 选择器命中两个 .title，取第一个（顺便验证 eq(0)）
+                val title = engine.eval("helpElText(\$('.item .title').eq(0))")
                 lines += Line("helpElText", describe(title), ok = describe(title) == "A")
 
                 bridge.loadConfig(demoConfig)

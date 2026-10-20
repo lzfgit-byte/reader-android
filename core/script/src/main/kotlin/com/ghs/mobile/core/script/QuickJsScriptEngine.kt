@@ -18,8 +18,13 @@ class QuickJsScriptEngine : ScriptEngine {
     private val runtime: QuickJS = QuickJS.createRuntimeWithEventQueue()
     private val context: JSContext = runtime.createContext()
 
+    /**
+     * 注意参数顺序：QuickJS 封装的签名是 `executeScript(script, name)`——
+     * 名字在后。真机上写反会让脚本内容变成 `"<eval>"`，报
+     * `SyntaxError: unexpected token '<'`（已由 instrumented test 抓到过）。
+     */
     override fun eval(script: String, name: String): Any? =
-        context.executeScript(name, script)
+        context.executeScript(script, name)
 
     override fun setGlobal(name: String, value: Any?) {
         when (value) {
