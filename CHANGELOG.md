@@ -74,6 +74,11 @@
   - 六张表按 `local-store.md` §3.2 落地：`app_setting` / `reading_progress` / `collect` / `viewed_history` / `search_history` / `config_unit`
   - `LocalRepository`：进度以 `itemUrl` 唯一且"旧时间戳不覆盖新进度"；设置按 `prefs`/`device` 隔离；收藏累加 `count`；历史 `trimHistory(keep)`；搜索历史按 `(configKey,value)` 去重
   - instrumented test 增至 22 个（新增仓库 9 项）
+- **演示界面（列表 / 图集 / 文本 / 视频）**
+  - 内置合成配置与样例页面（`assets/demo/`），解析链路与真实配置一致，完全离线
+  - 列表两列卡片（封面占位/标题/标签/已读进度）、图集网格、文本块渲染、视频清晰度列表
+  - 打开详情即写 `reading_progress` / `viewed_history`，返回列表显示"读到第 N / M 页"
+  - 修复：主线程等待脚本结果会死锁（改为后台线程创建会话）；返回详情后的加载态卡死（改为回填缓存列表）；文本正文需取 `.html()` 才能保留换行与内嵌图片
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -91,6 +96,11 @@
   - 六张表按 `local-store.md` §3.2 落地：`app_setting` / `reading_progress` / `collect` / `viewed_history` / `search_history` / `config_unit`
   - `LocalRepository`：进度以 `itemUrl` 唯一且"旧时间戳不覆盖新进度"；设置按 `prefs`/`device` 隔离；收藏累加 `count`；历史 `trimHistory(keep)`；搜索历史按 `(configKey,value)` 去重
   - instrumented test 增至 22 个（新增仓库 9 项）
+- **演示界面（列表 / 图集 / 文本 / 视频）**
+  - 内置合成配置与样例页面（`assets/demo/`），解析链路与真实配置一致，完全离线
+  - 列表两列卡片（封面占位/标题/标签/已读进度）、图集网格、文本块渲染、视频清晰度列表
+  - 打开详情即写 `reading_progress` / `viewed_history`，返回列表显示"读到第 N / M 页"
+  - 修复：主线程等待脚本结果会死锁（改为后台线程创建会话）；返回详情后的加载态卡死（改为回填缓存列表）；文本正文需取 `.html()` 才能保留换行与内嵌图片
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
