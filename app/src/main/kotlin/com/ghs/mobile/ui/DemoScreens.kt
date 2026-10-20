@@ -29,6 +29,10 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Info
+import kotlinx.coroutines.launch
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.material3.Button
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -48,6 +52,7 @@ import com.ghs.mobile.GhsApp
 import com.ghs.mobile.core.data.LocalRepository
 import com.ghs.mobile.core.data.SettingScope
 import com.ghs.mobile.core.model.BlockType
+import com.ghs.mobile.core.model.Detail
 import com.ghs.mobile.core.model.DetailInfo
 import com.ghs.mobile.core.model.DetailType
 import com.ghs.mobile.core.model.Item
@@ -69,6 +74,7 @@ private sealed interface Screen {
     data object Loading : Screen
     data class List(val page: Page) : Screen
     data class Detail(val item: Item, val info: DetailInfo?) : Screen
+    data class ComicReader(val item: Item, val pages: kotlin.collections.List<com.ghs.mobile.core.model.Detail>, val startIndex: Int) : Screen
     data class Failed(val message: String) : Screen
 }
 
@@ -84,6 +90,9 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
     var lastPage by remember { mutableStateOf<Page?>(null) }
     var progressByUrl by remember { mutableStateOf<Map<String, ReadingProgress>>(emptyMap()) }
     var text by remember { mutableStateOf<TextContent?>(null) }
+    var textUrl by remember { mutableStateOf<String?>(null) }
+    var textLoading by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         val created = runCatching { withContext(Dispatchers.IO) { DemoSession(app) } }
@@ -118,15 +127,85 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
         val active = session ?: return@LaunchedEffect
         screen = Screen.Detail(item, null)
         text = null
+        textUrl = null
         val info = runCatching { withContext(Dispatchers.IO) { active.detail(item) } }.getOrNull()
         screen = Screen.Detail(item, info)
         if (info != null) {
             withContext(Dispatchers.IO) { rememberOpened(repository, item, info) }
         }
         if (info?.detailType == DetailType.TEXT) {
-            val url = info.details.firstOrNull()?.url ?: item.jumpUrl
-            text = runCatching { withContext(Dispatchers.IO) { active.textContent(url) } }.getOrNull()
+            textUrl = info.details.firstOrNull()?.url ?: item.jumpUrl
         }
+    }
+
+    // 文本章节：按当前章节 URL 加载，并回写进度
+    LaunchedEffect(textUrl) {
+        val url = textUrl ?: return@LaunchedEffect
+        val active = session ?: return@LaunchedEffect
+        val item = (screen as? Screen.Detail)?.item
+        textLoading = true
+        val loaded = runCatching { withContext(Dispatchers.IO) { active.textContent(url) } }.getOrNull()
+        text = loaded
+        textLoading = false
+        if (item != null && loaded != null) {
+            withContext(Dispatchers.IO) {
+                val chapterIndex = Regex("page=(\\d+)").find(url)?.groupValues?.get(1)?.toIntOrNull()?.minus(1) ?: 0
+                repository.saveProgress(
+                    ReadingProgress(
+                        itemUrl = item.jumpUrl,
+                        kind = ReaderKind.TEXT,
+                        chapterUrl = url,
+                        chapterIndex = chapterIndex,
+                        chapterCount = 0,
+                        chapterOffset = 0,
+                        percent = 0.0,
+                        updatedAt = System.currentTimeMillis(),
+                    ),
+                )
+            }
+        }
+    }
+
+    // 阅读器自带顶栏：直接整屏渲染，避免与外层 Scaffold 叠成双顶栏
+    when (val reader = screen) {
+        is Screen.ComicReader -> {
+            ComicReaderScreen(
+                title = reader.item.title,
+                pages = reader.pages,
+                startIndex = reader.startIndex,
+                onProgress = { index ->
+                    scope.launch {
+                        repository.saveProgress(
+                            ReadingProgress(
+                                itemUrl = reader.item.jumpUrl,
+                                kind = ReaderKind.IMAGE,
+                                chapterUrl = reader.pages.getOrNull(index)?.url.orEmpty(),
+                                chapterIndex = 0,
+                                chapterCount = reader.pages.size,
+                                chapterOffset = index,
+                                percent = ((index + 1) * 100.0 / reader.pages.size.coerceAtLeast(1)),
+                                updatedAt = System.currentTimeMillis(),
+                            ),
+                        )
+                    }
+                },
+                onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
+            )
+            return
+        }
+
+        is Screen.Detail -> if (reader.info?.detailType == DetailType.TEXT) {
+            TextReaderScreen(
+                itemTitle = reader.item.title,
+                content = text,
+                loading = textLoading,
+                onNavigate = { url -> if (url.isNotEmpty()) textUrl = url },
+                onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
+            )
+            return
+        }
+
+        else -> Unit
     }
 
     Scaffold(
@@ -169,8 +248,17 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
                 is Screen.Detail -> DetailScreen(
                     item = current.item,
                     info = current.info,
-                    text = text,
+                    resumeIndex = progressByUrl[current.item.jumpUrl]?.chapterOffset ?: 0,
+                    onOpenComicPage = { index ->
+                        val info = current.info
+                        if (info != null && info.details.isNotEmpty()) {
+                            screen = Screen.ComicReader(current.item, info.details, index)
+                        }
+                    },
                 )
+
+                // 阅读器在上面已整屏返回，这里只是为了让 when 穷尽
+                is Screen.ComicReader -> Unit
             }
         }
     }
@@ -205,6 +293,7 @@ private fun titleFor(screen: Screen): String = when (screen) {
     is Screen.Failed -> "演示来源"
     is Screen.List -> "演示列表 · ${screen.page.items.size} 项"
     is Screen.Detail -> screen.item.title.ifEmpty { "详情" }
+    is Screen.ComicReader -> screen.item.title.ifEmpty { "阅读" }
 }
 
 @Composable
@@ -297,7 +386,12 @@ private fun readableType(item: Item): String = when (item.type) {
 // ── 详情 ────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun DetailScreen(item: Item, info: DetailInfo?, text: TextContent?) {
+private fun DetailScreen(
+    item: Item,
+    info: DetailInfo?,
+    resumeIndex: Int,
+    onOpenComicPage: (Int) -> Unit,
+) {
     if (info == null) {
         Centered {
             CircularProgressIndicator()
@@ -307,44 +401,54 @@ private fun DetailScreen(item: Item, info: DetailInfo?, text: TextContent?) {
     }
 
     when (info.detailType) {
-        DetailType.COMIC -> ComicDetail(info)
-        DetailType.TEXT -> TextDetail(text)
+        DetailType.COMIC -> ComicDetail(info, resumeIndex, onOpenComicPage)
         DetailType.MP4, DetailType.M3U8 -> VideoDetail(info)
         else -> Centered { Text("暂不支持的类型：${info.detailType}") }
     }
 }
 
 @Composable
-private fun ComicDetail(info: DetailInfo) {
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        contentPadding = PaddingValues(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        items(info.details) { page ->
-            Card {
-                Column {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .aspectRatio(3f / 4f)
-                            .background(MaterialTheme.colorScheme.surfaceVariant),
-                        contentAlignment = Alignment.Center,
-                    ) {
+private fun ComicDetail(info: DetailInfo, resumeIndex: Int, onOpenPage: (Int) -> Unit) {
+    Column(modifier = Modifier.fillMaxSize()) {
+        if (resumeIndex > 0) {
+            Button(
+                onClick = { onOpenPage(resumeIndex) },
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+            ) {
+                Text("继续阅读 · 第 ${resumeIndex + 1} 页")
+            }
+        }
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            contentPadding = PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.weight(1f),
+        ) {
+            itemsIndexed(info.details) { index, page ->
+                Card(onClick = { onOpenPage(index) }) {
+                    Column {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .aspectRatio(3f / 4f)
+                                .background(MaterialTheme.colorScheme.surfaceVariant),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            Text(
+                                page.title.ifEmpty { "第 ${index + 1} 页" },
+                                style = MaterialTheme.typography.titleMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                         Text(
-                            page.title.ifEmpty { "？" },
-                            style = MaterialTheme.typography.titleMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            page.preferredUrl,
+                            style = MaterialTheme.typography.labelSmall,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(8.dp),
                         )
                     }
-                    Text(
-                        page.preferredUrl,
-                        style = MaterialTheme.typography.labelSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.padding(8.dp),
-                    )
                 }
             }
         }

@@ -87,8 +87,8 @@ const getData = (): WebConfig => /* break */ ({
     return {
       title: helpElText($page('h1')),
       html: $page('.content').html(),
-      prevUrl: '',
-      nextUrl: ''
+      prevUrl: helpElAttr($page('.nav a.prev'), 'href'),
+      nextUrl: helpElAttr($page('.nav a.next'), 'href')
     };
   },
 
