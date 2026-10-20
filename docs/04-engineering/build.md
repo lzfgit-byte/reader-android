@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.6
+> **版本**：v1.7
 > **最后更新**：2026-10-20
-> **取代/被取代**：取代同文件 v1.5
+> **取代/被取代**：取代同文件 v1.6
 
 # 本地构建与验证
 
@@ -159,6 +159,9 @@ await getHtml(url) -> cheerio.load(html) -> helpElText(...)
 `本地 HTML → 配置脚本解析 → Item / Pagination / Tag`：
 2 个条目（含 `type`、`data-src` 封面、标签）、2 个分页（`isCurrent` / 空 url 视为 disabled）、
 2 个标签（其中一个 `url` 为空 = 占位）。
+**详情页三条链路**：`DetailChainInstrumentedTest`（5 项）验证图集 / 文本 / 视频：
+`fullUrl` 优先于 `url`、文本正文经 `PlainTextToBlocks` 成块（含内嵌图）、
+视频 `quality` 映射、章节 `isCurrent`、未知类型返回空。
 **QuickJS 微任务能力探测**（`AsyncCapabilityProbeTest` / `RawQuickJsAsyncTest`，作为证据保留）：
 
 | 探测 | 实测 |
@@ -221,3 +224,4 @@ WHPX 报告 operational，qemu 却几乎不耗 CPU（虚拟机未真正执行）
 | v1.4 | 2026-10-20 | 第 5 节补：adb 直跑 instrumentation 的完整命令与 10 项实测值；AS 本地工具链设置；wrapper 钉 8.9、删除 `gradle-daemon-jvm.properties` 的原因 |
 | v1.5 | 2026-10-20 | 第 5.2 节补：异步桥（WebView）验证链路与 QuickJS 微任务探测的实测结论 |
 | v1.6 | 2026-10-20 | 5.2 节补宿主能力与列表页端到端的验证项（共 8 个 instrumented test） |
+| v1.7 | 2026-10-20 | 5.2 节补详情页三条链路的验证项（instrumented test 合计 13 个） |

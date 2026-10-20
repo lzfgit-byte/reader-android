@@ -66,6 +66,10 @@
   - `HttpScriptHost`（:core:script）：OkHttp 取页/请求 + 无头 WebView 执行页面脚本（加载→onPageFinished→求值→销毁，全程可诊断超时）
   - `ConfigEngine`（:core:engine）：把「配置 + HTML」映射为 `Item` / `Pagination` / `Tag`，丢弃缺 `jumpUrl` 的条目、保留占位标签、空 url 分页即禁用
   - instrumented test 增至 8 个：宿主能力 3 项 + 列表页端到端 1 项（本地 HTTP 服务，不访问外网）
+- **详情页三条链路（图集 / 文本 / 视频）**
+  - `ConfigEngine.detailInfo` / `contents` / `comicImages` / `textContent`：把 `async getDetailInfo` 等方法的返回值映射为 `DetailInfo` / `CContent` / `CComic` / `TextContent`
+  - 文本正文：作者 `blocks` 优先，否则 `PlainTextToBlocks` 切分；`fullUrl` 优先、`isCurrent`/`quality`/`info` 全量保留
+  - instrumented test 增至 13 个（新增详情 5 项）
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -75,6 +79,10 @@
   - `HttpScriptHost`（:core:script）：OkHttp 取页/请求 + 无头 WebView 执行页面脚本（加载→onPageFinished→求值→销毁，全程可诊断超时）
   - `ConfigEngine`（:core:engine）：把「配置 + HTML」映射为 `Item` / `Pagination` / `Tag`，丢弃缺 `jumpUrl` 的条目、保留占位标签、空 url 分页即禁用
   - instrumented test 增至 8 个：宿主能力 3 项 + 列表页端到端 1 项（本地 HTTP 服务，不访问外网）
+- **详情页三条链路（图集 / 文本 / 视频）**
+  - `ConfigEngine.detailInfo` / `contents` / `comicImages` / `textContent`：把 `async getDetailInfo` 等方法的返回值映射为 `DetailInfo` / `CContent` / `CComic` / `TextContent`
+  - 文本正文：作者 `blocks` 优先，否则 `PlainTextToBlocks` 切分；`fullUrl` 优先、`isCurrent`/`quality`/`info` 全量保留
+  - instrumented test 增至 13 个（新增详情 5 项）
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
