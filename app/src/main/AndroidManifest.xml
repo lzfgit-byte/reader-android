@@ -4,6 +4,7 @@
     <uses-permission android:name="android.permission.INTERNET" />
 
     <application
+        android:name=".GhsApp"
         android:allowBackup="false"
         android:label="GHS Mobile"
         android:supportsRtl="true"

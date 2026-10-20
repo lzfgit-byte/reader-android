@@ -62,6 +62,11 @@ class WebViewScriptEngine(context: Context) : ScriptEngine {
      * 混用会让前一次异步回调把结果写进下一次的等待槽。
      */
     override fun eval(script: String, name: String): Any? {
+        // 主线程上等脚本结果会把自己堵死：WebView 的 onPageFinished / 回调都要主线程派发。
+        // 与其静默超时 15 秒，不如立刻给出明确错误。
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            throw IllegalStateException("不能在主线程等待脚本结果（$name）；请切到后台线程再调用")
+        }
         if (!ready.await(READY_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
             throw IllegalStateException("WebView 未就绪（$name）")
         }
@@ -139,6 +144,9 @@ class WebViewScriptEngine(context: Context) : ScriptEngine {
     // ── 内部 ─────────────────────────────────────────────────────────────────
 
     private fun evaluateAndAwait(expression: String, name: String, timeoutMs: Long): Any? {
+        if (Looper.myLooper() == Looper.getMainLooper()) {
+            throw IllegalStateException("不能在主线程等待脚本结果（$name）；请切到后台线程再调用")
+        }
         if (!ready.await(READY_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
             throw IllegalStateException("WebView 未就绪（$name）")
         }
