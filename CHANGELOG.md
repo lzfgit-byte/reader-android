@@ -64,6 +64,11 @@
 
 ### Fixed
 
+- **真机验证抓到两个 bug（JVM 侧测不出来）**
+  - `QuickJsScriptEngine.eval` 把参数写反：封装签名是 `executeScript(script, name)`，写反后脚本内容变成 `"<eval>"`，报 `SyntaxError: unexpected token '<'`
+  - `ScriptProbe` 用 `$('.item .title')` 命中两个元素，`helpElText` 拼接成 `AB`；改用 `.eq(0)` 并顺带覆盖 `eq`
+### Fixed
+
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
 
 ### Changed

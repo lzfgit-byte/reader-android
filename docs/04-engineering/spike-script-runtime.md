@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.0
+> **版本**：v1.1
 > **最后更新**：2026-10-19
-> **取代/被取代**：无
+> **取代/被取代**：取代同文件 v1.0
 
 # Spike 报告：脚本运行时（JVM 侧）
 
@@ -57,20 +57,56 @@ systemProperty("user.home", scratch.resolve("home"))   // 关键：Truffle 从 u
 
 ## 4. 没有验证的部分（下一段 M0）
 
-| 待验证 | 为什么现在验不了 | 计划 |
+| 待验证 | 为什么当时验不了 | 现状 |
 |---|---|---|
-| QuickJS 的 ES2020 兼容性 | 需要 Android NDK 与 native 构建 | 装 SDK/NDK 后用同一批配置回归 |
-| `$` 桥接的真实 HTML 结果 | 手上没有可入库的真实页面（`AGENTS.md` §7），且不允许访问来源 | 用 `tmp/` 本地快照（不入库）比对 |
-| 异步能力（`getHtml`/`net.request`/`executeJs`） | 本 spike 把它们替换成 reject 桩，只验证"不联网也能求值" | 接 HTTP 桩后验证 Promise 桥 |
-| 无头 WebView 兜底 | 需要 Android 运行时 | M0 第二阶段 |
+| QuickJS 的 ES2020 兼容性 | 需要 Android 运行时 | ✅ **已验**（见 §6） |
+| `$` 桥接的真实 HTML 结果 | 手上没有可入库的真实页面（`AGENTS.md` §7），且不允许访问来源 | 仍待：需本地快照比对 |
+| 异步能力（`getHtml`/`net.request`/`executeJs`） | 本 spike 把它们替换成 reject 桩，只验证"不联网也能求值" | 仍待：需接 HTTP 桩 |
+| 无头 WebView 兜底 | 需要 Android 运行时 | 仍待：M0 第二阶段 |
 
 ## 5. 结论
 
 **执行模型成立**：切分 → 求值 → 拿到配置对象 → `this` 绑定 → 句柄式 `$` 桥接 → 方法返回领域数据。
 `ADR-0003` 的"QuickJS 主 + WebView 兜底"不需要在协议层面调整，风险收敛到 QuickJS 的 JS 特性覆盖与异步桥。
 
-## 6. 变更记录
+## 6. 真机验证（已完成）
+
+在 Android 模拟器（API 37，x86_64）上运行 `:app` 的 instrumented test：
+
+```
+adb shell am instrument -w \
+  -e class com.ghs.mobile.ScriptRuntimeInstrumentedTest \
+  com.ghs.mobile.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+结果 **`OK (1 test)`**，`ScriptProbe` 10 项自检全部通过：
+
+| 自检项 | 实测值 |
+|---|---|
+| QuickJS 启动 | 20 ms |
+| `1 + 1` | `2` |
+| `typeof globalThis` | `object` |
+| ES2020 基础能力（`BigInt`/`Promise`/`Symbol`） | `true` |
+| `$('.item').length` | `2` |
+| `$('a').attr('href')` | `/1` |
+| `helpElText($('.item .title').eq(0))` | `A` |
+| 配置求值 · 7 个必需方法 | `7 / 7` |
+| `getTags` | `2 项` |
+| `this` 绑定 `adapterSearchUrl` | `https://example.comk` |
+| 全流程耗时 | 106 ms |
+
+**真机验证抓到两个真实 bug**（JVM/GraalJS 侧都测不出来）：
+
+| # | 现象 | 原因 | 修复 |
+|---|---|---|---|
+| 1 | `QuickJSException: SyntaxError: unexpected token '<' at 1 + 1:1` | QuickJS 封装的签名是 `executeScript(script, name)`，我把参数写反了，脚本内容变成 `"<eval>"` | 改回 `(script, name)`，并在 KDoc 里标注这个坑 |
+| 2 | 自检项 `helpElText=AB`（期望 `A`） | 探针用了 `$('.item .title')`，它命中两个元素、`text` 拼接成 `AB` | 探针改用 `.eq(0)`，顺带把 `eq` 也纳入覆盖 |
+
+这两条正说明"能在 JVM 上跑"与"能在真机上跑"不是一回事——原生库参数顺序、绑定语义都只有真机才暴露。
+
+## 7. 变更记录
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-10-19 | 记录 JVM 侧脚本运行时 spike：6 项假设的验证结论、桥接协议、Truffle 环境坑、未验证项与结论 |
+| v1.1 | 2026-10-20 | 新增 §6 真机验证：模拟器上 instrumented test 通过、10 项实测值、抓到并修复的 2 个真机 bug |

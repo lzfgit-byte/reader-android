@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.3
-> **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.2
+> **版本**：v1.4
+> **最后更新**：2026-10-20
+> **取代/被取代**：取代同文件 v1.3
 
 # 本地构建与验证
 
@@ -115,19 +115,66 @@ $env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFI
 
 `:app` 带一个 instrumented test：`ScriptRuntimeInstrumentedTest`。它跑 `ScriptProbe`，要求每一项自检都通过。
 
-```powershell
-# 手机用 USB 连上并开 USB 调试，确认 adb 能看到
-& "$tc\android-sdk\platform-tools\adb.exe" devices
+### 5.1 推荐方式：绕过 Gradle，直接用 adb
 
-& "$tc\gradle\bin\gradle.bat" -p $root --console=plain --no-daemon :app:connectedDebugAndroidTest
+`connectedDebugAndroidTest` 会在执行期再解析一批 AGP 内部测试组件（`_internal-unified-test-platform-*`），
+在网络受限时会失败。更省事、也更抗网络的做法是手动装包跑 instrumentation：
+
+```powershell
+$adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
+
+# 1) 构建（不联网也能跑，依赖已在缓存里）
+& "$root\.toolchain\gradle\bin\gradle.bat" -p $root --no-daemon `
+    :app:assembleDebug :app:assembleDebugAndroidTest
+
+# 2) 装主包 + 测试包
+& $adb install -r "$root\app\build\outputs\apk\debug\app-debug.apk"
+& $adb install -r "$root\app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk"
+
+# 3) 跑测试（输出 OK (1 test) 即通过）
+& $adb shell am instrument -w `
+    -e class com.ghs.mobile.ScriptRuntimeInstrumentedTest `
+    com.ghs.mobile.test/androidx.test.runner.AndroidJUnitRunner
 ```
 
-自检项：QuickJS 启动耗时、`1+1`、`globalThis`、ES2020 基础能力（`BigInt` / `Promise` / `Symbol`）、
-选择器 `length`、`attr`、`helpElText`、配置求值（7 个必需方法）、`getTags`、`this` 绑定。
+### 5.2 自检项与实测值
 
-> **本机跑不了模拟器**：`HypervisorPresent=True` 但嵌套虚拟化不可用——WHPX 报告 operational，
-> qemu 却几乎不耗 CPU（虚拟机未真正执行）；改用软件模拟（`ANDROID_I_WANT_MY_TCG=yes` + `-accel off`）后
-> qemu 直接退出。因此真机验证只能走 USB 连接，或另找支持嵌套虚拟化的机器。
+| 自检项 | 模拟器实测 |
+|---|---|
+| QuickJS 启动 | 20 ms |
+| `1 + 1` | 2 |
+| `globalThis` | object |
+| ES2020 能力（`BigInt`/`Promise`/`Symbol`） | true |
+| `$('.item').length` | 2 |
+| `$('a').attr('href')` | /1 |
+| `helpElText(...eq(0))` | A |
+| 配置求值 · 必需方法 | 7 / 7 |
+| `getTags` | 2 项 |
+| `this` 绑定 | `https://example.comk` |
+| 全流程耗时 | 106 ms |
+
+### 5.3 在 Android Studio 里跑（无网络环境）
+
+AS 打开本项目时会自动改写 wrapper 版本并生成 `gradle/gradle-daemon-jvm.properties`（要求 Java 25），
+本项目的 AGP 8.5.2 与它们不兼容。建议在 AS 里显式指定本地工具链，避免任何下载：
+
+| AS 设置项 | 值 |
+|---|---|
+| Settings → Build Tools → Gradle → **Use Gradle from** | `Specified location` → `D:\projects\ghs-mobile-android\.toolchain\gradle` |
+| 同上 → **Gradle user home** | `D:\projects\ghs-mobile-android\.toolchain\gradle-home` |
+| 同上 → **Gradle JDK** | `D:\Program Files\Java\jdk`（21） |
+| Settings → Appearance & Behavior → System Settings → **HTTP Proxy** | `No proxy`（默认的「自动检测 PAC」在受限网络下会一直超时） |
+
+> 若 AS 重新生成了 `gradle/gradle-daemon-jvm.properties`，删掉即可：它把 daemon JVM 钉在 25，
+> 而本项目用 JDK 21。wrapper 已被钉在 **Gradle 8.9**（与 AGP 8.5.2 匹配）。
+
+### 5.4 模拟器
+
+本机（Windows 11 + WHPX）**无法运行模拟器**：`HypervisorPresent=True` 但嵌套虚拟化不可用——
+WHPX 报告 operational，qemu 却几乎不耗 CPU（虚拟机未真正执行）；改软件模拟
+（`ANDROID_I_WANT_MY_TCG=yes` + `-accel off`）后 qemu 直接退出。
+
+因此上表数据是在**另装的 Android Studio 自带模拟器**上跑出来的（`emulator-5554`，API 37 / x86_64）。
 
 ---
 
@@ -139,3 +186,4 @@ $env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFI
 | v1.1 | 2026-10-19 | 补 Android SDK（cmdline-tools 12.0 + android-34 + build-tools 34）、`sdkmanager` 免交互许可证、APK 构建步骤与产物基线 |
 | v1.2 | 2026-10-19 | 模块与基线更新：新增 `:core:script`（QuickJS 适配层），引擎测试 72 个，APK 13.8MB（含 QuickJS 四 ABI） |
 | v1.3 | 2026-10-20 | 新增第 5 节「真机验证」（instrumented test 用法）；补模拟器在本机不可用的原因（嵌套虚拟化） |
+| v1.4 | 2026-10-20 | 第 5 节补：adb 直跑 instrumentation 的完整命令与 10 项实测值；AS 本地工具链设置；wrapper 钉 8.9、删除 `gradle-daemon-jvm.properties` 的原因 |
