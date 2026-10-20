@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.9
+> **版本**：v1.10
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.8
+> **取代/被取代**：取代同文件 v1.9
 
 # 配置规范（Config Unit）
 
@@ -404,6 +404,17 @@ my-source/
 - **页面上下文才有**：`document`、`Image`、`canvas`、`Md5` —— 只在 `executeJs` 注入代码与 `adapterImageCode` 中可用。
 - **旧式事件 API 不支持**：`net.request(...).on('response', …)` 这类 Electron 风格写法会给出 `E-CFG-030` 警告，请改成 Promise 形态。
 
+### 8.2 异步语义（v1 实现约定）
+
+`getHtml` / `net.request` / `executeJs` 在 v1 是**同步宿主实现**：Kotlin 侧阻塞取回结果后立即返回。
+
+- 配置里写 `await getHtml(url)` **语义不变**——`await` 一个非 Promise 值会立即得到它
+- 但 `Promise.all([...])` 这类「并发组合」不会真的并发，只是顺序执行
+- 若配置需要真正的并发或 `new Promise` 驱动的回调（如等待页面某事件），依赖宿主引擎的事件循环；
+  v1 由 WebView 通道提供（见 [ADR-0016](../02-architecture/adr/ADR-0016-async-script-host-webview.md)）
+- QuickJS 通道没有事件循环（封装未暴露 `JS_ExecutePendingJob`），**只支持同步方法**，不得用于异步配置
+
+---
 ### 8.1 编辑器智能提示的数据源
 
 Web 管理界面的源码编辑器（Monaco）通过注入一份 `config-api.d.ts` 获得补全、hover、参数签名与诊断（见 [ADR-0014](../02-architecture/adr/ADR-0014-monaco-editor-intellisense.md)）。
@@ -643,3 +654,4 @@ Web 管理界面的源码编辑器（Monaco）通过注入一份 `config-api.d.t
 | v1.7 | 2026-10-19 | 补充文本正文实际形态（**纯文本 + 内嵌 `<img>`**）的说明，未新增字段或解析器 |
 | v1.8 | 2026-10-19 | 新增 §8.1：编辑器智能提示的数据源为 `config-api.d.ts`（本节与 §3、rest-contract §3 的派生物），明确"改规范必须同步 d.ts、不得反向修改规范" |
 | v1.9 | 2026-10-19 | **实现期回流修正**：`key` 正则放宽为允许大小写（3 份真实配置因大写被判非法）；§9.2 新增第 32 条核对记录 |
+| v1.10 | 2026-10-20 | 新增 §8.2 异步语义：`getHtml`/`net.request`/`executeJs` 为同步宿主实现，`await` 语义不变；QuickJS 通道仅支持同步，异步由 WebView 承担（ADR-0016） |
