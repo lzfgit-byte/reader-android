@@ -62,11 +62,19 @@
 - 功能 **F29 人机校验交互**：取页命中校验页时在顶层弹出独立窗口，完成后自动继续加载并解析
 - 功能 F19 配置编辑器、F20 数据备份与恢复、F21 外观与显示、F22 应用更新检查（前期补齐）
 
+- **宿主能力与列表页端到端**
+  - `HttpScriptHost`（:core:script）：OkHttp 取页/请求 + 无头 WebView 执行页面脚本（加载→onPageFinished→求值→销毁，全程可诊断超时）
+  - `ConfigEngine`（:core:engine）：把「配置 + HTML」映射为 `Item` / `Pagination` / `Tag`，丢弃缺 `jumpUrl` 的条目、保留占位标签、空 url 分页即禁用
+  - instrumented test 增至 8 个：宿主能力 3 项 + 列表页端到端 1 项（本地 HTTP 服务，不访问外网）
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
   - `QuickJsScriptEngine.eval` 把参数写反：封装签名是 `executeScript(script, name)`，写反后脚本内容变成 `"<eval>"`，报 `SyntaxError: unexpected token '<'`
   - `ScriptProbe` 用 `$('.item .title')` 命中两个元素，`helpElText` 拼接成 `AB`；改用 `.eq(0)` 并顺带覆盖 `eq`
+- **宿主能力与列表页端到端**
+  - `HttpScriptHost`（:core:script）：OkHttp 取页/请求 + 无头 WebView 执行页面脚本（加载→onPageFinished→求值→销毁，全程可诊断超时）
+  - `ConfigEngine`（:core:engine）：把「配置 + HTML」映射为 `Item` / `Pagination` / `Tag`，丢弃缺 `jumpUrl` 的条目、保留占位标签、空 url 分页即禁用
+  - instrumented test 增至 8 个：宿主能力 3 项 + 列表页端到端 1 项（本地 HTTP 服务，不访问外网）
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**

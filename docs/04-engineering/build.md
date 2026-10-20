@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.5
+> **版本**：v1.6
 > **最后更新**：2026-10-20
-> **取代/被取代**：取代同文件 v1.4
+> **取代/被取代**：取代同文件 v1.5
 
 # 本地构建与验证
 
@@ -151,6 +151,14 @@ await getHtml(url) -> cheerio.load(html) -> helpElText(...)
 
 返回 `title=T / status=200 / body=true / delayed=true / page=page-result`，即异步语义成立。
 
+**宿主能力（OkHttp + 无头 WebView）**：`HostTransportInstrumentedTest` 用测试进程内的本地 HTTP 服务验证——
+取页返回 HTML、请求返回状态码/自定义头/响应体、无头页面执行后能读到 `document.title`、页面写入的全局变量，
+以及对象结果被 JSON 化。
+
+**列表页端到端**：`ConfigEngineInstrumentedTest` 走完
+`本地 HTML → 配置脚本解析 → Item / Pagination / Tag`：
+2 个条目（含 `type`、`data-src` 封面、标签）、2 个分页（`isCurrent` / 空 url 视为 disabled）、
+2 个标签（其中一个 `url` 为空 = 占位）。
 **QuickJS 微任务能力探测**（`AsyncCapabilityProbeTest` / `RawQuickJsAsyncTest`，作为证据保留）：
 
 | 探测 | 实测 |
@@ -212,3 +220,4 @@ WHPX 报告 operational，qemu 却几乎不耗 CPU（虚拟机未真正执行）
 | v1.3 | 2026-10-20 | 新增第 5 节「真机验证」（instrumented test 用法）；补模拟器在本机不可用的原因（嵌套虚拟化） |
 | v1.4 | 2026-10-20 | 第 5 节补：adb 直跑 instrumentation 的完整命令与 10 项实测值；AS 本地工具链设置；wrapper 钉 8.9、删除 `gradle-daemon-jvm.properties` 的原因 |
 | v1.5 | 2026-10-20 | 第 5.2 节补：异步桥（WebView）验证链路与 QuickJS 微任务探测的实测结论 |
+| v1.6 | 2026-10-20 | 5.2 节补宿主能力与列表页端到端的验证项（共 8 个 instrumented test） |
