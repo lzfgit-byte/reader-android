@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.4
+> **版本**：v1.5
 > **最后更新**：2026-10-20
-> **取代/被取代**：取代同文件 v1.3
+> **取代/被取代**：取代同文件 v1.4
 
 # 本地构建与验证
 
@@ -139,6 +139,30 @@ $adb = "$env:LOCALAPPDATA\Android\Sdk\platform-tools\adb.exe"
 
 ### 5.2 自检项与实测值
 
+**脚本运行时（QuickJS，同步）**：10 项自检全绿（见上表）。
+
+**异步桥（WebView，真事件循环）**：`AsyncBridgeInstrumentedTest` 在模拟器上跑通完整链路——
+
+```
+await getHtml(url) -> cheerio.load(html) -> helpElText(...)
+-> await net.request({...}) -> await new Promise + setTimeout
+-> await executeJs(url, code)
+```
+
+返回 `title=T / status=200 / body=true / delayed=true / page=page-result`，即异步语义成立。
+
+**QuickJS 微任务能力探测**（`AsyncCapabilityProbeTest` / `RawQuickJsAsyncTest`，作为证据保留）：
+
+| 探测 | 实测 |
+|---|---|
+| `Promise.then` 后标志位 | `pending`（永不前进） |
+| `async` 函数里的 `await` | `running`（卡住） |
+| 主动 `postEventQueue` 泵 | 仍是 `pending` |
+| `setTimeout` / `queueMicrotask` | `undefined` |
+
+结论：该封装没有 `JS_ExecutePendingJob`，异步必须由 WebView 承担（ADR-0016）。
+
+
 | 自检项 | 模拟器实测 |
 |---|---|
 | QuickJS 启动 | 20 ms |
@@ -187,3 +211,4 @@ WHPX 报告 operational，qemu 却几乎不耗 CPU（虚拟机未真正执行）
 | v1.2 | 2026-10-19 | 模块与基线更新：新增 `:core:script`（QuickJS 适配层），引擎测试 72 个，APK 13.8MB（含 QuickJS 四 ABI） |
 | v1.3 | 2026-10-20 | 新增第 5 节「真机验证」（instrumented test 用法）；补模拟器在本机不可用的原因（嵌套虚拟化） |
 | v1.4 | 2026-10-20 | 第 5 节补：adb 直跑 instrumentation 的完整命令与 10 项实测值；AS 本地工具链设置；wrapper 钉 8.9、删除 `gradle-daemon-jvm.properties` 的原因 |
+| v1.5 | 2026-10-20 | 第 5.2 节补：异步桥（WebView）验证链路与 QuickJS 微任务探测的实测结论 |
