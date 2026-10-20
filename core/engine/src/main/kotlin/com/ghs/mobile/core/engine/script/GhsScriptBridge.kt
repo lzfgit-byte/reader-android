@@ -30,6 +30,8 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
 
     /** 注入宿主函数与 JS 侧 prelude；返回自身便于链式调用 */
     fun install(transport: ScriptHostTransport = ScriptHostTransport.None): GhsScriptBridge {
+        // 先等引擎就绪（WebView 需要页面加载完成，否则注入会被上下文重置丢弃）
+        engine.eval("1", "ghs-ready")
         bindHostFunctions(transport)
         // prelude 是**语句块**，而各引擎的 eval 会把脚本包进 `return (...)`；
         // 套一层 IIFE 让它成为单个表达式（否则语法错误且会被静默吞掉）。

@@ -121,11 +121,9 @@ class WebViewScriptEngine(context: Context) : ScriptEngine {
             }; 0
         """.trimIndent()
         onMain { webView?.evaluateJavascript(shim, null) }
-        // 同步屏障：确保 shim 已经装进 JS 上下文，再返回给调用方。
+        // 同步屏障：eval 会先等页面就绪，再按顺序执行，确保 shim 真正进了 JS 上下文。
         // 否则紧随其后的 prelude/配置求值可能跑在 shim 之前，得到 "xxx is not defined"。
-        if (ready.count == 0L) {
-            runCatching { eval("1", "sync:$name") }
-        }
+        eval("1", "sync:$name")
     }
 
     override fun close() {

@@ -3,12 +3,22 @@ package com.ghs.mobile.core.engine.config
 import com.ghs.mobile.core.engine.script.GhsScriptBridge
 import com.ghs.mobile.core.engine.script.ScriptEngine
 import com.ghs.mobile.core.engine.script.ScriptHostTransport
+import com.ghs.mobile.core.engine.text.PlainTextToBlocks
+import com.ghs.mobile.core.model.Analysis
+import com.ghs.mobile.core.model.CComic
+import com.ghs.mobile.core.model.CContent
+import com.ghs.mobile.core.model.Comment
+import com.ghs.mobile.core.model.Detail
+import com.ghs.mobile.core.model.DetailInfo
+import com.ghs.mobile.core.model.DetailType
 import com.ghs.mobile.core.model.Item
 import com.ghs.mobile.core.model.ItemType
 import com.ghs.mobile.core.model.Page
 import com.ghs.mobile.core.model.Pagination
 import com.ghs.mobile.core.model.RenderType
 import com.ghs.mobile.core.model.Tag
+import com.ghs.mobile.core.model.TextBlock
+import com.ghs.mobile.core.model.TextContent
 
 /**
  * 配置执行引擎：把「配置脚本 + 页面 HTML」变成领域模型。
@@ -77,6 +87,99 @@ class ConfigEngine(
         tags = tags(),
     )
 
+    // ── 详情链路 ─────────────────────────────────────────────────────────────
+
+    /**
+     * `getDetailInfo(item, cheerio)` → 详情。返回 null 表示该配置不支持此类型。
+     *
+     * 走 [GhsScriptBridge.invokeAwait]：真实配置里这个方法几乎都是 `async`。
+     */
+    fun detailInfo(item: Item): DetailInfo? {
+        val argument = "{ jumpUrl: ${quote(item.jumpUrl)}, title: ${quote(item.title)} }, cheerio"
+        val raw = bridge.invokeAwait("getDetailInfo", argument) as? Map<*, *> ?: return null
+
+        return DetailInfo(
+            detailType = detailType(raw["detailType"]),
+            renderType = if (text(raw["renderType"]).equals("force", ignoreCase = true)) {
+                RenderType.FORCE
+            } else {
+                RenderType.NORMAL
+            },
+            details = asList(raw["details"]).mapNotNull { toDetail(it) },
+            relations = asList(raw["relations"]).mapNotNull { toItem(it) },
+            analysis = asList(raw["analysis"]).mapNotNull { row ->
+                val url = text(row["url"])
+                if (url.isEmpty()) {
+                    null
+                } else {
+                    Analysis(
+                        url = url,
+                        title = text(row["title"]),
+                        total = number(row["total"]).toInt(),
+                    )
+                }
+            },
+        )
+    }
+
+    /** `getContents(url, cheerio)` → 章节 / 图集目录 */
+    fun contents(url: String): List<CContent> =
+        asList(bridge.invokeAwait("getContents", "${quote(url)}, cheerio"))
+            .mapNotNull { row ->
+                val url2 = text(row["url"])
+                if (url2.isEmpty()) return@mapNotNull null
+                CContent(
+                    title = text(row["title"]),
+                    url = url2,
+                    isCurrent = boolean(row["isCurrent"]),
+                    time = text(row["time"]).takeIf { it.isNotEmpty() },
+                )
+            }
+
+    /** `getComicImages(url, cheerio)` → 图集图片 */
+    fun comicImages(url: String): List<CComic> =
+        asList(bridge.invokeAwait("getComicImages", "${quote(url)}, cheerio"))
+            .mapNotNull { row ->
+                val imageUrl = text(row["url"])
+                if (imageUrl.isEmpty()) return@mapNotNull null
+                CComic(
+                    url = imageUrl,
+                    info = (row["info"] as? Map<*, *>)?.entries
+                        ?.associate { it.key.toString() to it.value },
+                    extra = asList(row["extra"]).map { comment ->
+                        Comment(
+                            datetime = text(comment["datetime"]),
+                            comment = text(comment["comment"]),
+                            image = text(comment["image"]).takeIf { it.isNotEmpty() },
+                        )
+                    },
+                )
+            }
+
+    /**
+     * `getTextContent(url, cheerio)` → 文本正文。
+     *
+     * 约定（`config-spec` §5.13）：正文是纯文本，可内嵌 `<img src="…">`。
+     * 作者给了 `blocks` 就用作者的，否则由 [PlainTextToBlocks] 切分。
+     */
+    fun textContent(url: String): TextContent {
+        val raw = bridge.invokeAwait("getTextContent", "${quote(url)}, cheerio") as? Map<*, *>
+            ?: return TextContent()
+
+        val html = text(raw["html"])
+        val authorBlocks = asListOfBlocks(raw["blocks"])
+        val blocks: List<TextBlock> =
+            if (authorBlocks.isNotEmpty()) authorBlocks else PlainTextToBlocks.convert(html)
+
+        return TextContent(
+            title = text(raw["title"]),
+            html = html,
+            blocks = blocks,
+            prevUrl = text(raw["prevUrl"]),
+            nextUrl = text(raw["nextUrl"]),
+        )
+    }
+
     override fun close() {
         runCatching { script.close() }
         runCatching { transport.close() }
@@ -113,6 +216,58 @@ class ConfigEngine(
         else -> ItemType.IMAGE
     }
 
+    private fun detailType(value: Any?): DetailType = when (text(value).lowercase()) {
+        "mp4" -> DetailType.MP4
+        "m3u8" -> DetailType.M3U8
+        "comic" -> DetailType.COMIC
+        "text" -> DetailType.TEXT
+        "series" -> DetailType.SERIES
+        "win" -> DetailType.WIN
+        else -> DetailType.IMAGE
+    }
+
+    private fun toDetail(row: Map<*, *>): Detail? {
+        val url = text(row["url"])
+        val fullUrl = text(row["fullUrl"]).takeIf { it.isNotEmpty() }
+        if (url.isEmpty() && fullUrl == null) return null
+
+        return Detail(
+            type = text(row["type"]).takeIf { it.isNotEmpty() }?.let { detailType(it) },
+            url = url,
+            fullUrl = fullUrl,
+            title = text(row["title"]),
+            quality = text(row["quality"]),
+            comments = asList(row["comments"]).map { comment ->
+                Comment(
+                    datetime = text(comment["datetime"]),
+                    comment = text(comment["comment"]),
+                    image = text(comment["image"]).takeIf { it.isNotEmpty() },
+                )
+            },
+            uniqueKey = text(row["uniqueKey"]).takeIf { it.isNotEmpty() },
+        )
+    }
+
+    /** 作者自己拆好的块（`blocks`），按 `type` 区分段落与图片 */
+    private fun asListOfBlocks(value: Any?): List<TextBlock> = when (value) {
+        is List<*> -> value.mapNotNull { item ->
+            val row = item as? Map<*, *> ?: return@mapNotNull null
+            when (text(row["type"]).lowercase()) {
+                "image" -> TextBlock(
+                    type = com.ghs.mobile.core.model.BlockType.IMAGE,
+                    src = text(row["src"]),
+                ).takeIf { it.src.isNotEmpty() }
+
+                else -> TextBlock(
+                    type = com.ghs.mobile.core.model.BlockType.P,
+                    text = text(row["text"]),
+                ).takeIf { it.text.isNotEmpty() }
+            }
+        }
+
+        else -> emptyList()
+    }
+
     private fun asList(value: Any?): List<Map<*, *>> = when (value) {
         is List<*> -> value.mapNotNull { it as? Map<*, *> }
         else -> emptyList()
@@ -123,6 +278,16 @@ class ConfigEngine(
         is String -> value.trim()
         else -> value.toString().trim()
     }
+
+    private fun number(value: Any?): Number = when (value) {
+        is Number -> value
+        is String -> value.toDoubleOrNull() ?: 0
+        else -> 0
+    }
+
+    /** 生成 JS 字符串字面量（转义引号与换行） */
+    private fun quote(value: String): String =
+        "'" + value.replace("\\", "\\\\").replace("'", "\\'").replace("\n", "\\n") + "'"
 
     private fun boolean(value: Any?): Boolean = when (value) {
         is Boolean -> value
