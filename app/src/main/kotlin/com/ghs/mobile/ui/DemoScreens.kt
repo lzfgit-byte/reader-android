@@ -52,6 +52,7 @@ import com.ghs.mobile.GhsApp
 import com.ghs.mobile.core.data.LocalRepository
 import com.ghs.mobile.core.data.SettingScope
 import com.ghs.mobile.core.model.BlockType
+import com.ghs.mobile.core.model.CContent
 import com.ghs.mobile.core.model.Detail
 import com.ghs.mobile.core.model.DetailInfo
 import com.ghs.mobile.core.model.DetailType
@@ -169,9 +170,19 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
     // 阅读器自带顶栏：直接整屏渲染，避免与外层 Scaffold 叠成双顶栏
     when (val reader = screen) {
         is Screen.ComicReader -> {
+            var chapters by remember(reader.item.jumpUrl) {
+                mutableStateOf<kotlin.collections.List<CContent>>(emptyList())
+            }
+            LaunchedEffect(reader.item.jumpUrl) {
+                val active = session ?: return@LaunchedEffect
+                chapters = runCatching {
+                    withContext(Dispatchers.IO) { active.contents(reader.item.jumpUrl) }
+                }.getOrDefault(emptyList())
+            }
             ComicReaderScreen(
                 title = reader.item.title,
                 pages = reader.pages,
+                chapters = chapters,
                 startIndex = reader.startIndex,
                 onProgress = { index ->
                     scope.launch {

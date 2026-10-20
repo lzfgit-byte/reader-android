@@ -45,6 +45,20 @@ const getData = (): WebConfig => /* break */ ({
     ];
   },
 
+  async getContents(url, cheerio) {
+    const html = await getHtml(url);
+    const $page = cheerio.load(html);
+    const chapters = [];
+    $page('.chapter a').each(function (index, element) {
+      const $a = $(element);
+      chapters.push({
+        title: helpElText($a),
+        url: helpElAttr($a, 'href'),
+        isCurrent: $a.hasClass('current')
+      });
+    });
+    return chapters;
+  },
   async getDetailInfo(item, cheerio) {
     const html = await getHtml(item.jumpUrl);
     const $page = cheerio.load(html);

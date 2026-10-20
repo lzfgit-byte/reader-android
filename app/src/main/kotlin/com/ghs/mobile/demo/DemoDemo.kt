@@ -3,6 +3,7 @@ package com.ghs.mobile.demo
 import android.content.Context
 import com.ghs.mobile.core.engine.config.ConfigEngine
 import com.ghs.mobile.core.engine.script.ScriptHostTransport
+import com.ghs.mobile.core.model.CContent
 import com.ghs.mobile.core.model.DetailInfo
 import com.ghs.mobile.core.model.Item
 import com.ghs.mobile.core.model.Page
@@ -71,6 +72,8 @@ class DemoSession(private val context: Context) : AutoCloseable {
     fun detail(item: Item): DetailInfo? = configEngine.detailInfo(item)
 
     fun textContent(url: String): TextContent = configEngine.textContent(url)
+
+    fun contents(url: String): List<CContent> = configEngine.contents(url)
 
     override fun close() {
         runCatching { configEngine.close() }
