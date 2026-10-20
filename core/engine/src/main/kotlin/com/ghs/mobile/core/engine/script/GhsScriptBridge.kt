@@ -29,22 +29,30 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
     }
 
     /** 注入宿主函数与 JS 侧 prelude；返回自身便于链式调用 */
-    fun install(): GhsScriptBridge {
-        bindHostFunctions()
-        engine.eval(PRELUDE, "ghs-prelude")
-        engine.eval(GLOBALS, "ghs-globals")
+    fun install(transport: ScriptHostTransport = ScriptHostTransport.None): GhsScriptBridge {
+        bindHostFunctions(transport)
+        // prelude 是**语句块**，而各引擎的 eval 会把脚本包进 `return (...)`；
+        // 套一层 IIFE 让它成为单个表达式（否则语法错误且会被静默吞掉）。
+        engine.eval("(function(){ $PRELUDE })()", "ghs-prelude")
+        engine.eval("(function(){ $GLOBALS })()", "ghs-globals")
         return this
     }
 
     /**
-     * 求值一份内联配置，返回配置对象，并绑定为 JS 全局 `config`。
-     * 只执行 [ConfigSource.bodyOf] 之后的部分。
+     * 求值一份内联配置，**配置对象留在 JS 侧**（绑定为全局 `config`）。
+     *
+     * 刻意不把配置对象回传给 Kotlin：它的成员是函数，跨语言序列化会丢掉方法，
+     * 只保留能被 JSON 表达的数据字段。Kotlin 侧需要的是"能调用它"，而不是"持有它"。
+     *
+     * @return 求值后的脚本正文（便于日志与断言），失败时抛异常
      */
-    fun loadConfig(source: String): Any? {
+    fun loadConfig(source: String): String {
         val body = ConfigSource.bodyOf(source)
-        val config = engine.eval("(function(){ return $body })()", "config")
-        engine.setGlobal("config", config)
-        return config
+        // 必须是**单个表达式**：各引擎的 eval 都会把它包进 `return (...)`。
+        // 配置正文通常是 `({ ... });`，去掉结尾分号才是表达式。
+        val expression = body.trimEnd().removeSuffix(";").trimEnd()
+        engine.eval("globalThis.config = $expression", "config")
+        return body
     }
 
     fun hasMethod(method: String): Boolean =
@@ -54,6 +62,15 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
     fun invoke(method: String, argumentExpression: String = "$"): Any? =
         engine.eval("config.$method($argumentExpression)", "invoke:$method")
 
+    /**
+     * 调用**异步**配置方法并等待它 resolve。
+     *
+     * 只有带事件循环的引擎（WebView）能真正等到；QuickJS 封装没有
+     * `JS_ExecutePendingJob`，微任务永不前进，此处会退化为 [invoke]。
+     */
+    fun invokeAwait(method: String, argumentExpression: String = "$"): Any? =
+        engine.evalAwait("config.$method($argumentExpression)", "invokeAwait:$method")
+
     private fun register(selection: Selection): Int {
         handles[++sequence] = selection
         return sequence
@@ -61,7 +78,9 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
 
     private fun selection(handle: Any?): Selection =
         handles[(handle as? Number)?.toInt() ?: -1]
-            ?: throw IllegalArgumentException("未知选择器句柄：$handle")
+            ?: throw IllegalArgumentException(
+                "未知选择器句柄：$handle（已注册 ${handles.keys.sorted()}，共 ${handles.size} 个）",
+            )
 
     private fun intOf(value: Any?): Int = (value as? Number)?.toInt() ?: 0
 
@@ -71,7 +90,7 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
         else -> value.toString()
     }
 
-    private fun bindHostFunctions() {
+    private fun bindHostFunctions(transport: ScriptHostTransport) {
         engine.setFunction("__select") { args -> register(select(textOf(args.getOrNull(0)))) }
         engine.setFunction("__len") { args -> selection(args.getOrNull(0)).length }
         engine.setFunction("__at") { args -> register(selection(args.getOrNull(0)).eq(intOf(args.getOrNull(1)))) }
@@ -105,6 +124,37 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
         engine.setFunction("__log") { args ->
             logs += args.joinToString(" ") { textOf(it) }
             null
+        }
+
+        // ── 宿主能力（同步返回；脚本里的 await 会立即拿到值） ──
+        engine.setFunction("__fetchHtml") { args ->
+            transport.fetchHtml(textOf(args.getOrNull(0)))
+        }
+        engine.setFunction("__httpRequest") { args ->
+            val url = textOf(args.getOrNull(0))
+            val method = textOf(args.getOrNull(1)).ifEmpty { "GET" }
+            val headerNames = textOf(args.getOrNull(2)).split(SEP).filter { it.isNotEmpty() }
+            val headerValues = textOf(args.getOrNull(3)).split(SEP)
+            val body = textOf(args.getOrNull(4)).ifEmpty { null }
+            val headers = headerNames.mapIndexedNotNull { index, name ->
+                headerValues.getOrNull(index)?.let { name to it }
+            }.toMap()
+
+            val response = transport.request(url, method, headers, body)
+            // 用 \u0001 分隔，避免依赖 JSON 库
+            buildString {
+                append(response.status).append(SEP)
+                append(response.headers.entries.joinToString(";") { "${it.key}:${it.value}" }).append(SEP)
+                append(response.body)
+            }
+        }
+        engine.setFunction("__executePage") { args ->
+            transport.executePage(textOf(args.getOrNull(0)), textOf(args.getOrNull(1)))
+        }
+        // cheerio.load(html)：把当前文档换成这段 HTML，并返回 $
+        engine.setFunction("__loadDocument") { args ->
+            loadDocument(textOf(args.getOrNull(0)))
+            0
         }
     }
 
@@ -150,7 +200,12 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
               return __wrap(__select(String(arg == null ? '' : arg)));
             };
 
-            globalThis.cheerio = { load: function (html) { return globalThis.${'$'}; } };
+            globalThis.cheerio = {
+              load: function (html) {
+                __loadDocument(String(html == null ? '' : html));
+                return globalThis.${'$'};
+              }
+            };
         """.trimIndent()
 
         /** 配置脚本可用的全局符号（值语义与 config-spec §8 一致） */
@@ -175,6 +230,50 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
             globalThis.ProgressMsgUtil = { sendProgress: function () {}, close: function () {} };
             globalThis.eventEmitter = { on: function () {}, off: function () {}, emit: function () {} };
             globalThis.getCurrentItems = function () { return []; };
+
+            /**
+             * 宿主能力：同步返回。
+             * `await getHtml(...)` 依然成立——await 一个非 Promise 值会立即得到它。
+             */
+            globalThis.getHtml = function (url, forceWebView) {
+              return __fetchHtml(String(url));
+            };
+            globalThis.executeJs = function (url, code, show) {
+              return __executePage(String(url), String(code));
+            };
+            globalThis.net = {
+              request: function (options) {
+                var opts = options || {};
+                var names = [];
+                var values = [];
+                var headers = opts.headers || {};
+                for (var key in headers) {
+                  if (Object.prototype.hasOwnProperty.call(headers, key)) {
+                    names.push(key);
+                    values.push(String(headers[key]));
+                  }
+                }
+                var sep = '\u0001';
+                var raw = __httpRequest(
+                  String(opts.url || ''),
+                  String(opts.method || 'GET'),
+                  names.join(sep),
+                  values.join(sep),
+                  opts.body == null ? '' : String(opts.body)
+                );
+                var parts = String(raw).split(sep);
+                var headerMap = {};
+                String(parts[1] || '').split(';').forEach(function (pair) {
+                  if (!pair) return;
+                  var index = pair.indexOf(':');
+                  if (index > 0) headerMap[pair.slice(0, index)] = pair.slice(index + 1);
+                });
+                return { status: Number(parts[0]), headers: headerMap, body: parts[2] == null ? '' : parts[2] };
+              }
+            };
         """.trimIndent()
+
+        /** 宿主函数参数里的字段分隔符（避免依赖 JSON 库） */
+        const val SEP = "\u0001"
     }
 }
