@@ -7,7 +7,9 @@ package com.ghs.mobile.core.engine.script
  * 脚本侧的 `await getHtml(...)` 仍然成立——`await` 一个非 Promise 值会立即得到它；
  * 这样宿主实现可以是最直接的阻塞调用，不需要把异步塞进 JS 引擎的事件循环。
  */
-interface ScriptHostTransport {
+interface ScriptHostTransport : AutoCloseable {
+
+    override fun close() = Unit
 
     /** 取页面 HTML；失败抛异常（脚本里的 try/catch 能捕获） */
     fun fetchHtml(url: String): String
