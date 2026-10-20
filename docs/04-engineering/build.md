@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.2
+> **版本**：v1.3
 > **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.1
+> **取代/被取代**：取代同文件 v1.2
 
 # 本地构建与验证
 
@@ -111,10 +111,31 @@ $env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFI
 
 ---
 
-## 5. 变更记录
+## 5. 真机验证（脚本运行时）
+
+`:app` 带一个 instrumented test：`ScriptRuntimeInstrumentedTest`。它跑 `ScriptProbe`，要求每一项自检都通过。
+
+```powershell
+# 手机用 USB 连上并开 USB 调试，确认 adb 能看到
+& "$tc\android-sdk\platform-tools\adb.exe" devices
+
+& "$tc\gradle\bin\gradle.bat" -p $root --console=plain --no-daemon :app:connectedDebugAndroidTest
+```
+
+自检项：QuickJS 启动耗时、`1+1`、`globalThis`、ES2020 基础能力（`BigInt` / `Promise` / `Symbol`）、
+选择器 `length`、`attr`、`helpElText`、配置求值（7 个必需方法）、`getTags`、`this` 绑定。
+
+> **本机跑不了模拟器**：`HypervisorPresent=True` 但嵌套虚拟化不可用——WHPX 报告 operational，
+> qemu 却几乎不耗 CPU（虚拟机未真正执行）；改用软件模拟（`ANDROID_I_WANT_MY_TCG=yes` + `-accel off`）后
+> qemu 直接退出。因此真机验证只能走 USB 连接，或另找支持嵌套虚拟化的机器。
+
+---
+
+## 6. 变更记录
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
 | v1.0 | 2026-10-19 | 建立构建说明：便携工具链形态、环境变量、踩坑与当前验证基线 |
 | v1.1 | 2026-10-19 | 补 Android SDK（cmdline-tools 12.0 + android-34 + build-tools 34）、`sdkmanager` 免交互许可证、APK 构建步骤与产物基线 |
 | v1.2 | 2026-10-19 | 模块与基线更新：新增 `:core:script`（QuickJS 适配层），引擎测试 72 个，APK 13.8MB（含 QuickJS 四 ABI） |
+| v1.3 | 2026-10-20 | 新增第 5 节「真机验证」（instrumented test 用法）；补模拟器在本机不可用的原因（嵌套虚拟化） |
