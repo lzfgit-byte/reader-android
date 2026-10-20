@@ -19,6 +19,7 @@ rootProject.name = "ghs-mobile"
 include(":core:model")
 include(":core:engine")
 include(":core:script")
+include(":core:data")
 
 // Android 应用（壳层）
 include(":app")

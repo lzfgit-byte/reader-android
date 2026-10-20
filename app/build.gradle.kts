@@ -48,6 +48,7 @@ dependencies {
     implementation(project(":core:model"))
     implementation(project(":core:engine"))
     implementation(project(":core:script"))
+    implementation(project(":core:data"))
 
     implementation(platform("androidx.compose:compose-bom:2024.09.03"))
     implementation("androidx.compose.ui:ui")
@@ -59,5 +60,6 @@ dependencies {
 
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
     androidTestImplementation("androidx.test:runner:1.6.2")
+    androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     androidTestImplementation("io.github.taoweiji.quickjs:quickjs-android:1.4.6")
 }
