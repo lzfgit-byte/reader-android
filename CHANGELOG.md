@@ -109,6 +109,13 @@
   - OkHttp 走 `RulesProxySelector`（逐请求判定），支持可选 Basic 认证；WebView 走 `ProxyController`（启用时按白名单 bypass，未启用显式直连）
   - 代理设置存 `app_setting(device)`（不随导出/同步），设置页新增"网络代理"分组；默认地址 `http://192.168.31.245:4000`
   - 新增 11 个 JVM 单测与 2 个 instrumented 测试（本地代理验证白名单直连/非白名单走代理）
+- **Web 控制台 v0.1（F24）**
+  - `web/console`：Vue 3 + Vite + Monaco 独立静态工程，可脱离 App 单独运行
+  - 三栏界面：配置列表 / 源码编辑 / 校验面板；启用开关、新建、删除、Ctrl+S 保存
+  - 智能提示来自注入的 `config-api.d.ts`（补全/hover/签名/诊断与规范同源）
+  - 本地静态校验：缺必需方法、`key` 格式、体积上限、`net.request().on(...)` 旧写法
+  - API 抽象为 `ConsoleApi`：当前 Mock（localStorage），接内置服务时替换为 HTTP 实现
+  - Monaco 与 worker 全部按需 chunk：首屏 68.8kB，总量 9.35MB（见 `web-console.md` v1.5）
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -161,6 +168,13 @@
   - OkHttp 走 `RulesProxySelector`（逐请求判定），支持可选 Basic 认证；WebView 走 `ProxyController`（启用时按白名单 bypass，未启用显式直连）
   - 代理设置存 `app_setting(device)`（不随导出/同步），设置页新增"网络代理"分组；默认地址 `http://192.168.31.245:4000`
   - 新增 11 个 JVM 单测与 2 个 instrumented 测试（本地代理验证白名单直连/非白名单走代理）
+- **Web 控制台 v0.1（F24）**
+  - `web/console`：Vue 3 + Vite + Monaco 独立静态工程，可脱离 App 单独运行
+  - 三栏界面：配置列表 / 源码编辑 / 校验面板；启用开关、新建、删除、Ctrl+S 保存
+  - 智能提示来自注入的 `config-api.d.ts`（补全/hover/签名/诊断与规范同源）
+  - 本地静态校验：缺必需方法、`key` 格式、体积上限、`net.request().on(...)` 旧写法
+  - API 抽象为 `ConsoleApi`：当前 Mock（localStorage），接内置服务时替换为 HTTP 实现
+  - Monaco 与 worker 全部按需 chunk：首屏 68.8kB，总量 9.35MB（见 `web-console.md` v1.5）
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
