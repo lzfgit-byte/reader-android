@@ -64,6 +64,12 @@ import com.ghs.mobile.core.model.TextContent
 import com.ghs.mobile.demo.DemoSession
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.material.icons.filled.Favorite
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material3.NavigationBar
+import androidx.compose.material3.NavigationBarItem
+import com.ghs.mobile.demo.ItemCodec
+import androidx.compose.material.icons.filled.List
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -78,6 +84,12 @@ private sealed interface Screen {
     data class ComicReader(val item: Item, val pages: kotlin.collections.List<com.ghs.mobile.core.model.Detail>, val startIndex: Int) : Screen
     data class Failed(val message: String) : Screen
 }
+
+/** 底部导航 */
+enum class DemoTab(val label: String) { HOME("首页"), FAVORITES("收藏"), HISTORY("历史") }
+
+/** 演示配置的 key（收藏/历史按配置分组的键） */
+private const val CONFIG_KEY = "demo"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -94,6 +106,45 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
     var textUrl by remember { mutableStateOf<String?>(null) }
     var textLoading by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
+
+    var tab by remember { mutableStateOf(DemoTab.HOME) }
+    var collected by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var favoriteItems by remember { mutableStateOf<kotlin.collections.List<Item>>(emptyList()) }
+    var historyEntries by remember { mutableStateOf<kotlin.collections.List<HistoryEntry>>(emptyList()) }
+
+    fun refreshLibrary() {
+        scope.launch {
+            val snapshot = withContext(Dispatchers.IO) {
+                val collects = repository.collects(CONFIG_KEY)
+                val favorites = collects.mapNotNull { record -> ItemCodec.decode(record.url, record.payload) }
+                val history = repository.history(CONFIG_KEY, 100).mapNotNull { record ->
+                    ItemCodec.decode(record.url, record.payload)?.let { item -> HistoryEntry(item, record.createTime) }
+                }
+                Triple(collects.map { it.url }.toSet(), favorites, history)
+            }
+            collected = snapshot.first
+            favoriteItems = snapshot.second
+            historyEntries = snapshot.third
+        }
+    }
+
+    LaunchedEffect(Unit) { refreshLibrary() }
+
+    // 切到收藏/历史时重新读一次：数据可能在别处（阅读、收藏）被改过
+    LaunchedEffect(tab) { if (tab != DemoTab.HOME) refreshLibrary() }
+
+    fun toggleCollect(item: Item) {
+        scope.launch {
+            withContext(Dispatchers.IO) {
+                if (repository.isCollected(CONFIG_KEY, item.jumpUrl)) {
+                    repository.uncollect(CONFIG_KEY, item.jumpUrl)
+                } else {
+                    repository.collect(CONFIG_KEY, item.jumpUrl, ItemCodec.encode(item))
+                }
+            }
+            refreshLibrary()
+        }
+    }
 
     LaunchedEffect(Unit) {
         val created = runCatching { withContext(Dispatchers.IO) { DemoSession(app) } }
@@ -222,7 +273,15 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(titleFor(screen)) },
+                title = {
+                    Text(
+                        when (tab) {
+                            DemoTab.HOME -> titleFor(screen)
+                            DemoTab.FAVORITES -> "收藏 · ${favoriteItems.size}"
+                            DemoTab.HISTORY -> "历史 · ${historyEntries.size}"
+                        },
+                    )
+                },
                 actions = {
                     IconButton(onClick = onOpenProbe) {
                         Icon(Icons.Default.Info, contentDescription = "引擎自检")
@@ -237,8 +296,47 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
                 },
             )
         },
+        bottomBar = {
+            NavigationBar {
+                DemoTab.entries.forEach { entry ->
+                    NavigationBarItem(
+                        selected = tab == entry,
+                        onClick = { tab = entry },
+                        icon = {
+                            Icon(
+                                when (entry) {
+                                    DemoTab.HOME -> Icons.Default.Home
+                                    DemoTab.FAVORITES -> Icons.Default.Favorite
+                                    DemoTab.HISTORY -> Icons.Default.List
+                                },
+                                contentDescription = entry.label,
+                            )
+                        },
+                        label = { Text(entry.label) },
+                    )
+                }
+            }
+        },
     ) { padding ->
         Surface(modifier = Modifier.fillMaxSize().padding(padding)) {
+            if (tab == DemoTab.FAVORITES) {
+                FavoritesScreen(
+                    items = favoriteItems,
+                    progress = progressByUrl,
+                    collected = collected,
+                    onOpen = { item -> screen = Screen.Detail(item, null); tab = DemoTab.HOME },
+                    onToggleCollect = { item -> toggleCollect(item) },
+                )
+                return@Surface
+            }
+            if (tab == DemoTab.HISTORY) {
+                HistoryScreen(
+                    entries = historyEntries,
+                    onOpen = { item -> screen = Screen.Detail(item, null); tab = DemoTab.HOME },
+                )
+                return@Surface
+            }
+
             when (val current = screen) {
                 Screen.Loading -> Centered {
                     CircularProgressIndicator()
@@ -253,7 +351,9 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
                 is Screen.List -> ListScreen(
                     page = current.page,
                     progress = progressByUrl,
+                    collected = collected,
                     onOpen = { item -> screen = Screen.Detail(item, null) },
+                    onToggleCollect = { item -> toggleCollect(item) },
                 )
 
                 is Screen.Detail -> DetailScreen(
@@ -294,7 +394,7 @@ private suspend fun rememberOpened(repository: LocalRepository, item: Item, info
             updatedAt = System.currentTimeMillis(),
         ),
     )
-    repository.recordView("demo", item.jumpUrl, item.title)
+    repository.recordView(CONFIG_KEY, item.jumpUrl, ItemCodec.encode(item))
     repository.trimHistory(100)
     repository.putSetting(SettingScope.DEVICE, "last_opened", item.jumpUrl)
 }
@@ -317,7 +417,13 @@ private fun Centered(content: @Composable () -> Unit) {
 // ── 列表 ────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun ListScreen(page: Page, progress: Map<String, ReadingProgress>, onOpen: (Item) -> Unit) {
+private fun ListScreen(
+    page: Page,
+    progress: Map<String, ReadingProgress>,
+    collected: Set<String>,
+    onOpen: (Item) -> Unit,
+    onToggleCollect: (Item) -> Unit,
+) {
     LazyVerticalGrid(
         columns = GridCells.Fixed(2),
         contentPadding = PaddingValues(12.dp),
@@ -325,76 +431,17 @@ private fun ListScreen(page: Page, progress: Map<String, ReadingProgress>, onOpe
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        items(page.items) { item ->
-            ItemCard(item = item, progress = progress[item.jumpUrl], onClick = { onOpen(item) })
+        items(page.items, key = { it.jumpUrl }) { item ->
+            ItemCard(
+                item = item,
+                progress = progress[item.jumpUrl],
+                collected = item.jumpUrl in collected,
+                onClick = { onOpen(item) },
+                onToggleCollect = { onToggleCollect(item) },
+            )
         }
     }
 }
-
-@Composable
-private fun ItemCard(item: Item, progress: ReadingProgress?, onClick: () -> Unit) {
-    Card(onClick = onClick) {
-        Column {
-            CoverPlaceholder(title = item.title)
-            Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(
-                    item.title,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    item.tags.take(2).forEach { tag ->
-                        Text(
-                            tag.title,
-                            style = MaterialTheme.typography.labelSmall,
-                            modifier = Modifier
-                                .background(MaterialTheme.colorScheme.secondaryContainer, RoundedCornerShape(4.dp))
-                                .padding(horizontal = 6.dp, vertical = 2.dp),
-                        )
-                    }
-                }
-                Text(
-                    progress?.let { "读到第 ${it.chapterIndex + 1} / ${it.chapterCount.coerceAtLeast(1)} 页" }
-                        ?: readableType(item),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun CoverPlaceholder(title: String) {
-    val tint = remember(title) {
-        val palette = listOf(Color(0xFF5B7F95), Color(0xFF8A6E9B), Color(0xFF9B7E6E), Color(0xFF6E9B88))
-        palette[title.hashCode().let { if (it < 0) -it else it } % palette.size]
-    }
-    Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .aspectRatio(3f / 4f)
-            .background(Brush.verticalGradient(listOf(tint.copy(alpha = 0.85f), tint.copy(alpha = 0.45f)))),
-        contentAlignment = Alignment.Center,
-    ) {
-        Text(
-            title.take(1),
-            style = MaterialTheme.typography.headlineMedium,
-            color = Color.White.copy(alpha = 0.9f),
-            fontWeight = FontWeight.Bold,
-        )
-    }
-}
-
-private fun readableType(item: Item): String = when (item.type) {
-    com.ghs.mobile.core.model.ItemType.COMIC -> "图集"
-    com.ghs.mobile.core.model.ItemType.TEXT -> "文本"
-    com.ghs.mobile.core.model.ItemType.VIDEO -> "视频"
-    else -> "条目"
-}
-
-// ── 详情 ────────────────────────────────────────────────────────────────────
 
 @Composable
 private fun DetailScreen(
