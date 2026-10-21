@@ -22,7 +22,7 @@ captures/
 
 # ---- Web 控制台前端（见 web-console.md）----
 node_modules/
-webconsole/dist/
+web/console/dist/
 .vite/
 
 # ---- 临时产物（见 AGENTS.md §1） ----
