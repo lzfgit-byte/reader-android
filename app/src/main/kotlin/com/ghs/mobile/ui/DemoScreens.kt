@@ -78,6 +78,7 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.ui.text.style.TextAlign
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -502,6 +503,21 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 is Screen.Failed -> Centered {
                     Text("解析失败", style = MaterialTheme.typography.titleMedium)
                     Text(current.message, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+
+                    // 失败原因常常是"配的地址不是 HTTP 代理"，把判定线索直接摆出来
+                    val rules = app.proxy.rules.value
+                    val endpoint = rules.endpoint
+                    if (rules.enabled && endpoint != null) {
+                        Text(
+                            "已启用代理 ${endpoint.authority}（白名单 ${rules.whitelist.size} 条）\n" +
+                                "若错误为 unexpected end of stream / CONNECT 失败，\n" +
+                                "说明该地址不是 HTTP 代理，或目标域名未放行。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier.padding(top = 16.dp, start = 24.dp, end = 24.dp),
+                        )
+                    }
                 }
 
                 is Screen.SearchResults -> Column(Modifier.fillMaxSize()) {

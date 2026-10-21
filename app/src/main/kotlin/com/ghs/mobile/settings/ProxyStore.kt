@@ -22,8 +22,10 @@ class ProxyStore(private val repository: LocalRepository) {
 
     suspend fun load() {
         val saved = withContext(Dispatchers.IO) { repository.settings(SettingScope.DEVICE) }
-        // 首次使用：保留默认（启用 + 内置地址），不要覆盖成"空配置"
-        if (saved.isEmpty()) return
+        // 没有任何代理相关键时保留默认（启用 + 内置地址）。
+        // 注意不能只看 saved.isEmpty()：device 作用域还存着 Web 管理服务的键，
+        // 那样会把默认代理"顺带清空"（此前真实请求因此变成直连）。
+        if (saved["proxy_url"] == null && saved["proxy_enabled"] == null) return
 
         val url = saved["proxy_url"]?.takeIf { it.isNotBlank() }
         val endpoint = ProxyRules.parseEndpoint(url)?.copy(
