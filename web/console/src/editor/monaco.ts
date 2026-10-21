@@ -47,7 +47,11 @@ export function setupMonaco(): typeof monaco {
   return monaco
 }
 
-export function createEditor(container: HTMLElement, value: string): monaco.editor.IStandaloneCodeEditor {
+export function createEditor(
+  container: HTMLElement,
+  value: string,
+  readOnly = false,
+): monaco.editor.IStandaloneCodeEditor {
   return monaco.editor.create(container, {
     value,
     language: 'javascript',
@@ -60,6 +64,7 @@ export function createEditor(container: HTMLElement, value: string): monaco.edit
     scrollBeyondLastLine: false,
     renderLineHighlight: 'line',
     fixedOverflowWidgets: true,
+    readOnly,
   })
 }
 

@@ -16,6 +16,8 @@ const status = ref<string>('')
 const issues = ref<ValidateResult>({ ok: true, errors: [], warnings: [] })
 
 const editorHost = ref<HTMLElement | null>(null)
+// 窄屏只读：<900px 时编辑不可用，提示改用桌面浏览器（web-console.md §2 断点）
+const narrow = ref(typeof window !== 'undefined' && window.innerWidth < 900)
 const editor = shallowRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null)
 let monacoApi: MonacoModule | null = null
 
@@ -41,7 +43,7 @@ async function ensureEditor(): Promise<void> {
   monacoApi.setupMonaco()
   if (editor.value || !editorHost.value) return
 
-  const instance = monacoApi.createEditor(editorHost.value, source.value)
+  const instance = monacoApi.createEditor(editorHost.value, source.value, narrow.value)
   instance.onDidChangeModelContent(() => {
     source.value = instance.getValue()
     void validate()
@@ -117,6 +119,12 @@ function jumpTo(issue: Issue): void {
 }
 
 onMounted(async () => {
+  const onResize = () => {
+    narrow.value = window.innerWidth < 900
+    editor.value?.updateOptions({ readOnly: narrow.value })
+  }
+  window.addEventListener('resize', onResize)
+  onBeforeUnmount(() => window.removeEventListener('resize', onResize))
   await refresh()
 })
 
@@ -141,6 +149,8 @@ onBeforeUnmount(() => editor.value?.dispose())
         <span class="status">{{ status }}</span>
       </div>
     </header>
+
+    <p v-if="narrow" class="readonly-tip">当前窗口过窄，源码为只读预览；请用桌面浏览器（≥900px）编辑。</p>
 
     <main class="body">
       <aside class="list">
@@ -233,7 +243,9 @@ button:disabled { opacity: .6; cursor: default; }
 button.ghost { background: transparent; border: 1px solid var(--line); color: var(--text); }
 button.danger { border-color: #5a3030; color: #e39a9a; }
 
-.body { flex: 1; display: grid; grid-template-columns: 240px 1fr 320px; min-height: 0; }
+.readonly-tip { margin: 0; padding: 8px 14px; font-size: 12px; background: #3a3320; color: #e0c58a; border-bottom: 1px solid var(--line); }
+
+.body { flex: 1; display: grid; grid-template-columns: minmax(0, 240px) minmax(0, 1fr) minmax(0, 320px); min-height: 0; }
 
 .list { border-right: 1px solid var(--line); overflow-y: auto; padding: 8px; }
 .item {
@@ -248,7 +260,7 @@ button.danger { border-color: #5a3030; color: #e39a9a; }
 .key { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
 .badge { font-size: 10px; color: var(--warn); }
 
-.editor { min-width: 0; }
+.editor { min-width: 0; min-height: 0; height: 100%; }
 
 .panel { border-left: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }
 .panel-head {
@@ -272,4 +284,14 @@ button.danger { border-color: #5a3030; color: #e39a9a; }
 .empty { color: var(--muted); font-size: 12px; padding: 12px; }
 .meta { border-top: 1px solid var(--line); padding: 12px; color: var(--muted); font-size: 11px; }
 .meta code { color: var(--text); }
+@media (max-width: 900px) {
+  .body { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(240px, 1fr) auto; }
+  .list {
+    display: flex; gap: 8px; overflow-x: auto; border-right: none;
+    border-bottom: 1px solid var(--line);
+  }
+  .item { min-width: 140px; margin-bottom: 0; }
+  .panel { border-left: none; border-top: 1px solid var(--line); max-height: 40vh; }
+  .meta { display: none; }
+}
 </style>
