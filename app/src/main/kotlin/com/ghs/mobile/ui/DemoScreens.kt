@@ -73,6 +73,7 @@ import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
+import androidx.compose.material.icons.filled.Settings
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -97,7 +98,7 @@ private const val CONFIG_KEY = "demo"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DemoApp(onOpenProbe: () -> Unit = {}) {
+fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     val app = GhsApp.instance
     val repository = app.repository
     // 会话（WebView 引擎）必须在后台线程创建：引擎内部会等待页面就绪，主线程等待会死锁
@@ -314,6 +315,9 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
                         IconButton(onClick = { searchOpen = !searchOpen }) {
                             Icon(Icons.Default.Search, contentDescription = "搜索")
                         }
+                    }
+                    IconButton(onClick = onOpenSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "设置")
                     }
                     IconButton(onClick = onOpenProbe) {
                         Icon(Icons.Default.Info, contentDescription = "引擎自检")

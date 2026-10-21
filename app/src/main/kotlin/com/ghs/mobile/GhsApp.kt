@@ -3,6 +3,7 @@ package com.ghs.mobile
 import android.app.Application
 import com.ghs.mobile.core.data.GhsDatabase
 import com.ghs.mobile.core.data.LocalRepository
+import com.ghs.mobile.settings.SettingsStore
 
 /**
  * 应用级单例：本地仓库。
@@ -14,6 +15,8 @@ class GhsApp : Application() {
     val database: GhsDatabase by lazy { GhsDatabase.open(this) }
 
     val repository: LocalRepository by lazy { LocalRepository(database) }
+
+    val settings: SettingsStore by lazy { SettingsStore(repository) }
 
     override fun onCreate() {
         super.onCreate()
