@@ -283,7 +283,7 @@ class WebViewScriptEngine(
         const val BRIDGE = "__ghs"
         const val BASE_URL = "https://ghs.local/"
         const val SEP = "\u0001"
-        const val DEFAULT_TIMEOUT_MS = 60_000L
+        const val DEFAULT_TIMEOUT_MS = 180_000L
         const val READY_TIMEOUT_MS = 15_000L
     }
 }

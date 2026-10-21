@@ -45,12 +45,25 @@ class HttpScriptHost(
             .build()
 
         try {
-            client.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) {
-                    throw IllegalStateException("取页失败：HTTP ${response.code} $url")
+            // 代理偶尔在响应收尾时断开（"connection closed"），重试一次通常就好
+            var lastError: Exception? = null
+            repeat(2) { attempt ->
+                try {
+                    client.newCall(request).execute().use { response ->
+                        if (!response.isSuccessful) {
+                            throw IllegalStateException("取页失败：HTTP ${response.code} $url")
+                        }
+                        return response.body?.string() ?: throw IllegalStateException("取页为空：$url")
+                    }
+                } catch (error: java.io.IOException) {
+                    lastError = error
+                    if (attempt == 0) {
+                        android.util.Log.w("GHS", "fetchHtml retry after ${error.message}")
+                        Thread.sleep(300)
+                    }
                 }
-                return response.body?.string() ?: throw IllegalStateException("取页为空：$url")
             }
+            throw lastError ?: IllegalStateException("取页失败：$url")
         } finally {
             logDone(url, started)
         }
@@ -200,15 +213,15 @@ class HttpScriptHost(
     companion object {
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
-        private const val PAGE_TIMEOUT_MS = 60_000L
+        private const val PAGE_TIMEOUT_MS = 180_000L
         private const val EVAL_TIMEOUT_MS = 15_000L
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         private fun defaultClient(rules: () -> ProxyRules): OkHttpClient = OkHttpClient.Builder()
             // 真实站点经代理时一页 HTML 可能要十几秒；20s 读超时会把正常请求判成失败
             .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(60, TimeUnit.SECONDS)
-            .callTimeout(90, TimeUnit.SECONDS)
+            .readTimeout(120, TimeUnit.SECONDS)
+            .callTimeout(180, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .followRedirects(true)
             .proxySelector(RulesProxySelector(rules))

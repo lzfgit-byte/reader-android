@@ -357,6 +357,16 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
             )
             return@LaunchedEffect
         }
+        // 图片：解析出图集地址后直接进阅读器，从上次的页续看
+        if (info != null && info.detailType == DetailType.IMAGE && info.details.isNotEmpty()) {
+            val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+            screen = Screen.ComicReader(
+                item = item,
+                pages = info.details,
+                startIndex = saved?.chapterOffset ?: 0,
+            )
+            return@LaunchedEffect
+        }
         if (info?.detailType == DetailType.TEXT) {
             textUrl = info.details.firstOrNull()?.url ?: item.jumpUrl
         }
@@ -606,6 +616,15 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                             textAlign = TextAlign.Center,
                             modifier = Modifier.padding(top = 16.dp, start = 24.dp, end = 24.dp),
                         )
+                    }
+                    Button(
+                        onClick = {
+                            screen = Screen.Loading
+                            reloadRequest += 1
+                        },
+                        modifier = Modifier.padding(top = 20.dp),
+                    ) {
+                        Text("重试")
                     }
                 }
 
