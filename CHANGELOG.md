@@ -129,6 +129,10 @@
   - 配置源码改由 `files/configs` 提供（`ReaderSession`），内置 assets 仅用于首次播种与兜底
   - 顶栏 ⋮ 可切换配置并记住选择（`prefs.currentConfig`）；删除后自动回退
   - `ReaderHost`：`demo.local` 走内置样例页面，其它域名走真实网络（含代理）
+- **修复控制台保存/新建无效（F23）**
+  - 根因：NanoHTTPD keep-alive 下未消费的请求体被当成下一个请求行，导致后续请求全部失败
+  - `AdminServer` 改为每个请求先读完 body 再分发；401 分支同样消费
+  - 控制台：保存/新建/删除失败时红字提示具体错误；删除增加二次确认弹窗
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -201,6 +205,10 @@
   - 配置源码改由 `files/configs` 提供（`ReaderSession`），内置 assets 仅用于首次播种与兜底
   - 顶栏 ⋮ 可切换配置并记住选择（`prefs.currentConfig`）；删除后自动回退
   - `ReaderHost`：`demo.local` 走内置样例页面，其它域名走真实网络（含代理）
+- **修复控制台保存/新建无效（F23）**
+  - 根因：NanoHTTPD keep-alive 下未消费的请求体被当成下一个请求行，导致后续请求全部失败
+  - `AdminServer` 改为每个请求先读完 body 再分发；401 分支同样消费
+  - 控制台：保存/新建/删除失败时红字提示具体错误；删除增加二次确认弹窗
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**

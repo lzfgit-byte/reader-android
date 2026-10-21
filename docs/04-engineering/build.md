@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v2.8
+> **版本**：v2.9
 > **最后更新**：2026-10-20
-> **取代/被取代**：取代同文件 v2.7
+> **取代/被取代**：取代同文件 v2.8
 
 # 本地构建与验证
 
@@ -87,6 +87,23 @@ $env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFI
 
 ---
 
+### 3.x NanoHTTPD 的 keep-alive 陷阱
+
+**现象**：网页端点"保存"毫无反应，控制台也不报错；再刷新还报 `BAD REQUEST: Syntax error. HTTP verb {"config":... unhandled.`。
+
+**根因**：NanoHTTPD 复用连接。如果某次请求的 body 没有被读完（例如 401 提前返回、或只处理 GET 时忘了读），
+残留字节会被当作**下一个请求行**解析，于是后续所有请求都坏掉。
+
+**规则**：`serve()` 一进来就按 `Content-Length` 把 body 读完，再分发到各路由；处理函数只接收已读出的字符串。
+
+```kotlin
+override fun serve(session: IHTTPSession): Response {
+    val rawBody = readRawBody(session)   // 必须无条件消费
+    ...
+}
+```
+
+---
 ## 4. 验证基线（当前）
 
 | 目标 | 结果 |
@@ -338,3 +355,4 @@ App 读取的是 `filesDir/configs/` 下的配置（浏览器编辑后落盘的�
 | v2.6 | 2026-10-21 | 第 6 节补网络代理（单一判定点、双通道生效、device 作用域与默认地址） |
 | v2.7 | 2026-10-21 | 新增第 7 节：内置 Web 管理服务（组成、鉴权、端点、本机验证、已知边界） |
 | v2.8 | 2026-10-21 | §7.4 补配置来源与切换语义；ReaderHost 的演示/真实域名分流 |
+| v2.9 | 2026-10-21 | §3 补 NanoHTTPD keep-alive 未消费 body 的陷阱（保存/新建失效的根因与规则） |
