@@ -104,6 +104,11 @@
   - ExoPlayer + PlayerView 承载在 Compose 中；清晰度行点击进入播放
   - 按进度续播，每 5 秒与退出时回写 `positionMs`/`durationMs`/`percent`
   - 播放失败显示错误码与地址（演示地址不可达时的预期表现）
+- **HTTP 代理（F28）**
+  - `ProxyRules` 单一判定点：启用→白名单直连、其余走代理；代理自身地址不自环；支持 `host:port` / `.example.com` / `*.example.com`
+  - OkHttp 走 `RulesProxySelector`（逐请求判定），支持可选 Basic 认证；WebView 走 `ProxyController`（启用时按白名单 bypass，未启用显式直连）
+  - 代理设置存 `app_setting(device)`（不随导出/同步），设置页新增"网络代理"分组；默认地址 `http://192.168.31.245:4000`
+  - 新增 11 个 JVM 单测与 2 个 instrumented 测试（本地代理验证白名单直连/非白名单走代理）
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -151,6 +156,11 @@
   - ExoPlayer + PlayerView 承载在 Compose 中；清晰度行点击进入播放
   - 按进度续播，每 5 秒与退出时回写 `positionMs`/`durationMs`/`percent`
   - 播放失败显示错误码与地址（演示地址不可达时的预期表现）
+- **HTTP 代理（F28）**
+  - `ProxyRules` 单一判定点：启用→白名单直连、其余走代理；代理自身地址不自环；支持 `host:port` / `.example.com` / `*.example.com`
+  - OkHttp 走 `RulesProxySelector`（逐请求判定），支持可选 Basic 认证；WebView 走 `ProxyController`（启用时按白名单 bypass，未启用显式直连）
+  - 代理设置存 `app_setting(device)`（不随导出/同步），设置页新增"网络代理"分组；默认地址 `http://192.168.31.245:4000`
+  - 新增 11 个 JVM 单测与 2 个 instrumented 测试（本地代理验证白名单直连/非白名单走代理）
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
