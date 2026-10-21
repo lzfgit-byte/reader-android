@@ -92,6 +92,10 @@
   - 收藏页网格（可取消）、历史页单列（标题/类型/时间），均有空态提示
   - `ItemCodec`：条目 ↔ 仓库 `value` 列的 JSON 编解码
   - 修复：历史 payload 存成纯标题导致解码失败（恒 0 条）、切 tab 不重载、文本进度分母错误
+- **搜索**
+  - 顶栏搜索框 → `adapterSearchUrl(keyword)` → 取页 → `getItems` 解析 → 复用列表 UI
+  - 结果页显示"「kw」的结果 · N 项"，可清除返回；不支持搜索时给出明确提示
+  - `ConfigEngine.searchUrl()`：按 `adapterSearchUrl` 返回值判定，而非 `searchUrl` 字段
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -127,6 +131,10 @@
   - 收藏页网格（可取消）、历史页单列（标题/类型/时间），均有空态提示
   - `ItemCodec`：条目 ↔ 仓库 `value` 列的 JSON 编解码
   - 修复：历史 payload 存成纯标题导致解码失败（恒 0 条）、切 tab 不重载、文本进度分母错误
+- **搜索**
+  - 顶栏搜索框 → `adapterSearchUrl(keyword)` → 取页 → `getItems` 解析 → 复用列表 UI
+  - 结果页显示"「kw」的结果 · N 项"，可清除返回；不支持搜索时给出明确提示
+  - `ConfigEngine.searchUrl()`：按 `adapterSearchUrl` 返回值判定，而非 `searchUrl` 字段
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
