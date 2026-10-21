@@ -1,6 +1,7 @@
 package com.ghs.mobile.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -9,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -73,9 +75,10 @@ private fun GridCard(
 ) {
     Card(onClick = onClick) {
         Column {
+            // 图片贴边铺满：核心是让封面尽量大
             Cover(item, Modifier.fillMaxWidth().aspectRatio(4f / 3f))
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 2.dp, top = 6.dp, bottom = 8.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 0.dp, top = 2.dp, bottom = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -95,10 +98,8 @@ private fun GridCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
                 )
-            } else {
-                Spacer(Modifier.height(2.dp))
             }
         }
     }

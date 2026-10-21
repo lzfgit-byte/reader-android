@@ -782,9 +782,9 @@ private fun ListScreen(
         LazyVerticalGrid(
             columns = GridCells.Fixed(columns),
             state = gridState,
-            contentPadding = PaddingValues(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.weight(1f).fillMaxWidth(),
         ) {
             items(page.items, key = { it.jumpUrl }) { item ->
@@ -858,9 +858,9 @@ private fun ComicDetail(info: DetailInfo, resumeIndex: Int, onOpenPage: (Int) ->
         }
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
-            contentPadding = PaddingValues(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
+            contentPadding = PaddingValues(4.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.weight(1f),
         ) {
             itemsIndexed(info.details) { index, page ->
@@ -901,7 +901,7 @@ private fun TextDetail(text: TextContent?) {
     }
     LazyColumn(
         contentPadding = PaddingValues(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         item {
             Text(text.title.ifEmpty { "正文" }, style = MaterialTheme.typography.titleLarge)
@@ -932,7 +932,7 @@ private fun TextDetail(text: TextContent?) {
 private fun VideoDetail(info: DetailInfo) {
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp),
     ) {
         Box(
             modifier = Modifier

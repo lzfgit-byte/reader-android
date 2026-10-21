@@ -42,6 +42,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ghs.mobile.core.model.Pagination
 import com.ghs.mobile.web.ConfigStore
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
 
 /**
  * 站点选择抽屉：标题 + 搜索 + 两列站点卡片，当前项打勾。
@@ -107,18 +110,31 @@ fun SitePickerSheet(
                             .padding(horizontal = 12.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .background(siteColor(site.key), RoundedCornerShape(8.dp)),
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Text(
-                                siteName(site).take(1),
-                                color = Color.White,
-                                fontWeight = FontWeight.Bold,
-                                style = MaterialTheme.typography.titleMedium,
+                        // 站点图标：优先配置里的 favicon，取不到时退回首字色块
+                        val favicon = siteFavicon(site)
+                        if (favicon.isNotEmpty()) {
+                            AsyncImage(
+                                model = favicon,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop,
                             )
+                        } else {
+                            Box(
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .background(siteColor(site.key), RoundedCornerShape(8.dp)),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text(
+                                    siteName(site).take(1),
+                                    color = Color.White,
+                                    fontWeight = FontWeight.Bold,
+                                    style = MaterialTheme.typography.titleMedium,
+                                )
+                            }
                         }
                         Text(
                             siteName(site),
@@ -198,6 +214,11 @@ private fun siteName(store: ConfigStore.StoredConfig): String {
     val name = Regex("""\bname\s*:\s*['"]([^'"]+)['"]""").find(store.source)?.groupValues?.get(1)
     return name?.takeIf { it.isNotBlank() } ?: store.key
 }
+
+/** 站点图标：读取配置里的 favicon（规范 §3 的字段），空串表示没有 */
+private fun siteFavicon(store: ConfigStore.StoredConfig): String =
+    Regex("""\bfavicon\s*:\s*['"]([^'"]+)['"]""")
+        .find(store.source)?.groupValues?.get(1)?.trim().orEmpty()
 
 private fun siteColor(key: String): Color {
     val palette = listOf(Color(0xFF5B7F95), Color(0xFF8A6E9B), Color(0xFF9B7E6E), Color(0xFF6E9B88))
