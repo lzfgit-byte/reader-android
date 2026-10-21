@@ -14,7 +14,7 @@ import org.json.JSONObject
  * 2. `/api` 提供配置 CRUD 与校验（必须带令牌）
  * 3. `/healthz` 存活探测（无敏感信息）
  *
- * 安全边界：端口、绑定地址、令牌**不在本 API 内可改**——它们只在应用设置里配
+ * 安全边界：端口、绑定地址、令牌不在本 API 内可改——它们只在应用设置里配
  * （见 web-admin-api.md §1）。
  */
 class AdminServer(
@@ -27,11 +27,14 @@ class AdminServer(
 ) : NanoHTTPD(bindHost, port) {
 
     override fun serve(session: IHTTPSession): Response {
+        // 必须先把 body 读完：keep-alive 下未消费的字节会被当成下一个请求行，
+        // NanoHTTPD 会报 "BAD REQUEST: Syntax error. HTTP verb ..."（曾导致保存/新建无效）
+        val rawBody = readRawBody(session)
         val path = session.uri
         return when {
             path == "/healthz" -> text("ok")
             path.startsWith("/console") -> serveConsole(session)
-            path.startsWith("/api/") -> serveApi(session)
+            path.startsWith("/api/") -> serveApi(session, rawBody)
             else -> text("not found", Response.Status.NOT_FOUND)
         }
     }
@@ -39,11 +42,11 @@ class AdminServer(
     // ── 静态资源 ────────────────────────────────────────────────────────────
 
     private fun serveConsole(session: IHTTPSession): Response {
-        // /console/?t=xxx 换取 Cookie，之后页面内的 fetch 复用 Cookie
+        // `/console/?t=xxx` 换取 Cookie，之后页面内的 fetch 复用 Cookie
         val incomingToken = session.parameters["t"]?.firstOrNull()
         if (incomingToken != null && incomingToken == token) {
             return staticFile("index.html")?.apply {
-                addHeader("Set-Cookie", "ghs_token=$token; Path=/; SameSite=Lax; HttpOnly")
+                addHeader("Set-Cookie", "ghs_token=$token; Path=/; SameSite=Lax")
             } ?: text("console 未打包", Response.Status.NOT_FOUND)
         }
 
@@ -64,12 +67,11 @@ class AdminServer(
             "html" -> "text/html"
             "js", "mjs" -> "text/javascript"
             "css" -> "text/css"
-            "json" -> "application/json"
+            "json", "map" -> "application/json"
             "svg" -> "image/svg+xml"
             "png" -> "image/png"
             "ttf" -> "font/ttf"
             "woff2" -> "font/woff2"
-            "map" -> "application/json"
             else -> "application/octet-stream"
         }
         return newFixedLengthResponse(
@@ -82,7 +84,7 @@ class AdminServer(
 
     // ── API ────────────────────────────────────────────────────────────────
 
-    private fun serveApi(session: IHTTPSession): Response {
+    private fun serveApi(session: IHTTPSession, rawBody: String): Response {
         if (!isAuthorized(session)) {
             return json(Response.Status.UNAUTHORIZED, error("E-API-002", "未鉴权或令牌失效"))
         }
@@ -102,17 +104,17 @@ class AdminServer(
                 )
 
                 path == "/configs" && method == Method.GET -> jsonOk(configList())
-                path == "/configs" && method == Method.POST -> createConfig(session)
-                path == "/configs/order" && method == Method.POST -> reorder(session)
-                path == "/validate" && method == Method.POST -> validate(session)
+                path == "/configs" && method == Method.POST -> createConfig(rawBody)
+                path == "/configs/order" && method == Method.POST -> reorder(rawBody)
+                path == "/validate" && method == Method.POST -> validate(rawBody)
 
                 path.startsWith("/configs/") -> {
                     val rest = path.removePrefix("/configs/").split('/')
                     val key = rest.firstOrNull().orEmpty()
                     when {
                         rest.size == 1 && method == Method.GET -> readConfig(key)
-                        rest.size == 1 && method == Method.PUT -> updateConfig(key, session)
-                        rest.size == 1 && method == Method.PATCH -> patchConfig(key, session)
+                        rest.size == 1 && method == Method.PUT -> updateConfig(key, rawBody)
+                        rest.size == 1 && method == Method.PATCH -> patchConfig(key, rawBody)
                         rest.size == 1 && method == Method.DELETE -> deleteConfig(key)
                         rest.size == 2 && rest[1] == "script" && method == Method.GET -> script(key)
                         else -> json(Response.Status.NOT_FOUND, error("E-API-001", "未知路径：$path"))
@@ -181,8 +183,8 @@ class AdminServer(
         )
     }
 
-    private fun createConfig(session: IHTTPSession): Response {
-        val body = readBody(session)
+    private fun createConfig(rawBody: String): Response {
+        val body = parseJson(rawBody)
         val source = body.optString("config")
         if (source.isBlank()) {
             return json(Response.Status.BAD_REQUEST, error("E-CFG-002", "缺少 config 内容"))
@@ -198,11 +200,11 @@ class AdminServer(
         return jsonOk(JSONObject().put("key", key))
     }
 
-    private fun updateConfig(key: String, session: IHTTPSession): Response {
+    private fun updateConfig(key: String, rawBody: String): Response {
         if (store.get(key) == null) {
             return json(Response.Status.NOT_FOUND, error("E-CFG-404", "配置不存在：$key"))
         }
-        val body = readBody(session)
+        val body = parseJson(rawBody)
         val source = body.optString("config")
         if (source.isBlank()) {
             return json(Response.Status.BAD_REQUEST, error("E-CFG-002", "缺少 config 内容"))
@@ -219,15 +221,12 @@ class AdminServer(
         return jsonOk(JSONObject().put("key", key).put("updatedAt", System.currentTimeMillis()))
     }
 
-    private fun patchConfig(key: String, session: IHTTPSession): Response {
+    private fun patchConfig(key: String, rawBody: String): Response {
         if (store.get(key) == null) {
             return json(Response.Status.NOT_FOUND, error("E-CFG-404", "配置不存在：$key"))
         }
-        val body = readBody(session)
+        val body = parseJson(rawBody)
         if (body.has("enabled")) store.setEnabled(key, body.getBoolean("enabled"))
-        if (body.has("sort")) store.reorder(store.list().map { it.key }.let { keys ->
-            keys.toMutableList().apply { remove(key); add(body.getInt("sort").coerceIn(0, keys.size), key) }
-        })
         return jsonOk(JSONObject().put("key", key))
     }
 
@@ -237,8 +236,8 @@ class AdminServer(
         else json(Response.Status.NOT_FOUND, error("E-CFG-404", "配置不存在：$key"))
     }
 
-    private fun reorder(session: IHTTPSession): Response {
-        val body = readBody(session)
+    private fun reorder(rawBody: String): Response {
+        val body = parseJson(rawBody)
         val keys = body.optJSONArray("keys") ?: return json(
             Response.Status.BAD_REQUEST,
             error("E-API-003", "缺少 keys"),
@@ -249,8 +248,8 @@ class AdminServer(
     }
 
     /** 静态校验：与浏览器端的快速检查同源，避免"网页说没问题、App 里加载失败" */
-    private fun validate(session: IHTTPSession): Response {
-        val source = readBody(session).optString("config")
+    private fun validate(rawBody: String): Response {
+        val source = parseJson(rawBody).optString("config")
         val errors = JSONArray()
         val warnings = JSONArray()
 
@@ -269,9 +268,6 @@ class AdminServer(
 
         val bytes = source.toByteArray(Charsets.UTF_8).size
         if (bytes > 1_000_000) errors.put(issue("E-CFG-010", "配置超过 1MB（$bytes 字节）", "script"))
-        if (!source.contains("/* break */")) {
-            warnings.put(issue("E-CFG-001", "未找到 /* break */ 分隔符，可能不是内联形态", "script"))
-        }
 
         return jsonOk(
             JSONObject()
@@ -282,28 +278,27 @@ class AdminServer(
     }
 
     /**
-     * 读原始 body。
+     * 按 `Content-Length` 读完请求体。
      *
-     * 不用 `parseBody`：NanoHTTPD 对 `application/json` 不会把内容放进 `postData`，
-     * 直接按 `Content-Length` 从流里读才稳定。
+     * 两个理由：NanoHTTPD 对 JSON 不填 `postData`；更重要的是必须消费掉，
+     * 否则 keep-alive 连接上残留的字节会让下一次请求解析失败。
      */
-    private fun readBody(session: IHTTPSession): JSONObject {
+    private fun readRawBody(session: IHTTPSession): String {
         val length = session.headers["content-length"]?.toIntOrNull() ?: 0
-        val raw = if (length > 0) {
-            val buffer = ByteArray(length)
-            var read = 0
-            val input = session.inputStream
-            while (read < length) {
-                val n = input.read(buffer, read, length - read)
-                if (n <= 0) break
-                read += n
-            }
-            String(buffer, 0, read, Charsets.UTF_8)
-        } else {
-            ""
+        if (length <= 0) return ""
+        val buffer = ByteArray(length)
+        var read = 0
+        val input = session.inputStream
+        while (read < length) {
+            val n = input.read(buffer, read, length - read)
+            if (n <= 0) break
+            read += n
         }
-        return runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
+        return String(buffer, 0, read, Charsets.UTF_8)
     }
+
+    private fun parseJson(raw: String): JSONObject =
+        runCatching { JSONObject(raw) }.getOrDefault(JSONObject())
 
     private fun pickKey(source: String): String =
         Regex("""\bkey\s*:\s*['"]([^'"]+)['"]""").find(source)?.groupValues?.get(1).orEmpty()

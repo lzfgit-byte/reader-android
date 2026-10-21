@@ -13,6 +13,8 @@ const source = ref<string>('')
 const enabled = ref(true)
 const saving = ref(false)
 const status = ref<string>('')
+const error = ref<string>('')
+const pendingDelete = ref(false)
 const issues = ref<ValidateResult>({ ok: true, errors: [], warnings: [] })
 
 const editorHost = ref<HTMLElement | null>(null)
@@ -25,7 +27,13 @@ const current = computed(() => configs.value.find((item) => item.key === selecte
 const allIssues = computed<Issue[]>(() => [...issues.value.errors, ...issues.value.warnings])
 
 async function refresh(): Promise<void> {
-  configs.value = await api.list()
+  try {
+    configs.value = await api.list()
+  } catch (e) {
+    error.value = `读取配置失败：${String(e)}`
+    return
+  }
+  error.value = ''
   if (!configs.value.length) {
     await createConfig()
     return
@@ -66,19 +74,38 @@ async function openConfig(key: string): Promise<void> {
 async function createConfig(): Promise<void> {
   const key = `new-${Date.now().toString(36).slice(-4)}`
   const template = SAMPLE_CONFIGS.empty.replace("key: 'new-config'", `key: '${key}'`)
-  await api.save(key, template, true)
-  await refresh()
-  await openConfig(key)
-  status.value = '已创建，记得保存'
+  error.value = ''
+  try {
+    await api.save(key, template, true)
+    await refresh()
+    await openConfig(key)
+    status.value = '已创建，记得保存'
+  } catch (e) {
+    error.value = `新建失败：${String(e)}`
+  }
 }
 
-async function removeConfig(): Promise<void> {
+/** 删除前先弹确认框（不可撤销操作） */
+function removeConfig(): void {
   if (!selectedKey.value) return
-  await api.remove(selectedKey.value)
+  pendingDelete.value = true
+}
+
+async function doDelete(): Promise<void> {
+  pendingDelete.value = false
+  const key = selectedKey.value
+  if (!key) return
+  error.value = ''
+  try {
+    await api.remove(key)
+  } catch (e) {
+    error.value = `删除失败：${String(e)}`
+    return
+  }
   selectedKey.value = ''
-  configs.value = await api.list()
-  if (configs.value.length) await openConfig(configs.value[0].key)
-  else await createConfig()
+  status.value = `已删除 ${key}`
+  await refresh()
+  if (!configs.value.length) await createConfig()
 }
 
 async function validate(): Promise<void> {
@@ -102,10 +129,14 @@ async function validate(): Promise<void> {
 async function save(): Promise<void> {
   if (!selectedKey.value) return
   saving.value = true
+  error.value = ''
   try {
     await api.save(selectedKey.value, source.value, enabled.value)
     await refresh()
     status.value = `已保存 ${new Date().toLocaleTimeString()}`
+  } catch (e) {
+    error.value = `保存失败：${String(e)}`
+    status.value = ''
   } finally {
     saving.value = false
   }
@@ -146,11 +177,25 @@ onBeforeUnmount(() => editor.value?.dispose())
         <button :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
         <button class="ghost" @click="createConfig">新建</button>
         <button class="ghost danger" @click="removeConfig">删除</button>
-        <span class="status">{{ status }}</span>
+        <span v-if="error" class="status error">{{ error }}</span>
+        <span v-else class="status">{{ status }}</span>
       </div>
     </header>
 
     <p v-if="narrow" class="readonly-tip">当前窗口过窄，源码为只读预览；请用桌面浏览器（≥900px）编辑。</p>
+
+    <div v-if="pendingDelete" class="backdrop" @click.self="pendingDelete = false">
+      <div class="modal">
+        <h3>删除配置</h3>
+        <p>
+          确定删除 <code>{{ selectedKey }}</code>？该操作不可撤销。
+        </p>
+        <div class="modal-actions">
+          <button class="ghost" @click="pendingDelete = false">取消</button>
+          <button class="solid-danger" @click="doDelete">删除</button>
+        </div>
+      </div>
+    </div>
 
     <main class="body">
       <aside class="list">
@@ -294,4 +339,22 @@ button.danger { border-color: #5a3030; color: #e39a9a; }
   .panel { border-left: none; border-top: 1px solid var(--line); max-height: 40vh; }
   .meta { display: none; }
 }
+.status.error { color: var(--bad); }
+
+.backdrop {
+  position: fixed; inset: 0; background: rgba(0, 0, 0, .55);
+  display: flex; align-items: center; justify-content: center; z-index: 50;
+}
+.modal {
+  background: var(--panel); border: 1px solid var(--line); border-radius: 12px;
+  padding: 20px 22px; width: min(420px, 90vw); box-shadow: 0 18px 48px rgba(0, 0, 0, .45);
+}
+.modal h3 { margin: 0 0 10px; font-size: 16px; }
+.modal p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.6; }
+.modal code { color: var(--text); }
+.modal-actions {
+  display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px;
+}
+.solid-danger { background: #b4453f; }
+
 </style>
