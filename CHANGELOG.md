@@ -119,6 +119,12 @@
 - **控制台断点（F24）**
   - 编辑器列改 `minmax(0, …)`，窄窗口下不再被两侧固定宽度挤成 0 宽
   - `<900px` 单栏堆叠，源码模式只读并提示改用桌面浏览器，与 `web-console.md` §2 一致
+- **内置 Web 管理服务（F23）**
+  - `/console` 提供控制台静态资源（SPA 回落），`/api` 提供配置 CRUD 与静态校验，`/healthz` 探活
+  - 鉴权：`/api` 需 Bearer 或 Cookie，`/console/?t=` 换取 Cookie；无凭证 401
+  - 配置存 `filesDir/configs/<key>.js` + `index.json`，首次运行播种内置示例
+  - 设置页新增「Web 管理」（开关/端口/局域网访问/令牌重置）；这些参数不开放 API 修改
+  - 控制台改由 `createApi()` 自动选择：`/console` 走 HTTP，独立开发仍用 Mock
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -181,6 +187,12 @@
 - **控制台断点（F24）**
   - 编辑器列改 `minmax(0, …)`，窄窗口下不再被两侧固定宽度挤成 0 宽
   - `<900px` 单栏堆叠，源码模式只读并提示改用桌面浏览器，与 `web-console.md` §2 一致
+- **内置 Web 管理服务（F23）**
+  - `/console` 提供控制台静态资源（SPA 回落），`/api` 提供配置 CRUD 与静态校验，`/healthz` 探活
+  - 鉴权：`/api` 需 Bearer 或 Cookie，`/console/?t=` 换取 Cookie；无凭证 401
+  - 配置存 `filesDir/configs/<key>.js` + `index.json`，首次运行播种内置示例
+  - 设置页新增「Web 管理」（开关/端口/局域网访问/令牌重置）；这些参数不开放 API 修改
+  - 控制台改由 `createApi()` 自动选择：`/console` 走 HTTP，独立开发仍用 Mock
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**

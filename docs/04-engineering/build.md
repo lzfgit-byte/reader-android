@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v2.6
+> **版本**：v2.7
 > **最后更新**：2026-10-20
-> **取代/被取代**：取代同文件 v2.5
+> **取代/被取代**：取代同文件 v2.6
 
 # 本地构建与验证
 
@@ -251,7 +251,58 @@ WHPX 报告 operational，qemu 却几乎不耗 CPU（虚拟机未真正执行）
 
 ---
 
-## 7. 变更记录
+## 7. 内置 Web 管理服务（F23）
+
+### 7.1 组成
+
+| 组件 | 位置 | 职责 |
+|---|---|---|
+| `AdminServer` | `app/.../web/AdminServer.kt` | NanoHTTPD；`/console` 静态资源、`/api` 配置 CRUD 与校验、`/healthz` |
+| `ConfigStore` | `app/.../web/ConfigStore.kt` | `filesDir/configs/<key>.js` + `index.json`（enabled/sort） |
+| `WebAdminController` | `app/.../web/WebAdminController.kt` | 开关/端口/绑定/令牌；端口占用顺延；`app_setting(device)` 持久化 |
+
+控制台静态资源来自 `web/console/dist`，由 Gradle 任务 `syncConsole` 在 `preBuild` 前同步到
+`app/src/main/assets/webconsole/`（该目录不入库）。
+
+### 7.2 鉴权与路径
+
+| 路径 | 鉴权 | 说明 |
+|---|---|---|
+| `/healthz` | 无 | 存活探测，不含敏感信息 |
+| `/console/?t=<token>` | 查询参数换 Cookie | 设置页展示的完整地址 |
+| `/console/**` | Cookie | SPA，未命中的路径回落 `index.html` |
+| `/api/**` | `Authorization: Bearer <token>` 或 Cookie | 无凭证返回 401 `E-API-002` |
+
+端口默认 `18600`；默认只绑定 `127.0.0.1`，需显式打开"允许局域网访问"才绑 `0.0.0.0`。
+**端口、绑定、令牌只能在本机设置页改**，API 不提供入口。
+
+已实现端点：`GET /api/meta`、`GET/POST /api/configs`、`GET/PUT/PATCH/DELETE /api/configs/{key}`、
+`GET /api/configs/{key}/script`、`POST /api/validate`、`POST /api/configs/order`。
+
+### 7.3 本机验证（模拟器）
+
+```powershell
+# 1) 设备上启用：设置 → Web 管理 → 启用（记下展示的令牌）
+# 2) 端口映射到宿主机
+adb forward tcp:18600 tcp:18600
+# 3) 探活与接口
+curl.exe http://127.0.0.1:18600/healthz
+curl.exe -H "Authorization: Bearer <token>" http://127.0.0.1:18600/api/configs
+# 4) 桌面浏览器打开带令牌地址
+start http://127.0.0.1:18600/console/?t=<token>
+```
+
+### 7.4 已知边界
+
+- 校验目前只做**静态检查**（必需方法、key 格式、体积、旧写法），未接引擎实跑；实跑属 F25 调试台。
+- 未实现：`/engine/**` 代理、导入导出、bundle、`/api/state`、`/api/logs`。
+- 服务随应用进程存活，退出应用即释放端口。
+
+---
+
+---
+
+## 8. 变更记录
 
 | 版本 | 日期 | 变更 |
 |---|---|---|
@@ -272,3 +323,4 @@ WHPX 报告 operational，qemu 却几乎不耗 CPU（虚拟机未真正执行）
 | v2.4 | 2026-10-21 | 第 6 节补设置页（主题/字号/阅读器模式），说明 prefs 作用域与全局生效方式 |
 | v2.5 | 2026-10-21 | 第 6 节视频行改为播放器；补播放器行为（续播/回写/错误展示） |
 | v2.6 | 2026-10-21 | 第 6 节补网络代理（单一判定点、双通道生效、device 作用域与默认地址） |
+| v2.7 | 2026-10-21 | 新增第 7 节：内置 Web 管理服务（组成、鉴权、端点、本机验证、已知边界） |

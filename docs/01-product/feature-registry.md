@@ -48,7 +48,7 @@
 | F20 | 数据备份与恢复 | 底座 | P2 | backlog | v1.1 | §5.14 | — | — |
 | F21 | 外观与显示设置 | 底座 | P1 | planned | M5 | §5.15 | — | — |
 | F22 | 应用更新检查 | 增强 | P2 | backlog | v1.2 | §5.16 | — | — |
-| F23 | 内置 Web 管理服务 | 底座 | P0 | planned | M5 | §5.17 | — | — |
+| F23 | 内置 Web 管理服务 | 底座 | P0 | in-progress | M5 | §5.17 | /console 静态 + /api 配置 CRUD 与校验 | — |
 | F24 | 配置编辑器（Web） | 底座 | P0 | in-progress | M5 | §5.18 | 控制台 v0.1（列表/编辑/校验，Mock API） | — |
 | F25 | 实时调试台（Web） | 底座 | P0 | planned | M5 | §5.19 | — | — |
 | F26 | WebDAV 同步 | 底座 | P1 | backlog | M6 | §5.20 | — | — |
