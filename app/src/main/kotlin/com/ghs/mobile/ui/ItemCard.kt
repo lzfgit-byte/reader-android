@@ -31,6 +31,8 @@ import com.ghs.mobile.core.model.Item
 import com.ghs.mobile.core.model.ItemType
 import com.ghs.mobile.core.model.ReaderKind
 import com.ghs.mobile.core.model.ReadingProgress
+import coil.compose.SubcomposeAsyncImage
+import androidx.compose.ui.layout.ContentScale
 
 /** 条目卡片：封面占位 + 标题 + 标签 + 进度/类型 + 收藏按钮 */
 @Composable
@@ -44,7 +46,20 @@ fun ItemCard(
     Card(onClick = onClick) {
         Column {
             Box {
-                CoverPlaceholder(title = item.title)
+                // 封面：有地址就真的加载；失败或为空时退回字母占位，不留破图
+                val cover = item.coverImg
+                if (cover.isNotEmpty()) {
+                    SubcomposeAsyncImage(
+                        model = cover,
+                        contentDescription = item.title,
+                        modifier = Modifier.fillMaxWidth().aspectRatio(3f / 4f),
+                        contentScale = ContentScale.Crop,
+                        loading = { CoverPlaceholder(title = item.title) },
+                        error = { CoverPlaceholder(title = item.title) },
+                    )
+                } else {
+                    CoverPlaceholder(title = item.title)
+                }
                 IconButton(
                     onClick = onToggleCollect,
                     modifier = Modifier.align(Alignment.TopEnd).padding(4.dp),
