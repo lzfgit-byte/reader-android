@@ -1,0 +1,122 @@
+package com.ghs.mobile.session
+
+import android.content.Context
+import com.ghs.mobile.core.engine.config.ConfigEngine
+import com.ghs.mobile.core.engine.config.InlineConfigScanner
+import com.ghs.mobile.core.engine.proxy.ProxyRules
+import com.ghs.mobile.core.engine.script.ScriptHostTransport
+import com.ghs.mobile.core.model.CContent
+import com.ghs.mobile.core.model.DetailInfo
+import com.ghs.mobile.core.model.Item
+import com.ghs.mobile.core.model.Page
+import com.ghs.mobile.core.model.TextContent
+import com.ghs.mobile.core.script.HttpScriptHost
+import com.ghs.mobile.core.script.WebViewScriptEngine
+
+/**
+ * 阅读宿主：演示域名走内置样例页面，其它域名走真实网络。
+ *
+ * 这样同一套配置链路既能离线演示，也能接真实来源；
+ * 是否联网只取决于配置里的地址，不需要切换代码。
+ */
+class ReaderHost(
+    context: Context,
+    proxyRules: ProxyRules,
+) : ScriptHostTransport {
+
+    private val http = HttpScriptHost(context) { proxyRules }
+
+    override fun fetchHtml(url: String): String =
+        if (isDemo(url)) assetHtml(url) else http.fetchHtml(url)
+
+    override fun request(
+        url: String,
+        method: String,
+        headers: Map<String, String>,
+        body: String?,
+    ): ScriptHostTransport.HostResponse =
+        if (isDemo(url)) {
+            ScriptHostTransport.HostResponse(status = 200, headers = emptyMap(), body = "{}")
+        } else {
+            http.request(url, method, headers, body)
+        }
+
+    override fun executePage(url: String, code: String): String =
+        if (isDemo(url)) "" else http.executePage(url, code)
+
+    override fun close() {
+        runCatching { http.close() }
+    }
+
+    private fun isDemo(url: String): Boolean = url.contains("demo.local")
+
+    private fun assetHtml(url: String): String {
+        val asset = when {
+            url.contains("search?q=") -> SEARCH
+            url.contains("type=comic") -> COMIC
+            url.contains("type=text") && url.contains("page=2") -> TEXT2
+            url.contains("type=text") -> TEXT
+            url.contains("type=video") -> VIDEO
+            else -> LIST
+        }
+        return context.assets.open(asset).bufferedReader().use { it.readText() }
+    }
+
+    private val context: Context = context
+
+    private companion object {
+        const val LIST = "demo/list.html"
+        const val COMIC = "demo/detail-comic.html"
+        const val TEXT = "demo/detail-text.html"
+        const val TEXT2 = "demo/detail-text-2.html"
+        const val SEARCH = "demo/search.html"
+        const val VIDEO = "demo/detail-video.html"
+    }
+}
+
+/**
+ * 一次阅读会话：配置源码 + 脚本引擎 + 宿主。
+ *
+ * 配置来自 `files/configs`（浏览器里编辑的那份），不再是编译进 APK 的常量。
+ * 引擎是重对象（WebView），整场复用一份；[close] 时释放。
+ */
+class ReaderSession(
+    private val context: Context,
+    private val source: String,
+    private val proxyRules: ProxyRules = ProxyRules.direct(),
+) : AutoCloseable {
+
+    /** 配置声明的首页地址；缺失时退回演示首页 */
+    val homeUrl: String = InlineConfigScanner.scan(source).homeUrl?.takeIf { it.isNotBlank() }
+        ?: "https://demo.local/list"
+
+    private val host = ReaderHost(context, proxyRules)
+    private val engine = WebViewScriptEngine(context, proxyRules)
+    private val configEngine = ConfigEngine(engine, host).load(source)
+
+    fun page(): Page = pageFrom(homeUrl)
+
+    fun pageFrom(url: String): Page {
+        configEngine.withHtml(host.fetchHtml(url))
+        return configEngine.page()
+    }
+
+    fun detail(item: Item): DetailInfo? = configEngine.detailInfo(item)
+
+    fun textContent(url: String): TextContent = configEngine.textContent(url)
+
+    fun contents(url: String): List<CContent> = configEngine.contents(url)
+
+    /** 搜索：走 adapterSearchUrl 取地址，再按普通列表解析 */
+    fun search(keyword: String): Pair<String, Page>? {
+        val url = configEngine.searchUrl(keyword)
+        if (url.isEmpty()) return null
+        configEngine.withHtml(host.fetchHtml(url))
+        return url to configEngine.page()
+    }
+
+    override fun close() {
+        runCatching { configEngine.close() }
+        host.close()
+    }
+}

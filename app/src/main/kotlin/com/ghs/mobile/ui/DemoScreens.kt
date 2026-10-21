@@ -61,7 +61,8 @@ import com.ghs.mobile.core.model.Page
 import com.ghs.mobile.core.model.ReaderKind
 import com.ghs.mobile.core.model.ReadingProgress
 import com.ghs.mobile.core.model.TextContent
-import com.ghs.mobile.demo.DemoSession
+import com.ghs.mobile.session.ReaderSession
+import com.ghs.mobile.web.ConfigStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.material.icons.filled.Favorite
@@ -74,6 +75,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.MoreVert
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -103,7 +107,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     val app = GhsApp.instance
     val repository = app.repository
     // 会话（WebView 引擎）必须在后台线程创建：引擎内部会等待页面就绪，主线程等待会死锁
-    var session by remember { mutableStateOf<DemoSession?>(null) }
+    var session by remember { mutableStateOf<ReaderSession?>(null) }
     var screen by remember { mutableStateOf<Screen>(Screen.Loading) }
     // 记住上一次解析好的列表：返回时直接回填，避免回到 Loading 又无处可去
     var lastPage by remember { mutableStateOf<Page?>(null) }
@@ -114,6 +118,10 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
 
     var tab by remember { mutableStateOf(DemoTab.HOME) }
+    // 当前配置：来自 files/configs（浏览器里编辑的那份）
+    var configKey by remember { mutableStateOf<String?>(null) }
+    var configs by remember { mutableStateOf<kotlin.collections.List<ConfigStore.StoredConfig>>(emptyList()) }
+    var showConfigMenu by remember { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
     var searchKeyword by remember { mutableStateOf("") }
     var searchError by remember { mutableStateOf<String?>(null) }
@@ -176,11 +184,37 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     }
 
     LaunchedEffect(Unit) {
-        val created = runCatching { withContext(Dispatchers.IO) { DemoSession(app, app.proxy.rules.value) } }
-            .getOrElse {
-                screen = Screen.Failed(it.message ?: it.toString())
-                return@LaunchedEffect
+        val (loaded, selected) = withContext(Dispatchers.IO) {
+            app.configs.seedIfEmpty()
+            val all = app.configs.list()
+            val savedKey = repository.settings(SettingScope.PREFS)["currentConfig"]
+            val picked = all.firstOrNull { it.key == savedKey && it.enabled }
+                ?: all.firstOrNull { it.enabled }
+                ?: all.firstOrNull()
+            all to picked
+        }
+        configs = loaded
+        configKey = selected?.key
+    }
+
+    // 配置切换：关掉旧会话再按新配置重建（引擎较重，不能并行两份）
+    LaunchedEffect(configKey) {
+        val key = configKey ?: return@LaunchedEffect
+        screen = Screen.Loading
+        session?.close()
+        session = null
+
+        val created = runCatching {
+            withContext(Dispatchers.IO) {
+                val source = app.configs.get(key)?.source
+                    ?: app.assets.open("demo/config.js").bufferedReader().use { it.readText() }
+                ReaderSession(app, source, app.proxy.rules.value)
             }
+        }.getOrElse {
+            screen = Screen.Failed(it.message ?: it.toString())
+            return@LaunchedEffect
+        }
+
         session = created
         runCatching { withContext(Dispatchers.IO) { created.page() } }
             .onSuccess {
@@ -336,6 +370,42 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     )
                 },
                 actions = {
+                    Box {
+                        IconButton(onClick = { showConfigMenu = true }) {
+                            Icon(Icons.Default.MoreVert, contentDescription = "切换配置")
+                        }
+                        DropdownMenu(expanded = showConfigMenu, onDismissRequest = { showConfigMenu = false }) {
+                            if (configs.isEmpty()) {
+                                DropdownMenuItem(
+                                    text = { Text("没有可用配置") },
+                                    onClick = { showConfigMenu = false },
+                                )
+                            }
+                            configs.forEach { config ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            (if (config.enabled) "" else "（停用）") + config.key,
+                                        )
+                                    },
+                                    onClick = {
+                                        showConfigMenu = false
+                                        configKey = config.key
+                                        tab = DemoTab.HOME
+                                        scope.launch {
+                                            withContext(Dispatchers.IO) {
+                                                repository.putSetting(
+                                                    SettingScope.PREFS,
+                                                    "currentConfig",
+                                                    config.key,
+                                                )
+                                            }
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
                     if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
                         IconButton(onClick = { searchOpen = !searchOpen }) {
                             Icon(Icons.Default.Search, contentDescription = "搜索")
