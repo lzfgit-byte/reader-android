@@ -2,47 +2,45 @@ package com.ghs.mobile.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
-import androidx.compose.material3.Card
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.ghs.mobile.core.model.Item
 import com.ghs.mobile.core.model.ReadingProgress
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
+import androidx.compose.foundation.layout.padding
 
 /** 历史条目：条目 + 记录时间 */
 data class HistoryEntry(val item: Item, val createTime: Long)
 
-/** 收藏页：与列表同样的卡片，可直接取消收藏 */
+/** 收藏页：与首页同样的卡片（单/双列随首页设置） */
 @Composable
 fun FavoritesScreen(
     items: List<Item>,
     progress: Map<String, ReadingProgress>,
     collected: Set<String>,
+    layout: ItemCardLayout,
     onOpen: (Item) -> Unit,
     onToggleCollect: (Item) -> Unit,
 ) {
     if (items.isEmpty()) {
-        EmptyHint("还没有收藏 · 在列表点 ♡ 即可收藏")
+        EmptyHint("还没有收藏 · 点卡片上的星标即可收藏")
         return
     }
+    val columns = if (layout == ItemCardLayout.LIST) 1 else 2
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -53,6 +51,7 @@ fun FavoritesScreen(
                 item = item,
                 progress = progress[item.jumpUrl],
                 collected = item.jumpUrl in collected,
+                layout = layout,
                 onClick = { onOpen(item) },
                 onToggleCollect = { onToggleCollect(item) },
             )
@@ -60,10 +59,11 @@ fun FavoritesScreen(
     }
 }
 
-/** 历史页：单列，展示标题、类型与浏览时间 */
+/** 历史页：同一套卡片，副标题换成浏览时间 */
 @Composable
 fun HistoryScreen(
     entries: List<HistoryEntry>,
+    layout: ItemCardLayout,
     onOpen: (Item) -> Unit,
 ) {
     if (entries.isEmpty()) {
@@ -71,33 +71,37 @@ fun HistoryScreen(
         return
     }
     val formatter = SimpleDateFormat("MM-dd HH:mm", Locale.getDefault())
+    val columns = if (layout == ItemCardLayout.LIST) 1 else 2
 
-    LazyColumn(
+    LazyVerticalGrid(
+        columns = GridCells.Fixed(columns),
         contentPadding = PaddingValues(12.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
         items(entries, key = { it.item.jumpUrl }) { entry ->
-            Card(onClick = { onOpen(entry.item) }) {
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(14.dp),
-                    horizontalArrangement = Arrangement.SpaceBetween,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        entry.item.title.ifEmpty { entry.item.jumpUrl },
-                        style = MaterialTheme.typography.titleSmall,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.weight(1f),
-                    )
-                    Text(
-                        "${readableType(entry.item)} · ${formatter.format(Date(entry.createTime))}",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+            ItemCard(
+                item = entry.item,
+                progress = null,
+                collected = false,
+                layout = layout,
+                onClick = { onOpen(entry.item) },
+                onToggleCollect = {},
+                subtitleOverride = "${readableType(entry.item)} · ${formatter.format(Date(entry.createTime))}",
+            )
         }
     }
+}
+
+/** 底部加载状态提示 */
+@Composable
+fun LoadMoreHint(loading: Boolean, noMore: Boolean) {
+    if (!loading && !noMore) return
+    Text(
+        if (loading) "正在加载更多…" else "没有更多了",
+        style = MaterialTheme.typography.labelSmall,
+        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.fillMaxWidth().padding(12.dp),
+    )
 }

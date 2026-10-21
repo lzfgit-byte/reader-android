@@ -79,6 +79,9 @@ import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.runtime.snapshotFlow
+import androidx.compose.material.icons.filled.Menu
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -131,6 +134,10 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     var searchOpen by remember { mutableStateOf(false) }
     var searchKeyword by remember { mutableStateOf("") }
     var searchError by remember { mutableStateOf<String?>(null) }
+    // 列表形态：双列卡片 / 单列行卡片（参考常见阅读客户端）
+    var layoutMode by remember { mutableStateOf(ItemCardLayout.GRID) }
+    var loadingMore by remember { mutableStateOf(false) }
+    var noMore by remember { mutableStateOf(false) }
     var collected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var favoriteItems by remember { mutableStateOf<kotlin.collections.List<Item>>(emptyList()) }
     var historyEntries by remember { mutableStateOf<kotlin.collections.List<HistoryEntry>>(emptyList()) }
@@ -186,6 +193,33 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     }
                 }
                 .onFailure { searchError = it.message ?: it.toString() }
+        }
+    }
+
+    /** 滑到底部时取下一页：按 pagination 里当前页之后的第一条链接 */
+    fun loadMore() {
+        if (loadingMore || noMore) return
+        val current = screen as? Screen.List ?: return
+        val nextUrl = nextPageUrl(current.page) ?: run {
+            noMore = true
+            return
+        }
+        val active = session ?: return
+        loadingMore = true
+        scope.launch {
+            val next = runCatching { withContext(Dispatchers.IO) { active.pageFrom(nextUrl) } }.getOrNull()
+            if (next != null && next.items.isNotEmpty()) {
+                val known = current.page.items.map { it.jumpUrl }.toSet()
+                val merged = current.page.copy(
+                    items = current.page.items + next.items.filterNot { it.jumpUrl in known },
+                    pagination = next.pagination,
+                )
+                lastPage = merged
+                screen = Screen.List(merged)
+            } else {
+                noMore = true
+            }
+            loadingMore = false
         }
     }
 
@@ -438,6 +472,18 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                             }
                         }
                     }
+                    IconButton(onClick = {
+                        layoutMode = if (layoutMode == ItemCardLayout.GRID) {
+                            ItemCardLayout.LIST
+                        } else {
+                            ItemCardLayout.GRID
+                        }
+                    }) {
+                        Icon(
+                            Icons.Default.Menu,
+                            contentDescription = if (layoutMode == ItemCardLayout.GRID) "切换单列" else "切换双列",
+                        )
+                    }
                     if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
                         IconButton(onClick = { searchOpen = !searchOpen }) {
                             Icon(Icons.Default.Search, contentDescription = "搜索")
@@ -451,7 +497,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     }
                 },
                 navigationIcon = {
-                    if (screen is Screen.Detail || screen is Screen.SearchResults) {
+                    if (tab == DemoTab.HOME && (screen is Screen.Detail || screen is Screen.SearchResults)) {
                         IconButton(onClick = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                         }
@@ -487,6 +533,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     items = favoriteItems,
                     progress = progressByUrl,
                     collected = collected,
+                    layout = layoutMode,
                     onOpen = { item -> screen = Screen.Detail(item, null); tab = DemoTab.HOME },
                     onToggleCollect = { item -> toggleCollect(item) },
                 )
@@ -495,6 +542,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
             if (tab == DemoTab.HISTORY) {
                 HistoryScreen(
                     entries = historyEntries,
+                    layout = layoutMode,
                     onOpen = { item -> screen = Screen.Detail(item, null); tab = DemoTab.HOME },
                 )
                 return@Surface
@@ -544,8 +592,12 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                         page = current.page,
                         progress = progressByUrl,
                         collected = collected,
+                        layout = layoutMode,
+                        loadingMore = loadingMore,
+                        noMore = noMore,
                         onOpen = { item -> screen = Screen.Detail(item, null) },
                         onToggleCollect = { item -> toggleCollect(item) },
+                        onLoadMore = { loadMore() },
                     )
                 }
 
@@ -562,8 +614,12 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                         page = current.page,
                         progress = progressByUrl,
                         collected = collected,
+                        layout = layoutMode,
+                        loadingMore = loadingMore,
+                        noMore = noMore,
                         onOpen = { item -> screen = Screen.Detail(item, null) },
                         onToggleCollect = { item -> toggleCollect(item) },
+                        onLoadMore = { loadMore() },
                     )
                 }
 
@@ -637,11 +693,28 @@ private fun ListScreen(
     page: Page,
     progress: Map<String, ReadingProgress>,
     collected: Set<String>,
+    layout: ItemCardLayout,
+    loadingMore: Boolean,
+    noMore: Boolean,
     onOpen: (Item) -> Unit,
     onToggleCollect: (Item) -> Unit,
+    onLoadMore: () -> Unit,
 ) {
+    val columns = if (layout == ItemCardLayout.LIST) 1 else 2
+    val gridState = rememberLazyGridState()
+
+    // 滚到接近底部就预取下一页（留 4 个的余量，避免到底才转圈）
+    LaunchedEffect(gridState, page.items.size, noMore) {
+        if (noMore) return@LaunchedEffect
+        snapshotFlow { gridState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: -1 }
+            .collect { last ->
+                if (last >= page.items.size - 4) onLoadMore()
+            }
+    }
+
     LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
+        columns = GridCells.Fixed(columns),
+        state = gridState,
         contentPadding = PaddingValues(12.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -652,9 +725,13 @@ private fun ListScreen(
                 item = item,
                 progress = progress[item.jumpUrl],
                 collected = item.jumpUrl in collected,
+                layout = layout,
                 onClick = { onOpen(item) },
                 onToggleCollect = { onToggleCollect(item) },
             )
+        }
+        item {
+            LoadMoreHint(loading = loadingMore, noMore = noMore)
         }
     }
 }
@@ -850,4 +927,11 @@ private fun DemoSearchBar(
             )
         }
     }
+}
+
+/** 下一页地址：当前页之后的第一条非空链接（没有则说明到底了） */
+private fun nextPageUrl(page: Page): String? {
+    val currentIndex = page.pagination.indexOfFirst { it.isCurrent }
+    val candidates = if (currentIndex >= 0) page.pagination.drop(currentIndex + 1) else page.pagination
+    return candidates.firstOrNull { it.url.isNotBlank() }?.url
 }
