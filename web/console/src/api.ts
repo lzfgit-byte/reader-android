@@ -192,6 +192,18 @@ export function createMockApi(): ConsoleApi {
 
 // ── HTTP 实现（内置服务提供时使用） ─────────────────────────────────────────
 
+/** 带错误码的 API 异常：界面按 code 决定怎么处理（例如 key 冲突） */
+export class ApiError extends Error {
+  constructor(
+    readonly status: number,
+    readonly code: string,
+    message: string,
+  ) {
+    super(message)
+    this.name = 'ApiError'
+  }
+}
+
 function currentToken(): string {
   const fromQuery = new URLSearchParams(location.search).get('t')
   if (fromQuery) return fromQuery
@@ -214,7 +226,18 @@ export function createHttpApi(): ConsoleApi {
     const response = await fetch(`/api${path}`, { ...init, headers: headers(), credentials: 'same-origin' })
     if (!response.ok) {
       const text = await response.text()
-      throw new Error(`HTTP ${response.status}：${text.slice(0, 200)}`)
+      let code = `HTTP_${response.status}`
+      let message = text.slice(0, 200)
+      try {
+        const parsed = JSON.parse(text)
+        if (parsed?.error?.code) {
+          code = String(parsed.error.code)
+          message = String(parsed.error.message ?? message)
+        }
+      } catch {
+        // 非 JSON 错误体，保留原文
+      }
+      throw new ApiError(response.status, code, message)
     }
     return (await response.json()) as T
   }
@@ -243,7 +266,7 @@ export function createHttpApi(): ConsoleApi {
         await call(`/configs/${encodeURIComponent(key)}`, { method: 'PUT', body: payload })
       } catch (error) {
         // 不存在则创建（PUT 返回 404 时回退到 POST）
-        if (String(error).includes('404')) {
+        if (error instanceof ApiError && error.status === 404) {
           await call('/configs', { method: 'POST', body: payload })
         } else {
           throw error

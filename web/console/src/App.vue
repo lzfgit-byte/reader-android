@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { createApi, REQUIRED_METHODS, type ConfigSummary, type Issue, type ValidateResult } from './api'
+import { ApiError, createApi, REQUIRED_METHODS, type ConfigSummary, type Issue, type ValidateResult } from './api'
 import { SAMPLE_CONFIGS } from './samples'
 
 type MonacoModule = typeof import('./editor/monaco')
@@ -15,6 +15,8 @@ const saving = ref(false)
 const status = ref<string>('')
 const error = ref<string>('')
 const pendingDelete = ref(false)
+/** 源码里改了 key：key 不允许原地改，弹窗给出"另存为 / 改回"两条出路 */
+const keyConflict = ref<string | null>(null)
 const issues = ref<ValidateResult>({ ok: true, errors: [], warnings: [] })
 
 const editorHost = ref<HTMLElement | null>(null)
@@ -135,11 +137,46 @@ async function save(): Promise<void> {
     await refresh()
     status.value = `已保存 ${new Date().toLocaleTimeString()}`
   } catch (e) {
+    // key 不能在原地改：这是服务端的保护（改名 = 另存 + 删除），UI 给出两条出路
+    if (e instanceof ApiError && e.code === 'E-CFG-004') {
+      const matched = /\bkey\s*:\s*['"]([^'"]+)['"]/.exec(source.value)
+      keyConflict.value = matched?.[1] ?? ''
+      status.value = ''
+      return
+    }
     error.value = `保存失败：${String(e)}`
     status.value = ''
   } finally {
     saving.value = false
   }
+}
+
+/** 另存为新的 key（等同"改名"：新建 + 提示删除旧配置） */
+async function saveAsNewKey(): Promise<void> {
+  const newKey = keyConflict.value
+  keyConflict.value = null
+  if (!newKey) return
+  error.value = ''
+  try {
+    await api.save(newKey, source.value, enabled.value)
+    selectedKey.value = newKey
+    await refresh()
+    await openConfig(newKey)
+    status.value = `已另存为 ${newKey}`
+  } catch (e) {
+    error.value = `另存失败：${String(e)}`
+  }
+}
+
+/** 把源码里的 key 改回当前配置的 key，再保存 */
+async function restoreKey(): Promise<void> {
+  const currentKey = selectedKey.value
+  keyConflict.value = null
+  if (!currentKey) return
+  const fixed = source.value.replace(/(\bkey\s*:\s*['"])[^'"]+(['"])/, `$1${currentKey}$2`)
+  source.value = fixed
+  editor.value?.setValue(fixed)
+  await save()
 }
 
 function jumpTo(issue: Issue): void {
@@ -193,6 +230,21 @@ onBeforeUnmount(() => editor.value?.dispose())
         <div class="modal-actions">
           <button class="ghost" @click="pendingDelete = false">取消</button>
           <button class="solid-danger" @click="doDelete">删除</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="keyConflict" class="backdrop" @click.self="keyConflict = null">
+      <div class="modal">
+        <h3>key 不能直接修改</h3>
+        <p>
+          源码里的 key 是 <code>{{ keyConflict }}</code>，与当前配置 <code>{{ selectedKey }}</code> 不一致。
+          key 是配置的标识，改名等于"另存为新配置"。
+        </p>
+        <div class="modal-actions">
+          <button class="ghost" @click="keyConflict = null">取消</button>
+          <button class="ghost" @click="restoreKey">改回 {{ selectedKey }}</button>
+          <button @click="saveAsNewKey">另存为 {{ keyConflict }}</button>
         </div>
       </div>
     </div>
