@@ -132,6 +132,8 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     var configKey by remember { mutableStateOf<String?>(null) }
     var configs by remember { mutableStateOf<kotlin.collections.List<ConfigStore.StoredConfig>>(emptyList()) }
     var showConfigMenu by remember { mutableStateOf(false) }
+    var showSiteSheet by remember { mutableStateOf(false) }
+    var showPageSheet by remember { mutableStateOf(false) }
     // 详情解析失败的原因：info == null 既可能是"还在解析"，也可能是"失败了"
     var detailError by remember { mutableStateOf<String?>(null) }
     // 网页端改过配置后由服务端通知：在列表页立即重载，阅读中则等回到列表
@@ -202,6 +204,15 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 }
                 .onFailure { searchError = it.message ?: it.toString() }
         }
+    }
+
+    /** 当前站点显示名：优先配置里的 name，缺失时退回 key */
+    fun siteLabel(): String {
+        val current = configs.firstOrNull { it.key == configKey }
+        val name = current?.source?.let { source ->
+            Regex("\\bname\\s*:\\s*['\"]([^'\"]+)['\"]").find(source)?.groupValues?.get(1)
+        }
+        return name?.takeIf { it.isNotBlank() } ?: configKey ?: "站点"
     }
 
     /**
@@ -462,7 +473,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 title = {
                     Text(
                         when (tab) {
-                            DemoTab.HOME -> titleFor(screen, activeTagTitle)
+                            DemoTab.HOME -> activeTagTitle ?: titleFor(screen, null)
                             DemoTab.FAVORITES -> "收藏 · ${favoriteItems.size}"
                             DemoTab.HISTORY -> "历史 · ${historyEntries.size}"
                             DemoTab.TAGS -> "标签 · ${lastPage?.tags?.size ?: 0}"
@@ -470,45 +481,20 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     )
                 },
                 actions = {
-                    Box {
-                        IconButton(onClick = {
-                            showConfigMenu = true
-                            // 每次打开都重新读：网页端可能刚新建/删除过配置
-                            scope.launch {
-                                configs = withContext(Dispatchers.IO) { app.configs.list() }
-                            }
-                        }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "切换配置")
-                        }
-                        DropdownMenu(expanded = showConfigMenu, onDismissRequest = { showConfigMenu = false }) {
-                            if (configs.isEmpty()) {
-                                DropdownMenuItem(
-                                    text = { Text("没有可用配置") },
-                                    onClick = { showConfigMenu = false },
-                                )
-                            }
-                            configs.forEach { config ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text(
-                                            (if (config.enabled) "" else "（停用）") + config.key,
-                                        )
-                                    },
-                                    onClick = {
-                                        showConfigMenu = false
-                                        configKey = config.key
-                                        tab = DemoTab.HOME
-                                        scope.launch {
-                                            withContext(Dispatchers.IO) {
-                                                repository.putSetting(
-                                                    SettingScope.PREFS,
-                                                    "currentConfig",
-                                                    config.key,
-                                                )
-                                            }
-                                        }
-                                    },
-                                )
+                    // 站点名：点开抽屉切换站点（对应参考的"选择站点"）
+                    TextButton(onClick = {
+                        showSiteSheet = true
+                        scope.launch { configs = withContext(Dispatchers.IO) { app.configs.list() } }
+                    }) {
+                        Text(siteLabel())
+                    }
+
+                    // 页码：右上角，点开抽屉选页
+                    if (tab == DemoTab.HOME && screen is Screen.List) {
+                        val pages = (screen as? Screen.List)?.page?.pagination.orEmpty()
+                        if (pages.isNotEmpty()) {
+                            TextButton(onClick = { showPageSheet = true }) {
+                                Text(pages.firstOrNull { it.isCurrent }?.title?.ifEmpty { "1" } ?: "1")
                             }
                         }
                     }
@@ -647,7 +633,6 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                         onOpen = { item -> screen = Screen.Detail(item, null) },
                         onToggleCollect = { item -> toggleCollect(item) },
                         onLoadMore = { loadMore() },
-                        onJumpPage = { url -> openFromUrl(url, null) },
                     )
                 }
 
@@ -670,7 +655,6 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                         onOpen = { item -> screen = Screen.Detail(item, null) },
                         onToggleCollect = { item -> toggleCollect(item) },
                         onLoadMore = { loadMore() },
-                        onJumpPage = { url -> openFromUrl(url, null) },
                     )
                 }
 
@@ -692,6 +676,38 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 is Screen.VideoPlayer -> Unit
             }
         }
+    }
+
+    // 站点抽屉：标题 + 搜索 + 两列站点卡片，当前打勾
+    if (showSiteSheet) {
+        SitePickerSheet(
+            sites = configs,
+            currentKey = configKey,
+            onPick = { key ->
+                showSiteSheet = false
+                configKey = key
+                tab = DemoTab.HOME
+                scope.launch {
+                    withContext(Dispatchers.IO) {
+                        repository.putSetting(SettingScope.PREFS, "currentConfig", key)
+                    }
+                }
+            },
+            onDismiss = { showSiteSheet = false },
+        )
+    }
+
+    // 页码抽屉：右上角点页码打开
+    if (showPageSheet) {
+        val pages = (screen as? Screen.List)?.page?.pagination.orEmpty()
+        PagePickerSheet(
+            pages = pages,
+            onPick = { url ->
+                showPageSheet = false
+                openFromUrl(url, null)
+            },
+            onDismiss = { showPageSheet = false },
+        )
     }
 }
 
@@ -720,9 +736,9 @@ private suspend fun rememberOpened(repository: LocalRepository, item: Item, info
 }
 
 private fun titleFor(screen: Screen, tagTitle: String? = null): String = when (screen) {
-    Screen.Loading -> "演示来源"
-    is Screen.Failed -> "演示来源"
-    is Screen.List -> (tagTitle?.let { "$it · " } ?: "") + "列表 · ${screen.page.items.size} 项"
+    Screen.Loading -> ""
+    is Screen.Failed -> "加载失败"
+    is Screen.List -> tagTitle ?: ""
     is Screen.Detail -> screen.item.title.ifEmpty { "详情" }
     is Screen.SearchResults -> "搜索：${screen.keyword}"
     is Screen.VideoPlayer -> screen.item.title.ifEmpty { "播放" }
@@ -749,7 +765,6 @@ private fun ListScreen(
     onOpen: (Item) -> Unit,
     onToggleCollect: (Item) -> Unit,
     onLoadMore: () -> Unit,
-    onJumpPage: (String) -> Unit,
 ) {
     val columns = if (layout == ItemCardLayout.LIST) 1 else 2
     val gridState = rememberLazyGridState()
@@ -786,8 +801,6 @@ private fun ListScreen(
                 LoadMoreHint(loading = loadingMore, noMore = noMore)
             }
         }
-        // 分页条：读 pagination，点页码直接跳
-        PagerBar(pages = page.pagination, onJump = { url -> onJumpPage(url) })
     }
 }
 

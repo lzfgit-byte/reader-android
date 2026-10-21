@@ -35,6 +35,7 @@ import com.ghs.mobile.core.model.Item
 import com.ghs.mobile.core.model.ItemType
 import com.ghs.mobile.core.model.ReaderKind
 import com.ghs.mobile.core.model.ReadingProgress
+import androidx.compose.foundation.layout.Spacer
 
 /**
  * 条目卡片。
@@ -74,7 +75,7 @@ private fun GridCard(
         Column {
             Cover(item, Modifier.fillMaxWidth().aspectRatio(4f / 3f))
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 2.dp, top = 6.dp, bottom = 2.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 10.dp, end = 2.dp, top = 6.dp, bottom = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -86,14 +87,19 @@ private fun GridCard(
                 )
                 StarToggle(collected = collected, onToggle = onToggleCollect)
             }
-            Text(
-                subtitleOverride ?: describe(item, progress),
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
-            )
+            // 首页/收藏不显示进度副标题（只在历史页用传进来的时间）
+            if (subtitleOverride != null) {
+                Text(
+                    subtitleOverride,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(start = 10.dp, end = 10.dp, bottom = 10.dp),
+                )
+            } else {
+                Spacer(Modifier.height(2.dp))
+            }
         }
     }
 }
@@ -121,13 +127,15 @@ private fun ListCard(
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.basicMarquee(),
                 )
-                Text(
-                    subtitleOverride ?: describe(item, progress),
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                if (subtitleOverride != null) {
+                    Text(
+                        subtitleOverride,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
                 Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     item.tags.take(2).forEach { tag ->
                         Text(
