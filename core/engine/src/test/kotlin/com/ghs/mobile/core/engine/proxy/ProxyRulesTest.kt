@@ -87,7 +87,7 @@ class ProxyRulesTest {
         val default = ProxyRules.default()
         assertTrue(default.enabled)
         assertEquals("192.168.31.245", default.endpoint?.host)
-        assertEquals(4000, default.endpoint?.port)
+        assertEquals(10808, default.endpoint?.port)
         assertTrue(default.whitelist.isEmpty())
         assertTrue(default.shouldProxy("example.org", 443))
     }

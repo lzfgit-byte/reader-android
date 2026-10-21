@@ -28,9 +28,13 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
+import com.ghs.mobile.GhsApp
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import kotlinx.coroutines.delay
 
@@ -54,9 +58,14 @@ fun VideoPlayerScreen(
     var error by remember { mutableStateOf<String?>(null) }
 
     val player = remember(url) {
+        // 播放器自己的连接也必须走代理，否则"列表能看、视频播不了"
+        val dataSource = DefaultDataSource.Factory(
+            context,
+            OkHttpDataSource.Factory(GhsApp.instance.proxiedClient()),
+        )
         ExoPlayer.Builder(context).build().apply {
             // 加了 media3-exoplayer-hls 后，DefaultMediaSourceFactory 会按扩展名/内容类型识别 m3u8
-            setMediaItem(MediaItem.fromUri(url))
+            setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(MediaItem.fromUri(url)))
             prepare()
             if (startPositionMs > 0) seekTo(startPositionMs)
             playWhenReady = true

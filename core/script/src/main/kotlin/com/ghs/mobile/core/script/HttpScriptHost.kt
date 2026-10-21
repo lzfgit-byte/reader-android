@@ -36,18 +36,28 @@ class HttpScriptHost(
     private val client: OkHttpClient = defaultClient(proxyRules)
 
     override fun fetchHtml(url: String): String {
+        val started = System.currentTimeMillis()
+        android.util.Log.i("GHS", "fetchHtml start $url")
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
             .header("Accept", "text/html,application/xhtml+xml")
             .build()
 
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw IllegalStateException("取页失败：HTTP ${response.code} $url")
+        try {
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) {
+                    throw IllegalStateException("取页失败：HTTP ${response.code} $url")
+                }
+                return response.body?.string() ?: throw IllegalStateException("取页为空：$url")
             }
-            return response.body?.string() ?: throw IllegalStateException("取页为空：$url")
+        } finally {
+            logDone(url, started)
         }
+    }
+
+    private fun logDone(url: String, started: Long) {
+        android.util.Log.i("GHS", "fetchHtml done ${System.currentTimeMillis() - started}ms $url")
     }
 
     override fun request(
@@ -190,13 +200,16 @@ class HttpScriptHost(
     companion object {
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
-        private const val PAGE_TIMEOUT_MS = 20_000L
+        private const val PAGE_TIMEOUT_MS = 60_000L
         private const val EVAL_TIMEOUT_MS = 15_000L
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         private fun defaultClient(rules: () -> ProxyRules): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(20, TimeUnit.SECONDS)
+            // 真实站点经代理时一页 HTML 可能要十几秒；20s 读超时会把正常请求判成失败
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .callTimeout(90, TimeUnit.SECONDS)
+            .retryOnConnectionFailure(true)
             .followRedirects(true)
             .proxySelector(RulesProxySelector(rules))
             .proxyAuthenticator { _, response ->

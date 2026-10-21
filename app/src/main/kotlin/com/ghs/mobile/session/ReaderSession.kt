@@ -101,7 +101,20 @@ class ReaderSession(
         return configEngine.page()
     }
 
-    fun detail(item: Item): DetailInfo? = configEngine.detailInfo(item)
+    fun detail(item: Item): DetailInfo? {
+        val started = System.currentTimeMillis()
+        android.util.Log.i("GHS", "detail start ${item.jumpUrl}")
+        try {
+            val info = configEngine.detailInfo(item)
+            android.util.Log.i(
+                "GHS",
+                "detail result=" + (info?.let { "${it.detailType} details=${it.details.size}" } ?: "null"),
+            )
+            return info
+        } finally {
+            android.util.Log.i("GHS", "detail done ${System.currentTimeMillis() - started}ms")
+        }
+    }
 
     fun textContent(url: String): TextContent = configEngine.textContent(url)
 

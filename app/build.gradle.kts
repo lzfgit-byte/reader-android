@@ -61,6 +61,7 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer:1.4.1")
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.media3:media3-datasource-okhttp:1.4.1")
 
     // 内置 Web 管理服务（F23）：体积小、无需协程桥接
     implementation("org.nanohttpd:nanohttpd:2.3.1")

@@ -103,8 +103,24 @@ class ConfigEngine(
      *
      * 走 [GhsScriptBridge.invokeAwait]：真实配置里这个方法几乎都是 `async`。
      */
+    /**
+     * 把 [Item] 还原成脚本里的字面量。
+     *
+     * `type` 必须是配置里用的**小写词**（`video` / `image` / `comic` / `text`），
+     * 不能是枚举名：真实配置里写着 `if (item.type === 'video')`，
+     * 传 `VIDEO` 会让整段逻辑失效（表现为 `getDetailInfo` 返回 null）。
+     */
+    private fun itemExpression(item: Item): String {
+        val tags = item.tags.joinToString(", ") { tag ->
+            "{ title: ${quote(tag.title)}, url: ${quote(tag.url)} }"
+        }
+        return "{ jumpUrl: ${quote(item.jumpUrl)}, title: ${quote(item.title)}, " +
+            "coverImg: ${quote(item.coverImg)}, type: ${quote(item.type.scriptName)}, " +
+            "tags: [$tags] }"
+    }
+
     fun detailInfo(item: Item): DetailInfo? {
-        val argument = "{ jumpUrl: ${quote(item.jumpUrl)}, title: ${quote(item.title)} }, cheerio"
+        val argument = itemExpression(item) + ", cheerio"
         val raw = bridge.invokeAwait("getDetailInfo", argument) as? Map<*, *> ?: return null
 
         return DetailInfo(
@@ -305,3 +321,11 @@ class ConfigEngine(
         else -> false
     }
 }
+/** 配置脚本里使用的类型词（小写），与 config-spec 的取值一致 */
+private val ItemType.scriptName: String
+    get() = when (this) {
+        ItemType.VIDEO -> "video"
+        ItemType.IMAGE -> "image"
+        ItemType.COMIC -> "comic"
+        ItemType.TEXT -> "text"
+    }

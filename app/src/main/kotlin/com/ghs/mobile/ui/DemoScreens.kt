@@ -123,6 +123,8 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     var configKey by remember { mutableStateOf<String?>(null) }
     var configs by remember { mutableStateOf<kotlin.collections.List<ConfigStore.StoredConfig>>(emptyList()) }
     var showConfigMenu by remember { mutableStateOf(false) }
+    // 详情解析失败的原因：info == null 既可能是"还在解析"，也可能是"失败了"
+    var detailError by remember { mutableStateOf<String?>(null) }
     // 网页端改过配置后由服务端通知：在列表页立即重载，阅读中则等回到列表
     var reloadRequest by remember { mutableStateOf(0) }
     var pendingReload by remember { mutableStateOf(false) }
@@ -261,9 +263,13 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         val item = detailItem ?: return@LaunchedEffect
         val active = session ?: return@LaunchedEffect
         screen = Screen.Detail(item, null)
+        detailError = null
         text = null
         textUrl = null
-        val info = runCatching { withContext(Dispatchers.IO) { active.detail(item) } }.getOrNull()
+        val outcome = runCatching { withContext(Dispatchers.IO) { active.detail(item) } }
+        val info = outcome.getOrNull()
+        // 失败必须能看见：否则 info == null 会被界面当成"还在解析"，永远转圈
+        detailError = outcome.exceptionOrNull()?.let { it.message ?: it.toString() }
         screen = Screen.Detail(item, info)
         if (info != null) {
             withContext(Dispatchers.IO) { rememberOpened(repository, item, info) }
@@ -564,6 +570,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 is Screen.Detail -> DetailScreen(
                     item = current.item,
                     info = current.info,
+                    error = detailError,
                     resumeIndex = progressByUrl[current.item.jumpUrl]?.chapterOffset ?: 0,
                     onPlayVideo = { url -> screen = Screen.VideoPlayer(current.item, url, 0L) },
                     onOpenComicPage = { index ->
@@ -656,14 +663,33 @@ private fun ListScreen(
 private fun DetailScreen(
     item: Item,
     info: DetailInfo?,
+    error: String?,
     resumeIndex: Int,
     onOpenComicPage: (Int) -> Unit,
     onPlayVideo: (String) -> Unit,
 ) {
     if (info == null) {
         Centered {
-            CircularProgressIndicator()
-            Text("正在解析详情…", modifier = Modifier.padding(top = 12.dp))
+            if (error == null) {
+                CircularProgressIndicator()
+                Text("正在解析详情…", modifier = Modifier.padding(top = 12.dp))
+            } else {
+                Text("解析详情失败", style = MaterialTheme.typography.titleMedium)
+                Text(
+                    error,
+                    style = MaterialTheme.typography.bodySmall,
+                    fontFamily = FontFamily.Monospace,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 8.dp, start = 24.dp, end = 24.dp),
+                )
+                Text(
+                    "常见原因：网络/代理不可达、目标页面需要登录、配置里的选择器不匹配。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(top = 12.dp, start = 24.dp, end = 24.dp),
+                )
+            }
         }
         return
     }

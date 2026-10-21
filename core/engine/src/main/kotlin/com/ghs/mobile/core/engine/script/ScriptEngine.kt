@@ -22,7 +22,7 @@ interface ScriptEngine : AutoCloseable {
      * 默认实现退化成同步 [eval]：引擎没有事件循环时（QuickJS 封装）无法推动微任务，
      * 只能求值同步脚本。有真事件循环的实现（WebView）必须覆盖它。
      */
-    fun evalAwait(script: String, name: String = "<eval>", timeoutMs: Long = 20_000): Any? =
+    fun evalAwait(script: String, name: String = "<eval>", timeoutMs: Long = 60_000): Any? =
         eval(script, name)
 
     /** 设置全局变量 */

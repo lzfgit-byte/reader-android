@@ -60,7 +60,7 @@ data class ProxyRules(
     }
 
     companion object {
-        const val DEFAULT_PROXY_URL = "http://192.168.31.245:4000"
+        const val DEFAULT_PROXY_URL = "http://192.168.31.245:10808"
 
         /** 默认：启用，指向给定的本地代理地址，白名单为空 */
         fun default(): ProxyRules = ProxyRules(
