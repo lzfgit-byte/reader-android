@@ -1,6 +1,7 @@
 package com.ghs.mobile.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -79,9 +80,9 @@ private fun GridCard(
                 Text(
                     item.title,
                     style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).basicMarquee(),
                 )
                 StarToggle(collected = collected, onToggle = onToggleCollect)
             }
@@ -116,8 +117,9 @@ private fun ListCard(
                 Text(
                     item.title,
                     style = MaterialTheme.typography.titleSmall,
-                    maxLines = 2,
+                    maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.basicMarquee(),
                 )
                 Text(
                     subtitleOverride ?: describe(item, progress),

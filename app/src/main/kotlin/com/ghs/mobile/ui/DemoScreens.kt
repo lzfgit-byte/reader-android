@@ -82,6 +82,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.Place
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -94,13 +95,18 @@ private sealed interface Screen {
     data class List(val page: Page) : Screen
     data class Detail(val item: Item, val info: DetailInfo?) : Screen
     data class ComicReader(val item: Item, val pages: kotlin.collections.List<com.ghs.mobile.core.model.Detail>, val startIndex: Int) : Screen
-    data class VideoPlayer(val item: Item, val url: String, val startMs: Long) : Screen
+    data class VideoPlayer(
+        val item: Item,
+        val sources: kotlin.collections.List<com.ghs.mobile.core.model.Detail>,
+        val startIndex: Int,
+        val startMs: Long,
+    ) : Screen
     data class SearchResults(val keyword: String, val page: Page) : Screen
     data class Failed(val message: String) : Screen
 }
 
 /** 底部导航 */
-enum class DemoTab(val label: String) { HOME("首页"), FAVORITES("收藏"), HISTORY("历史") }
+enum class DemoTab(val label: String) { HOME("首页"), FAVORITES("收藏"), HISTORY("历史"), TAGS("标签") }
 
 /** 演示配置的 key（收藏/历史按配置分组的键） */
 private const val CONFIG_KEY = "demo"
@@ -138,6 +144,8 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     var layoutMode by remember { mutableStateOf(ItemCardLayout.GRID) }
     var loadingMore by remember { mutableStateOf(false) }
     var noMore by remember { mutableStateOf(false) }
+    // 从标签进入的列表：标题显示标签名；null 表示首页
+    var activeTagTitle by remember { mutableStateOf<String?>(null) }
     var collected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var favoriteItems by remember { mutableStateOf<kotlin.collections.List<Item>>(emptyList()) }
     var historyEntries by remember { mutableStateOf<kotlin.collections.List<HistoryEntry>>(emptyList()) }
@@ -193,6 +201,25 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     }
                 }
                 .onFailure { searchError = it.message ?: it.toString() }
+        }
+    }
+
+    /**
+     * 打开某个地址的列表：标签点击与分页跳转共用。
+     *
+     * 与"加载更多"的区别是**替换**当前列表而不是追加，并重置到底状态。
+     */
+    fun openFromUrl(url: String, title: String?) {
+        val active = session ?: return
+        scope.launch {
+            val page = runCatching { withContext(Dispatchers.IO) { active.pageFrom(url) } }.getOrNull()
+            if (page != null) {
+                noMore = false
+                activeTagTitle = title
+                lastPage = page
+                screen = Screen.List(page)
+                tab = DemoTab.HOME
+            }
         }
     }
 
@@ -308,6 +335,17 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         if (info != null) {
             withContext(Dispatchers.IO) { rememberOpened(repository, item, info) }
         }
+        // 视频：解析出地址后直接播放，不再停留在中间的清晰度列表
+        if (info != null && (info.detailType == DetailType.MP4 || info.detailType == DetailType.M3U8)) {
+            val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+            screen = Screen.VideoPlayer(
+                item = item,
+                sources = info.details,
+                startIndex = 0,
+                startMs = saved?.positionMs ?: 0L,
+            )
+            return@LaunchedEffect
+        }
         if (info?.detailType == DetailType.TEXT) {
             textUrl = info.details.firstOrNull()?.url ?: item.jumpUrl
         }
@@ -382,15 +420,16 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         is Screen.VideoPlayer -> {
             VideoPlayerScreen(
                 title = reader.item.title,
-                url = reader.url,
+                sources = reader.sources,
+                startIndex = reader.startIndex,
                 startPositionMs = reader.startMs,
-                onProgress = { position, duration ->
+                onProgress = { sourceUrl, position, duration ->
                     scope.launch {
                         repository.saveProgress(
                             ReadingProgress(
                                 itemUrl = reader.item.jumpUrl,
                                 kind = ReaderKind.VIDEO,
-                                chapterUrl = reader.url,
+                                chapterUrl = sourceUrl,
                                 positionMs = position,
                                 durationMs = duration,
                                 percent = if (duration > 0) position * 100.0 / duration else 0.0,
@@ -423,9 +462,10 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 title = {
                     Text(
                         when (tab) {
-                            DemoTab.HOME -> titleFor(screen)
+                            DemoTab.HOME -> titleFor(screen, activeTagTitle)
                             DemoTab.FAVORITES -> "收藏 · ${favoriteItems.size}"
                             DemoTab.HISTORY -> "历史 · ${historyEntries.size}"
+                            DemoTab.TAGS -> "标签 · ${lastPage?.tags?.size ?: 0}"
                         },
                     )
                 },
@@ -517,6 +557,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                                     DemoTab.HOME -> Icons.Default.Home
                                     DemoTab.FAVORITES -> Icons.Default.Favorite
                                     DemoTab.HISTORY -> Icons.Default.List
+                                    DemoTab.TAGS -> Icons.Default.Place
                                 },
                                 contentDescription = entry.label,
                             )
@@ -544,6 +585,14 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     entries = historyEntries,
                     layout = layoutMode,
                     onOpen = { item -> screen = Screen.Detail(item, null); tab = DemoTab.HOME },
+                )
+                return@Surface
+            }
+
+            if (tab == DemoTab.TAGS) {
+                TagsScreen(
+                    tags = lastPage?.tags.orEmpty(),
+                    onOpen = { tag -> if (tag.url.isNotBlank()) openFromUrl(tag.url, tag.title) },
                 )
                 return@Surface
             }
@@ -598,6 +647,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                         onOpen = { item -> screen = Screen.Detail(item, null) },
                         onToggleCollect = { item -> toggleCollect(item) },
                         onLoadMore = { loadMore() },
+                        onJumpPage = { url -> openFromUrl(url, null) },
                     )
                 }
 
@@ -620,6 +670,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                         onOpen = { item -> screen = Screen.Detail(item, null) },
                         onToggleCollect = { item -> toggleCollect(item) },
                         onLoadMore = { loadMore() },
+                        onJumpPage = { url -> openFromUrl(url, null) },
                     )
                 }
 
@@ -628,7 +679,6 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     info = current.info,
                     error = detailError,
                     resumeIndex = progressByUrl[current.item.jumpUrl]?.chapterOffset ?: 0,
-                    onPlayVideo = { url -> screen = Screen.VideoPlayer(current.item, url, 0L) },
                     onOpenComicPage = { index ->
                         val info = current.info
                         if (info != null && info.details.isNotEmpty()) {
@@ -669,10 +719,10 @@ private suspend fun rememberOpened(repository: LocalRepository, item: Item, info
     repository.putSetting(SettingScope.DEVICE, "last_opened", item.jumpUrl)
 }
 
-private fun titleFor(screen: Screen): String = when (screen) {
+private fun titleFor(screen: Screen, tagTitle: String? = null): String = when (screen) {
     Screen.Loading -> "演示来源"
     is Screen.Failed -> "演示来源"
-    is Screen.List -> "演示列表 · ${screen.page.items.size} 项"
+    is Screen.List -> (tagTitle?.let { "$it · " } ?: "") + "列表 · ${screen.page.items.size} 项"
     is Screen.Detail -> screen.item.title.ifEmpty { "详情" }
     is Screen.SearchResults -> "搜索：${screen.keyword}"
     is Screen.VideoPlayer -> screen.item.title.ifEmpty { "播放" }
@@ -699,6 +749,7 @@ private fun ListScreen(
     onOpen: (Item) -> Unit,
     onToggleCollect: (Item) -> Unit,
     onLoadMore: () -> Unit,
+    onJumpPage: (String) -> Unit,
 ) {
     val columns = if (layout == ItemCardLayout.LIST) 1 else 2
     val gridState = rememberLazyGridState()
@@ -712,27 +763,31 @@ private fun ListScreen(
             }
     }
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(columns),
-        state = gridState,
-        contentPadding = PaddingValues(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxSize(),
-    ) {
-        items(page.items, key = { it.jumpUrl }) { item ->
-            ItemCard(
-                item = item,
-                progress = progress[item.jumpUrl],
-                collected = item.jumpUrl in collected,
-                layout = layout,
-                onClick = { onOpen(item) },
-                onToggleCollect = { onToggleCollect(item) },
-            )
+    Column(Modifier.fillMaxSize()) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(columns),
+            state = gridState,
+            contentPadding = PaddingValues(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+            modifier = Modifier.weight(1f).fillMaxWidth(),
+        ) {
+            items(page.items, key = { it.jumpUrl }) { item ->
+                ItemCard(
+                    item = item,
+                    progress = progress[item.jumpUrl],
+                    collected = item.jumpUrl in collected,
+                    layout = layout,
+                    onClick = { onOpen(item) },
+                    onToggleCollect = { onToggleCollect(item) },
+                )
+            }
+            item {
+                LoadMoreHint(loading = loadingMore, noMore = noMore)
+            }
         }
-        item {
-            LoadMoreHint(loading = loadingMore, noMore = noMore)
-        }
+        // 分页条：读 pagination，点页码直接跳
+        PagerBar(pages = page.pagination, onJump = { url -> onJumpPage(url) })
     }
 }
 
@@ -743,7 +798,6 @@ private fun DetailScreen(
     error: String?,
     resumeIndex: Int,
     onOpenComicPage: (Int) -> Unit,
-    onPlayVideo: (String) -> Unit,
 ) {
     if (info == null) {
         Centered {
@@ -773,7 +827,7 @@ private fun DetailScreen(
 
     when (info.detailType) {
         DetailType.COMIC -> ComicDetail(info, resumeIndex, onOpenComicPage)
-        DetailType.MP4, DetailType.M3U8 -> VideoDetail(info, onPlayVideo)
+        DetailType.MP4, DetailType.M3U8 -> VideoDetail(info)
         else -> Centered { Text("暂不支持的类型：${info.detailType}") }
     }
 }
@@ -862,7 +916,7 @@ private fun TextDetail(text: TextContent?) {
 }
 
 @Composable
-private fun VideoDetail(info: DetailInfo, onPlay: (String) -> Unit) {
+private fun VideoDetail(info: DetailInfo) {
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -878,7 +932,7 @@ private fun VideoDetail(info: DetailInfo, onPlay: (String) -> Unit) {
         }
         info.details.forEach { source ->
             val playable = source.url.isNotEmpty()
-            Card(onClick = { if (playable) onPlay(source.url) }) {
+            Card {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,

@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.List
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -18,6 +21,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -28,7 +32,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
-import com.ghs.mobile.GhsApp
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultDataSource
@@ -36,43 +39,50 @@ import androidx.media3.datasource.okhttp.OkHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
+import com.ghs.mobile.GhsApp
+import com.ghs.mobile.core.model.Detail
 import kotlinx.coroutines.delay
 
 /**
  * 视频播放器：Media3（ExoPlayer）+ HLS。
  *
- * - 进入时从进度续播（`startPositionMs`）
- * - 每 5 秒与退出时回写进度（位置 / 时长 / 百分比）
- * - 播放失败显示原因，而不是黑屏
+ * - 进入即播：地址由详情解析阶段拿到，这里不再有中间列表页
+ * - 多清晰度：顶部菜单就地切换，保留当前播放位置
+ * - 每 5 秒与退出时回写进度；失败显示错误码与地址
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun VideoPlayerScreen(
     title: String,
-    url: String,
+    sources: List<Detail>,
+    startIndex: Int,
     startPositionMs: Long,
-    onProgress: (positionMs: Long, durationMs: Long) -> Unit,
+    onProgress: (sourceUrl: String, positionMs: Long, durationMs: Long) -> Unit,
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    var index by remember { mutableIntStateOf(startIndex.coerceIn(0, (sources.size - 1).coerceAtLeast(0))) }
     var error by remember { mutableStateOf<String?>(null) }
+    var menuOpen by remember { mutableStateOf(false) }
+    // 切清晰度时保留播放位置
+    var resumeMs by remember { mutableStateOf(startPositionMs) }
 
-    val player = remember(url) {
-        // 播放器自己的连接也必须走代理，否则"列表能看、视频播不了"
+    val currentUrl = sources.getOrNull(index)?.url.orEmpty()
+
+    val player = remember(index, currentUrl) {
         val dataSource = DefaultDataSource.Factory(
             context,
             OkHttpDataSource.Factory(GhsApp.instance.proxiedClient()),
         )
         ExoPlayer.Builder(context).build().apply {
-            // 加了 media3-exoplayer-hls 后，DefaultMediaSourceFactory 会按扩展名/内容类型识别 m3u8
-            setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(MediaItem.fromUri(url)))
+            setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(MediaItem.fromUri(currentUrl)))
             prepare()
-            if (startPositionMs > 0) seekTo(startPositionMs)
+            if (resumeMs > 0) seekTo(resumeMs)
             playWhenReady = true
         }
     }
 
-    DisposableEffect(url) {
+    DisposableEffect(player, currentUrl) {
         val listener = object : Player.Listener {
             override fun onPlayerError(playerError: PlaybackException) {
                 error = playerError.errorCodeName + " · " + (playerError.message ?: "")
@@ -80,27 +90,55 @@ fun VideoPlayerScreen(
         }
         player.addListener(listener)
         onDispose {
-            runCatching { onProgress(player.currentPosition, player.duration.coerceAtLeast(0)) }
+            runCatching { onProgress(currentUrl, player.currentPosition, player.duration.coerceAtLeast(0)) }
             player.removeListener(listener)
             player.release()
         }
     }
 
-    // 定期回写进度
     LaunchedEffect(player) {
         while (true) {
             delay(5_000)
-            onProgress(player.currentPosition, player.duration.coerceAtLeast(0))
+            onProgress(currentUrl, player.currentPosition, player.duration.coerceAtLeast(0))
         }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(title) },
+                title = { Text(sources.getOrNull(index)?.quality?.ifEmpty { title } ?: title) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                    }
+                },
+                actions = {
+                    if (sources.size > 1) {
+                        Box {
+                            IconButton(onClick = { menuOpen = true }) {
+                                Icon(Icons.Default.List, contentDescription = "清晰度")
+                            }
+                            DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                sources.forEachIndexed { i, source ->
+                                    DropdownMenuItem(
+                                        text = {
+                                            Text(
+                                                (source.quality.ifEmpty { "默认" }) +
+                                                    if (i == index) " · 当前" else "",
+                                            )
+                                        },
+                                        onClick = {
+                                            menuOpen = false
+                                            if (i != index) {
+                                                resumeMs = player.currentPosition
+                                                error = null
+                                                index = i
+                                            }
+                                        },
+                                    )
+                                }
+                            }
+                        }
                     }
                 },
             )
@@ -108,11 +146,10 @@ fun VideoPlayerScreen(
     ) { padding ->
         Surface(modifier = Modifier.fillMaxSize().padding(padding), color = Color.Black) {
             Box(Modifier.fillMaxSize()) {
-                val exoPlayer = player
                 AndroidView(
                     factory = { ctx ->
                         PlayerView(ctx).apply {
-                            this.player = exoPlayer
+                            this.player = player
                             useController = true
                             setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                         }
@@ -128,7 +165,7 @@ fun VideoPlayerScreen(
                         contentAlignment = Alignment.Center,
                     ) {
                         Text(
-                            "无法播放\n$error\n\n$url",
+                            "无法播放\n$error\n\n$currentUrl",
                             style = MaterialTheme.typography.bodySmall,
                             color = Color(0xFFE6E6EA),
                             modifier = Modifier.padding(24.dp),
