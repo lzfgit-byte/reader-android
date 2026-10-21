@@ -100,6 +100,10 @@
   - 主题（跟随系统/浅色/深色）、字号（小/标准/大/特大）、阅读器默认模式、历史保留条数
   - `SettingsStore` 用 `StateFlow` 暴露状态并落到 `app_setting(prefs)`；主题与字号在 MaterialTheme 外层应用，全局立即生效
   - 字号缩放统一乘以整套 `Typography`，不逐个写死 sp
+- **视频播放器（Media3 + HLS）**
+  - ExoPlayer + PlayerView 承载在 Compose 中；清晰度行点击进入播放
+  - 按进度续播，每 5 秒与退出时回写 `positionMs`/`durationMs`/`percent`
+  - 播放失败显示错误码与地址（演示地址不可达时的预期表现）
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -143,6 +147,10 @@
   - 主题（跟随系统/浅色/深色）、字号（小/标准/大/特大）、阅读器默认模式、历史保留条数
   - `SettingsStore` 用 `StateFlow` 暴露状态并落到 `app_setting(prefs)`；主题与字号在 MaterialTheme 外层应用，全局立即生效
   - 字号缩放统一乘以整套 `Typography`，不逐个写死 sp
+- **视频播放器（Media3 + HLS）**
+  - ExoPlayer + PlayerView 承载在 Compose 中；清晰度行点击进入播放
+  - 按进度续播，每 5 秒与退出时回写 `positionMs`/`durationMs`/`percent`
+  - 播放失败显示错误码与地址（演示地址不可达时的预期表现）
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
