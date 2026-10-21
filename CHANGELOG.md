@@ -96,6 +96,10 @@
   - 顶栏搜索框 → `adapterSearchUrl(keyword)` → 取页 → `getItems` 解析 → 复用列表 UI
   - 结果页显示"「kw」的结果 · N 项"，可清除返回；不支持搜索时给出明确提示
   - `ConfigEngine.searchUrl()`：按 `adapterSearchUrl` 返回值判定，而非 `searchUrl` 字段
+- **设置页**
+  - 主题（跟随系统/浅色/深色）、字号（小/标准/大/特大）、阅读器默认模式、历史保留条数
+  - `SettingsStore` 用 `StateFlow` 暴露状态并落到 `app_setting(prefs)`；主题与字号在 MaterialTheme 外层应用，全局立即生效
+  - 字号缩放统一乘以整套 `Typography`，不逐个写死 sp
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -135,6 +139,10 @@
   - 顶栏搜索框 → `adapterSearchUrl(keyword)` → 取页 → `getItems` 解析 → 复用列表 UI
   - 结果页显示"「kw」的结果 · N 项"，可清除返回；不支持搜索时给出明确提示
   - `ConfigEngine.searchUrl()`：按 `adapterSearchUrl` 返回值判定，而非 `searchUrl` 字段
+- **设置页**
+  - 主题（跟随系统/浅色/深色）、字号（小/标准/大/特大）、阅读器默认模式、历史保留条数
+  - `SettingsStore` 用 `StateFlow` 暴露状态并落到 `app_setting(prefs)`；主题与字号在 MaterialTheme 外层应用，全局立即生效
+  - 字号缩放统一乘以整套 `Typography`，不逐个写死 sp
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
