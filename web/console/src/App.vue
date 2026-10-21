@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
-import { createMockApi, REQUIRED_METHODS, type ConfigSummary, type Issue, type ValidateResult } from './api'
+import { createApi, REQUIRED_METHODS, type ConfigSummary, type Issue, type ValidateResult } from './api'
 import { SAMPLE_CONFIGS } from './samples'
 
 type MonacoModule = typeof import('./editor/monaco')
 
-const api = createMockApi()
+const api = createApi()
 
 const configs = ref<ConfigSummary[]>([])
 const selectedKey = ref<string>('')

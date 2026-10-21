@@ -44,13 +44,16 @@ private enum class Page { MAIN, PROBE, SETTINGS }
 private fun AppRoot() {
     val store = GhsApp.instance.settings
     val proxyStore = GhsApp.instance.proxy
+    val webAdmin = GhsApp.instance.webAdmin
     val settings by store.state.collectAsState()
     val proxyRules by proxyStore.rules.collectAsState()
+    val webState by webAdmin.state.collectAsState()
     val scope = rememberCoroutineScope()
 
     LaunchedEffect(Unit) {
         store.load()
         proxyStore.load()
+        webAdmin.load()
     }
 
     val dark = when (settings.theme) {
@@ -77,12 +80,17 @@ private fun AppRoot() {
                 Page.SETTINGS -> SettingsScreen(
                     settings = settings,
                     proxy = proxyRules,
+                    web = webState,
                     onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
                     onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
                     onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
                     onProxyApply = { enabled, url, user, pass, whitelist ->
                         scope.launch { proxyStore.apply(enabled, url, user, pass, whitelist) }
                     },
+                    onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
+                    onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
+                    onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },
+                    onWebResetToken = { scope.launch { webAdmin.resetToken() } },
                     onBack = { page = Page.MAIN },
                 )
             }

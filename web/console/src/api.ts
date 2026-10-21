@@ -189,3 +189,82 @@ export function createMockApi(): ConsoleApi {
     },
   }
 }
+
+// ── HTTP 实现（内置服务提供时使用） ─────────────────────────────────────────
+
+function currentToken(): string {
+  const fromQuery = new URLSearchParams(location.search).get('t')
+  if (fromQuery) return fromQuery
+  // 首次用 ?t= 换过 Cookie，之后刷新页面靠 Cookie
+  const cookie = document.cookie.split(';').map((part) => part.trim())
+  const matched = cookie.find((part) => part.startsWith('ghs_token='))
+  return matched ? matched.slice('ghs_token='.length) : ''
+}
+
+export function createHttpApi(): ConsoleApi {
+  const headers = (): Record<string, string> => {
+    const token = currentToken()
+    return {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    }
+  }
+
+  const call = async <T>(path: string, init?: RequestInit): Promise<T> => {
+    const response = await fetch(`/api${path}`, { ...init, headers: headers(), credentials: 'same-origin' })
+    if (!response.ok) {
+      const text = await response.text()
+      throw new Error(`HTTP ${response.status}：${text.slice(0, 200)}`)
+    }
+    return (await response.json()) as T
+  }
+
+  return {
+    async list() {
+      const data = await call<{ configs: ConfigSummary[] }>('/configs')
+      return data.configs ?? []
+    },
+
+    async get(key) {
+      const data = await call<Record<string, unknown>>(`/configs/${encodeURIComponent(key)}`)
+      return {
+        key: String(data.key ?? key),
+        name: String(data.name ?? '未命名配置'),
+        enabled: Boolean(data.enabled ?? true),
+        format: (data.format === 'manifest' ? 'manifest' : 'inline') as ConfigSummary['format'],
+        updatedAt: Number(data.updatedAt ?? Date.now()),
+        source: String(data.config ?? ''),
+      } satisfies ConfigDetail
+    },
+
+    async save(key, source, enabled) {
+      const payload = JSON.stringify({ key, config: source, format: 'inline', enabled })
+      try {
+        await call(`/configs/${encodeURIComponent(key)}`, { method: 'PUT', body: payload })
+      } catch (error) {
+        // 不存在则创建（PUT 返回 404 时回退到 POST）
+        if (String(error).includes('404')) {
+          await call('/configs', { method: 'POST', body: payload })
+        } else {
+          throw error
+        }
+      }
+    },
+
+    async remove(key) {
+      await call(`/configs/${encodeURIComponent(key)}`, { method: 'DELETE' })
+    },
+
+    async validate(source) {
+      return await call<ValidateResult>('/validate', {
+        method: 'POST',
+        body: JSON.stringify({ config: source, format: 'inline' }),
+      })
+    },
+  }
+}
+
+/** 由内置服务提供（/console）时走 HTTP，否则用 Mock 以便单独开发 */
+export function createApi(): ConsoleApi {
+  return location.pathname.startsWith('/console') ? createHttpApi() : createMockApi()
+}

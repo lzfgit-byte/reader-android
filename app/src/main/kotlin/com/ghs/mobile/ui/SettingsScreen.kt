@@ -37,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import com.ghs.mobile.core.engine.proxy.ProxyRules
 import androidx.compose.ui.Alignment
+import com.ghs.mobile.web.WebAdminController
 
 /**
  * 设置页：主题 / 字号 / 阅读器默认模式。
@@ -48,10 +49,15 @@ import androidx.compose.ui.Alignment
 fun SettingsScreen(
     settings: AppSettings,
     proxy: ProxyRules,
+    web: WebAdminController.WebSettings,
     onThemeChange: (ThemeMode) -> Unit,
     onFontScaleChange: (FontScale) -> Unit,
     onReaderModeChange: (ReaderMode) -> Unit,
     onProxyApply: (enabled: Boolean, url: String, username: String, password: String, whitelist: String) -> Unit,
+    onWebToggle: (Boolean) -> Unit,
+    onWebPortChange: (Int) -> Unit,
+    onWebBindChange: (Boolean) -> Unit,
+    onWebResetToken: () -> Unit,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -91,6 +97,16 @@ fun SettingsScreen(
                         "预览：这一段文字会按当前字号显示。",
                         style = MaterialTheme.typography.bodyLarge,
                         modifier = Modifier.padding(top = 8.dp),
+                    )
+                }
+
+                SettingSection(title = "Web 管理") {
+                    WebSection(
+                        web = web,
+                        onToggle = onWebToggle,
+                        onPortChange = onWebPortChange,
+                        onBindChange = onWebBindChange,
+                        onResetToken = onWebResetToken,
                     )
                 }
 
@@ -214,6 +230,66 @@ private fun ProxyForm(
             TextButton(onClick = { onApply(enabled, url, username, password, whitelist) }) {
                 Text("应用")
             }
+        }
+    }
+}
+
+/** Web 管理：开关、端口、绑定范围、令牌与访问地址（全部只在应用端配置） */
+@Composable
+private fun WebSection(
+    web: WebAdminController.WebSettings,
+    onToggle: (Boolean) -> Unit,
+    onPortChange: (Int) -> Unit,
+    onBindChange: (Boolean) -> Unit,
+    onResetToken: () -> Unit,
+) {
+    var portText by remember(web.port) { mutableStateOf(web.port.toString()) }
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("启用 Web 管理", style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = web.enabled, onCheckedChange = onToggle)
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+            OutlinedTextField(
+                value = portText,
+                onValueChange = { portText = it.filter(Char::isDigit).take(5) },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text("端口（默认 18600）") },
+            )
+            TextButton(onClick = { portText.filter(Char::isDigit).toIntOrNull()?.let(onPortChange) }) {
+                Text("应用端口")
+            }
+        }
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text("允许局域网访问", style = MaterialTheme.typography.bodyMedium)
+            Switch(checked = web.bindAll, onCheckedChange = onBindChange)
+        }
+
+        Text(
+            if (web.enabled) "打开地址：${web.consoleUrl}" else "启用后在此显示带令牌的访问地址",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+        Text(
+            "令牌：" + web.token.take(16) + "…（仅本机保存，接口不提供修改）",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
+
+        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+            TextButton(onClick = onResetToken) { Text("重置令牌") }
         }
     }
 }

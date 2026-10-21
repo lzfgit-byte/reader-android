@@ -62,6 +62,9 @@ dependencies {
     implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
     implementation("androidx.media3:media3-ui:1.4.1")
 
+    // 内置 Web 管理服务（F23）：体积小、无需协程桥接
+    implementation("org.nanohttpd:nanohttpd:2.3.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
@@ -69,3 +72,14 @@ dependencies {
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
     androidTestImplementation("io.github.taoweiji.quickjs:quickjs-android:1.4.6")
 }
+
+// 把 Web 控制台产物同步进 assets：构建时自动执行，避免手工拷贝导致版本漂移
+val syncConsole by tasks.registering(Sync::class) {
+    val consoleDist = rootProject.layout.projectDirectory.dir("web/console/dist")
+    val target = layout.projectDirectory.dir("src/main/assets/webconsole")
+    onlyIf { consoleDist.asFile.isDirectory }
+    from(consoleDist)
+    into(target)
+}
+
+tasks.named("preBuild") { dependsOn(syncConsole) }

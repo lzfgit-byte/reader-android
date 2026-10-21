@@ -42,3 +42,6 @@ ghs-cache/
 *.env
 .env.*
 secrets.properties
+
+# Web 控制台构建产物（由 Gradle syncConsole 生成）
+app/src/main/assets/webconsole/
