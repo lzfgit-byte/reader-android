@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v3.0
+> **版本**：v3.1
 > **最后更新**：2026-10-20
-> **取代/被取代**：取代同文件 v2.9
+> **取代/被取代**：取代同文件 v3.0
 
 # 本地构建与验证
 
@@ -87,6 +87,20 @@ $env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFI
 
 ---
 
+### 3.y 怎么判断"代理地址"是不是代理
+
+配了代理却只得到 `unexpected end of stream`，多半是**该端口不是 HTTP 代理**。
+
+```bash
+curl.exe -x http://<host>:<port> https://example.com -I    # 成功返回状态行才是代理
+curl.exe    http://<host>:<port>/                          # 如果返回网页，它是普通站点
+```
+
+本机曾把 `192.168.31.245:4000` 当代理配：该端口是 Express 静态站，
+`CONNECT` 直接中止，于是所有 https 请求失败；设备到该端口的 TCP 是通的，
+所以"能连上"不代表"能当代理"。
+
+---
 ### 3.x NanoHTTPD 的 keep-alive 陷阱
 
 **现象**：网页端点"保存"毫无反应，控制台也不报错；再刷新还报 `BAD REQUEST: Syntax error. HTTP verb {"config":... unhandled.`。
@@ -358,3 +372,4 @@ App 读取的是 `filesDir/configs/` 下的配置（浏览器编辑后落盘的�
 | v2.8 | 2026-10-21 | §7.4 补配置来源与切换语义；ReaderHost 的演示/真实域名分流 |
 | v2.9 | 2026-10-21 | §3 补 NanoHTTPD keep-alive 未消费 body 的陷阱（保存/新建失效的根因与规则） |
 | v3.0 | 2026-10-21 | §7.4 补"网页端改动 → App 自动重载"与菜单实时刷新 |
+| v3.1 | 2026-10-21 | §3 补"怎么判断代理地址是不是代理"；记录代理默认值被清空的修复 |
