@@ -43,10 +43,15 @@ private enum class Page { MAIN, PROBE, SETTINGS }
 @Composable
 private fun AppRoot() {
     val store = GhsApp.instance.settings
+    val proxyStore = GhsApp.instance.proxy
     val settings by store.state.collectAsState()
+    val proxyRules by proxyStore.rules.collectAsState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(Unit) { store.load() }
+    LaunchedEffect(Unit) {
+        store.load()
+        proxyStore.load()
+    }
 
     val dark = when (settings.theme) {
         ThemeMode.SYSTEM -> isSystemInDarkTheme()
@@ -71,9 +76,13 @@ private fun AppRoot() {
 
                 Page.SETTINGS -> SettingsScreen(
                     settings = settings,
+                    proxy = proxyRules,
                     onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
                     onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
                     onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
+                    onProxyApply = { enabled, url, user, pass, whitelist ->
+                        scope.launch { proxyStore.apply(enabled, url, user, pass, whitelist) }
+                    },
                     onBack = { page = Page.MAIN },
                 )
             }

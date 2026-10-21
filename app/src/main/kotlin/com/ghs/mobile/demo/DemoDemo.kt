@@ -55,10 +55,14 @@ class DemoHost(private val context: Context) : ScriptHostTransport {
  *
  * 引擎是重对象（WebView），所以整场复用一份；[close] 时释放。
  */
-class DemoSession(private val context: Context) : AutoCloseable {
+class DemoSession(
+    private val context: Context,
+    private val proxyRules: com.ghs.mobile.core.engine.proxy.ProxyRules =
+        com.ghs.mobile.core.engine.proxy.ProxyRules.direct(),
+) : AutoCloseable {
 
     private val host = DemoHost(context)
-    private val engine = WebViewScriptEngine(context)
+    private val engine = WebViewScriptEngine(context, proxyRules)
     private val configEngine = ConfigEngine(engine, host)
 
     init {

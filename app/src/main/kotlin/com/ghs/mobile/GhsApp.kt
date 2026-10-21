@@ -3,6 +3,7 @@ package com.ghs.mobile
 import android.app.Application
 import com.ghs.mobile.core.data.GhsDatabase
 import com.ghs.mobile.core.data.LocalRepository
+import com.ghs.mobile.settings.ProxyStore
 import com.ghs.mobile.settings.SettingsStore
 
 /**
@@ -17,6 +18,8 @@ class GhsApp : Application() {
     val repository: LocalRepository by lazy { LocalRepository(database) }
 
     val settings: SettingsStore by lazy { SettingsStore(repository) }
+
+    val proxy: ProxyStore by lazy { ProxyStore(repository) }
 
     override fun onCreate() {
         super.onCreate()

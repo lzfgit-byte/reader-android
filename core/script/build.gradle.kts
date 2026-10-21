@@ -30,4 +30,7 @@ dependencies {
 
     // 宿主能力：取页 / 请求（无头页面另由 WebView 承担）
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    // WebView 代理覆盖（ProxyController，ADR-0008）
+    implementation("androidx.webkit:webkit:1.11.0")
 }

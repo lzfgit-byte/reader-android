@@ -6,9 +6,12 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import com.ghs.mobile.core.engine.proxy.ProxyRules
+import com.ghs.mobile.core.engine.proxy.RulesProxySelector
 import com.ghs.mobile.core.engine.script.ScriptHostTransport
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
+import okhttp3.Credentials
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -24,11 +27,13 @@ import okhttp3.RequestBody.Companion.toRequestBody
  */
 class HttpScriptHost(
     private val context: Context,
+    /** 代理规则提供者：按请求逐个判定，白名单才能真正生效（ADR-0009） */
+    private val proxyRules: () -> ProxyRules = { ProxyRules.direct() },
 ) : ScriptHostTransport {
 
     // 刻意不把 OkHttpClient 放进公开构造：okhttp 是 implementation 依赖，
     // 暴露它会让使用方的编译类路径被迫携带 okhttp。
-    private val client: OkHttpClient = defaultClient()
+    private val client: OkHttpClient = defaultClient(proxyRules)
 
     override fun fetchHtml(url: String): String {
         val request = Request.Builder()
@@ -189,10 +194,21 @@ class HttpScriptHost(
         private const val EVAL_TIMEOUT_MS = 15_000L
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
-        private fun defaultClient(): OkHttpClient = OkHttpClient.Builder()
+        private fun defaultClient(rules: () -> ProxyRules): OkHttpClient = OkHttpClient.Builder()
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(20, TimeUnit.SECONDS)
             .followRedirects(true)
+            .proxySelector(RulesProxySelector(rules))
+            .proxyAuthenticator { _, response ->
+                val endpoint = rules().endpoint
+                if (endpoint?.username.isNullOrEmpty()) {
+                    null
+                } else {
+                    response.request.newBuilder()
+                        .header("Proxy-Authorization", Credentials.basic(endpoint.username!!, endpoint.password.orEmpty()))
+                        .build()
+                }
+            }
             .build()
     }
 }

@@ -176,7 +176,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     }
 
     LaunchedEffect(Unit) {
-        val created = runCatching { withContext(Dispatchers.IO) { DemoSession(app) } }
+        val created = runCatching { withContext(Dispatchers.IO) { DemoSession(app, app.proxy.rules.value) } }
             .getOrElse {
                 screen = Screen.Failed(it.message ?: it.toString())
                 return@LaunchedEffect

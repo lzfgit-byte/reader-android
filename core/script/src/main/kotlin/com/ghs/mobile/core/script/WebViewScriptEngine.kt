@@ -6,6 +6,10 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
+import androidx.webkit.ProxyConfig
+import androidx.webkit.ProxyController
+import androidx.webkit.WebViewFeature
+import com.ghs.mobile.core.engine.proxy.ProxyRules
 import com.ghs.mobile.core.engine.script.ScriptEngine
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
@@ -23,7 +27,10 @@ import java.util.concurrent.TimeUnit
  * - 求值走 `evaluateJavascript`，结果经 `__ghs.onResult` 回传，Kotlin 侧用 latch 等待
  * - 所有 WebView 操作都在主线程
  */
-class WebViewScriptEngine(context: Context) : ScriptEngine {
+class WebViewScriptEngine(
+    context: Context,
+    private val proxyRules: ProxyRules = ProxyRules.direct(),
+) : ScriptEngine {
 
     private val main = Handler(Looper.getMainLooper())
     private val functions = HashMap<String, (List<Any?>) -> Any?>()
@@ -52,6 +59,7 @@ class WebViewScriptEngine(context: Context) : ScriptEngine {
             }
             view.loadDataWithBaseURL(BASE_URL, "<html><body></body></html>", "text/html", "utf-8", null)
             webView = view
+            applyProxyOverride()
         }
     }
 
@@ -138,6 +146,34 @@ class WebViewScriptEngine(context: Context) : ScriptEngine {
                 it.destroy()
             }
             webView = null
+        }
+    }
+
+    /**
+     * 把代理规则应用到 WebView（ADR-0008：代理对无头 WebView 同样生效）。
+     *
+     * 走 `ProxyConfig`：全局代理 + 白名单作为 bypass 规则；
+     * 未启用则显式 `addDirect()`，避免继承系统代理造成"配了却没用"的错觉。
+     */
+    private fun applyProxyOverride() {
+        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) return
+        val rules = proxyRules
+        val endpoint = rules.endpoint
+        val builder = ProxyConfig.Builder()
+
+        if (rules.enabled && endpoint?.isConfigured == true) {
+            builder.addProxyRule("http://${endpoint.authority}")
+            rules.whitelist.forEach { entry ->
+                val pattern = entry.trim().removePrefix("*.").removePrefix(".")
+                if (pattern.isNotEmpty()) runCatching { builder.addBypassRule(pattern) }
+            }
+        } else {
+            builder.addDirect()
+        }
+
+        runCatching {
+            ProxyController.getInstance()
+                .setProxyOverride(builder.build(), { runnable -> main.post(runnable) }) { }
         }
     }
 

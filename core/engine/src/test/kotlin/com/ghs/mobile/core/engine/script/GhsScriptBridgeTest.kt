@@ -66,7 +66,7 @@ class GhsScriptBridgeTest {
         for (name in expected) {
             assertNotNull(engine.functions[name], "缺少宿主函数 $name")
         }
-        assertEquals(listOf("ghs-prelude", "ghs-globals"), engine.evaluated)
+        assertEquals(listOf("ghs-ready", "ghs-prelude", "ghs-globals"), engine.evaluated)
     }
 
     @Test
