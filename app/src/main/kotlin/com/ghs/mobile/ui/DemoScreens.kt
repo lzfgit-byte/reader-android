@@ -86,6 +86,7 @@ private sealed interface Screen {
     data class List(val page: Page) : Screen
     data class Detail(val item: Item, val info: DetailInfo?) : Screen
     data class ComicReader(val item: Item, val pages: kotlin.collections.List<com.ghs.mobile.core.model.Detail>, val startIndex: Int) : Screen
+    data class VideoPlayer(val item: Item, val url: String, val startMs: Long) : Screen
     data class SearchResults(val keyword: String, val page: Page) : Screen
     data class Failed(val message: String) : Screen
 }
@@ -284,6 +285,30 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
             return
         }
 
+        is Screen.VideoPlayer -> {
+            VideoPlayerScreen(
+                title = reader.item.title,
+                url = reader.url,
+                startPositionMs = reader.startMs,
+                onProgress = { position, duration ->
+                    scope.launch {
+                        repository.saveProgress(
+                            ReadingProgress(
+                                itemUrl = reader.item.jumpUrl,
+                                kind = ReaderKind.VIDEO,
+                                chapterUrl = reader.url,
+                                positionMs = position,
+                                durationMs = duration,
+                                percent = if (duration > 0) position * 100.0 / duration else 0.0,
+                                updatedAt = System.currentTimeMillis(),
+                            ),
+                        )
+                    }
+                },
+                onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
+            )
+            return
+        }
         is Screen.Detail -> if (reader.info?.detailType == DetailType.TEXT) {
             TextReaderScreen(
                 itemTitle = reader.item.title,
@@ -429,6 +454,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     item = current.item,
                     info = current.info,
                     resumeIndex = progressByUrl[current.item.jumpUrl]?.chapterOffset ?: 0,
+                    onPlayVideo = { url -> screen = Screen.VideoPlayer(current.item, url, 0L) },
                     onOpenComicPage = { index ->
                         val info = current.info
                         if (info != null && info.details.isNotEmpty()) {
@@ -439,6 +465,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
 
                 // 阅读器在上面已整屏返回，这里只是为了让 when 穷尽
                 is Screen.ComicReader -> Unit
+                is Screen.VideoPlayer -> Unit
             }
         }
     }
@@ -474,6 +501,7 @@ private fun titleFor(screen: Screen): String = when (screen) {
     is Screen.List -> "演示列表 · ${screen.page.items.size} 项"
     is Screen.Detail -> screen.item.title.ifEmpty { "详情" }
     is Screen.SearchResults -> "搜索：${screen.keyword}"
+    is Screen.VideoPlayer -> screen.item.title.ifEmpty { "播放" }
     is Screen.ComicReader -> screen.item.title.ifEmpty { "阅读" }
 }
 
@@ -519,6 +547,7 @@ private fun DetailScreen(
     info: DetailInfo?,
     resumeIndex: Int,
     onOpenComicPage: (Int) -> Unit,
+    onPlayVideo: (String) -> Unit,
 ) {
     if (info == null) {
         Centered {
@@ -530,7 +559,7 @@ private fun DetailScreen(
 
     when (info.detailType) {
         DetailType.COMIC -> ComicDetail(info, resumeIndex, onOpenComicPage)
-        DetailType.MP4, DetailType.M3U8 -> VideoDetail(info)
+        DetailType.MP4, DetailType.M3U8 -> VideoDetail(info, onPlayVideo)
         else -> Centered { Text("暂不支持的类型：${info.detailType}") }
     }
 }
@@ -619,7 +648,7 @@ private fun TextDetail(text: TextContent?) {
 }
 
 @Composable
-private fun VideoDetail(info: DetailInfo) {
+private fun VideoDetail(info: DetailInfo, onPlay: (String) -> Unit) {
     Column(
         modifier = Modifier.fillMaxSize().padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
@@ -631,10 +660,11 @@ private fun VideoDetail(info: DetailInfo) {
                 .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(12.dp)),
             contentAlignment = Alignment.Center,
         ) {
-            Text("播放器待接入（Media3）", style = MaterialTheme.typography.bodyMedium)
+            Text("选择清晰度开始播放", style = MaterialTheme.typography.bodyMedium)
         }
         info.details.forEach { source ->
-            Card {
+            val playable = source.url.isNotEmpty()
+            Card(onClick = { if (playable) onPlay(source.url) }) {
                 Row(
                     modifier = Modifier.fillMaxWidth().padding(12.dp),
                     horizontalArrangement = Arrangement.SpaceBetween,

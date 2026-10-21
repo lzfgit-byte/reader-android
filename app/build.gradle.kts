@@ -57,6 +57,11 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
 
+    // 视频播放（HLS 需要单独引入）
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-exoplayer-hls:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
+
     debugImplementation("androidx.compose.ui:ui-tooling")
 
     androidTestImplementation("androidx.test.ext:junit:1.2.1")
