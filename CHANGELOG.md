@@ -116,6 +116,9 @@
   - 本地静态校验：缺必需方法、`key` 格式、体积上限、`net.request().on(...)` 旧写法
   - API 抽象为 `ConsoleApi`：当前 Mock（localStorage），接内置服务时替换为 HTTP 实现
   - Monaco 与 worker 全部按需 chunk：首屏 68.8kB，总量 9.35MB（见 `web-console.md` v1.5）
+- **控制台断点（F24）**
+  - 编辑器列改 `minmax(0, …)`，窄窗口下不再被两侧固定宽度挤成 0 宽
+  - `<900px` 单栏堆叠，源码模式只读并提示改用桌面浏览器，与 `web-console.md` §2 一致
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -175,6 +178,9 @@
   - 本地静态校验：缺必需方法、`key` 格式、体积上限、`net.request().on(...)` 旧写法
   - API 抽象为 `ConsoleApi`：当前 Mock（localStorage），接内置服务时替换为 HTTP 实现
   - Monaco 与 worker 全部按需 chunk：首屏 68.8kB，总量 9.35MB（见 `web-console.md` v1.5）
+- **控制台断点（F24）**
+  - 编辑器列改 `minmax(0, …)`，窄窗口下不再被两侧固定宽度挤成 0 宽
+  - `<900px` 单栏堆叠，源码模式只读并提示改用桌面浏览器，与 `web-console.md` §2 一致
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
