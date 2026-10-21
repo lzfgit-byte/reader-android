@@ -52,6 +52,15 @@ class ConfigEngine(
 
     fun hasMethod(method: String): Boolean = bridge.hasMethod(method)
 
+    /**
+     * `adapterSearchUrl(keyword)` → 搜索页地址。
+     *
+     * 返回空串表示该配置**不支持搜索**。判定依据始终是这个方法的返回值，
+     * 不能用 `searchUrl` 字段是否为空来判断（见 config-spec §9.2 第 19 条）。
+     */
+    fun searchUrl(keyword: String): String =
+        (bridge.invoke("adapterSearchUrl", quote(keyword)) as? String).orEmpty().trim()
+
     /** `getItems($)` → 条目列表；无效条目（缺 jumpUrl）被丢弃 */
     fun items(): List<Item> =
         asList(bridge.invoke("getItems", "$"))

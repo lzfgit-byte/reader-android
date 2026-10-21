@@ -70,6 +70,9 @@ import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
 import com.ghs.mobile.demo.ItemCodec
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Search
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.TextButton
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -82,6 +85,7 @@ private sealed interface Screen {
     data class List(val page: Page) : Screen
     data class Detail(val item: Item, val info: DetailInfo?) : Screen
     data class ComicReader(val item: Item, val pages: kotlin.collections.List<com.ghs.mobile.core.model.Detail>, val startIndex: Int) : Screen
+    data class SearchResults(val keyword: String, val page: Page) : Screen
     data class Failed(val message: String) : Screen
 }
 
@@ -108,6 +112,9 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
     val scope = rememberCoroutineScope()
 
     var tab by remember { mutableStateOf(DemoTab.HOME) }
+    var searchOpen by remember { mutableStateOf(false) }
+    var searchKeyword by remember { mutableStateOf("") }
+    var searchError by remember { mutableStateOf<String?>(null) }
     var collected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var favoriteItems by remember { mutableStateOf<kotlin.collections.List<Item>>(emptyList()) }
     var historyEntries by remember { mutableStateOf<kotlin.collections.List<HistoryEntry>>(emptyList()) }
@@ -143,6 +150,26 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
                 }
             }
             refreshLibrary()
+        }
+    }
+
+    /** 搜索：adapterSearchUrl 取地址 → 取页 → 按普通列表解析 */
+    fun runSearch(keyword: String) {
+        val active = session ?: return
+        val trimmed = keyword.trim()
+        if (trimmed.isEmpty()) return
+        scope.launch {
+            runCatching { withContext(Dispatchers.IO) { active.search(trimmed) } }
+                .onSuccess { matched ->
+                    if (matched == null) {
+                        searchError = "该配置不支持搜索（adapterSearchUrl 返回空串）"
+                    } else {
+                        searchError = null
+                        searchOpen = false
+                        screen = Screen.SearchResults(trimmed, matched.second)
+                    }
+                }
+                .onFailure { searchError = it.message ?: it.toString() }
         }
     }
 
@@ -283,12 +310,17 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
                     )
                 },
                 actions = {
+                    if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
+                        IconButton(onClick = { searchOpen = !searchOpen }) {
+                            Icon(Icons.Default.Search, contentDescription = "搜索")
+                        }
+                    }
                     IconButton(onClick = onOpenProbe) {
                         Icon(Icons.Default.Info, contentDescription = "引擎自检")
                     }
                 },
                 navigationIcon = {
-                    if (screen is Screen.Detail) {
+                    if (screen is Screen.Detail || screen is Screen.SearchResults) {
                         IconButton(onClick = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
                         }
@@ -348,13 +380,46 @@ fun DemoApp(onOpenProbe: () -> Unit = {}) {
                     Text(current.message, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
                 }
 
-                is Screen.List -> ListScreen(
-                    page = current.page,
-                    progress = progressByUrl,
-                    collected = collected,
-                    onOpen = { item -> screen = Screen.Detail(item, null) },
-                    onToggleCollect = { item -> toggleCollect(item) },
-                )
+                is Screen.SearchResults -> Column(Modifier.fillMaxSize()) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Text(
+                            "「${current.keyword}」的结果 · ${current.page.items.size} 项",
+                            style = MaterialTheme.typography.titleSmall,
+                        )
+                        TextButton(onClick = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading }) {
+                            Text("清除")
+                        }
+                    }
+                    ListScreen(
+                        page = current.page,
+                        progress = progressByUrl,
+                        collected = collected,
+                        onOpen = { item -> screen = Screen.Detail(item, null) },
+                        onToggleCollect = { item -> toggleCollect(item) },
+                    )
+                }
+
+                is Screen.List -> Column(Modifier.fillMaxSize()) {
+                    if (searchOpen) {
+                        DemoSearchBar(
+                            keyword = searchKeyword,
+                            error = searchError,
+                            onKeywordChange = { searchKeyword = it },
+                            onSubmit = { runSearch(searchKeyword) },
+                        )
+                    }
+                    ListScreen(
+                        page = current.page,
+                        progress = progressByUrl,
+                        collected = collected,
+                        onOpen = { item -> screen = Screen.Detail(item, null) },
+                        onToggleCollect = { item -> toggleCollect(item) },
+                    )
+                }
 
                 is Screen.Detail -> DetailScreen(
                     item = current.item,
@@ -404,6 +469,7 @@ private fun titleFor(screen: Screen): String = when (screen) {
     is Screen.Failed -> "演示来源"
     is Screen.List -> "演示列表 · ${screen.page.items.size} 项"
     is Screen.Detail -> screen.item.title.ifEmpty { "详情" }
+    is Screen.SearchResults -> "搜索：${screen.keyword}"
     is Screen.ComicReader -> screen.item.title.ifEmpty { "阅读" }
 }
 
@@ -577,6 +643,40 @@ private fun VideoDetail(info: DetailInfo) {
                     )
                 }
             }
+        }
+    }
+}
+
+/** 演示用搜索栏：输入关键字 -> adapterSearchUrl -> 取页 -> 复用列表解析 */
+@Composable
+private fun DemoSearchBar(
+    keyword: String,
+    error: String?,
+    onKeywordChange: (String) -> Unit,
+    onSubmit: () -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            OutlinedTextField(
+                value = keyword,
+                onValueChange = onKeywordChange,
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text("搜索关键字") },
+            )
+            TextButton(onClick = onSubmit) { Text("搜索") }
+        }
+        if (error != null) {
+            Text(
+                error,
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(top = 4.dp),
+            )
         }
     }
 }

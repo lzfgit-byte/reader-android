@@ -20,6 +20,7 @@ class DemoHost(private val context: Context) : ScriptHostTransport {
 
     override fun fetchHtml(url: String): String {
         val asset = when {
+            url.contains("search?q=") -> SEARCH
             url.contains("type=comic") -> COMIC
             url.contains("type=text") && url.contains("page=2") -> TEXT2
             url.contains("type=text") -> TEXT
@@ -44,6 +45,7 @@ class DemoHost(private val context: Context) : ScriptHostTransport {
         const val COMIC = "demo/detail-comic.html"
         const val TEXT = "demo/detail-text.html"
         const val TEXT2 = "demo/detail-text-2.html"
+        const val SEARCH = "demo/search.html"
         const val VIDEO = "demo/detail-video.html"
     }
 }
@@ -74,6 +76,14 @@ class DemoSession(private val context: Context) : AutoCloseable {
     fun textContent(url: String): TextContent = configEngine.textContent(url)
 
     fun contents(url: String): List<CContent> = configEngine.contents(url)
+
+    /** 搜索：走 adapterSearchUrl 取地址，再按普通列表解析 */
+    fun search(keyword: String): Pair<String, Page>? {
+        val url = configEngine.searchUrl(keyword)
+        if (url.isEmpty()) return null
+        configEngine.withHtml(host.fetchHtml(url))
+        return url to configEngine.page()
+    }
 
     override fun close() {
         runCatching { configEngine.close() }
