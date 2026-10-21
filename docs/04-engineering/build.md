@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v3.1
+> **版本**：v3.2
 > **最后更新**：2026-10-20
-> **取代/被取代**：取代同文件 v3.0
+> **取代/被取代**：取代同文件 v3.1
 
 # 本地构建与验证
 
@@ -87,6 +87,17 @@ $env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFI
 
 ---
 
+### 3.z 真实配置接入的三个坑（已修）
+
+| 现象 | 根因 | 修法 |
+|---|---|---|
+| 详情永远停在"正在解析详情…" | `getDetailInfo` 的实参只传了 `{jumpUrl,title}`，配置里 `item.type === 'video'` 恒为假 → `return null` | 传完整 item，`type` 用小写词（`video`/`image`/`comic`/`text`） |
+| 解析失败但界面一直转圈 | `runCatching{}.getOrNull()` 把异常吞掉，`info == null` 又被当成"还在加载" | 新增 `detailError`，失败显示原因 |
+| `Read timed out` / `脚本执行超时（20000ms）` | 真实站点经代理首屏 1.5~4s，抖动时超过 20s | 脚本 await 60s；OkHttp 连接 30s / 读 60s / 调用 90s，并开 retry |
+
+> 修完后 `hentaiWord` 配置经 `10808` 代理实测：列表 24 项、详情 1.4s 返回 MP4。
+
+---
 ### 3.y 怎么判断"代理地址"是不是代理
 
 配了代理却只得到 `unexpected end of stream`，多半是**该端口不是 HTTP 代理**。
@@ -373,3 +384,4 @@ App 读取的是 `filesDir/configs/` 下的配置（浏览器编辑后落盘的�
 | v2.9 | 2026-10-21 | §3 补 NanoHTTPD keep-alive 未消费 body 的陷阱（保存/新建失效的根因与规则） |
 | v3.0 | 2026-10-21 | §7.4 补"网页端改动 → App 自动重载"与菜单实时刷新 |
 | v3.1 | 2026-10-21 | §3 补"怎么判断代理地址是不是代理"；记录代理默认值被清空的修复 |
+| v3.2 | 2026-10-21 | §3 补真实配置接入的三个坑（item.type 回传、失败可见、超时）；代理默认端口改 10808 |
