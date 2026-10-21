@@ -24,6 +24,8 @@ class AdminServer(
     private val bindHost: String,
     private val token: String,
     private val appVersion: String,
+    /** 配置被改动后的通知：让 App 立刻重载，不必手动重启 */
+    private val onConfigsChanged: () -> Unit = {},
 ) : NanoHTTPD(bindHost, port) {
 
     override fun serve(session: IHTTPSession): Response {
@@ -197,6 +199,7 @@ class AdminServer(
             return json(Response.Status.CONFLICT, error("E-CFG-009", "配置已存在：$key"))
         }
         store.save(key, source, enabled = body.optBoolean("enabled", true), sort = body.optInt("sort", 0))
+        notifyChanged()
         return jsonOk(JSONObject().put("key", key))
     }
 
@@ -218,6 +221,7 @@ class AdminServer(
         }
         val existing = store.get(key)!!
         store.save(key, source, enabled = existing.enabled, sort = existing.sort)
+        notifyChanged()
         return jsonOk(JSONObject().put("key", key).put("updatedAt", System.currentTimeMillis()))
     }
 
@@ -227,11 +231,13 @@ class AdminServer(
         }
         val body = parseJson(rawBody)
         if (body.has("enabled")) store.setEnabled(key, body.getBoolean("enabled"))
+        notifyChanged()
         return jsonOk(JSONObject().put("key", key))
     }
 
     private fun deleteConfig(key: String): Response {
         val removed = store.delete(key)
+        if (removed) notifyChanged()
         return if (removed) jsonOk(JSONObject().put("key", key))
         else json(Response.Status.NOT_FOUND, error("E-CFG-404", "配置不存在：$key"))
     }
@@ -244,6 +250,7 @@ class AdminServer(
         )
         val list = (0 until keys.length()).map { keys.getString(it) }
         store.reorder(list)
+        notifyChanged()
         return jsonOk(JSONObject().put("count", list.size))
     }
 
@@ -295,6 +302,10 @@ class AdminServer(
             read += n
         }
         return String(buffer, 0, read, Charsets.UTF_8)
+    }
+
+    /** 变更通知：失败不影响本次写入的结果 */    private fun notifyChanged() {
+        runCatching { onConfigsChanged() }
     }
 
     private fun parseJson(raw: String): JSONObject =

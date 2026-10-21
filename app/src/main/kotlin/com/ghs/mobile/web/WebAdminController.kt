@@ -40,6 +40,10 @@ class WebAdminController(
     private val _state = MutableStateFlow(WebSettings())
     val state: StateFlow<WebSettings> = _state.asStateFlow()
 
+    /** 配置被网页端改动时自增：App 侧据此重载当前配置 */
+    private val _reloadSignal = MutableStateFlow(0)
+    val reloadSignal: StateFlow<Int> = _reloadSignal.asStateFlow()
+
     private var server: AdminServer? = null
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -83,6 +87,7 @@ class WebAdminController(
                 bindHost = settings.bindHost,
                 token = settings.token,
                 appVersion = appVersion,
+                onConfigsChanged = { _reloadSignal.value = _reloadSignal.value + 1 },
             )
             val started = runCatching { instance.start(SOCKET_READ_TIMEOUT_MS, true) }.isSuccess
             if (started) {

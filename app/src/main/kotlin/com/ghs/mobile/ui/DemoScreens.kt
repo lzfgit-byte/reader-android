@@ -122,6 +122,9 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     var configKey by remember { mutableStateOf<String?>(null) }
     var configs by remember { mutableStateOf<kotlin.collections.List<ConfigStore.StoredConfig>>(emptyList()) }
     var showConfigMenu by remember { mutableStateOf(false) }
+    // 网页端改过配置后由服务端通知：在列表页立即重载，阅读中则等回到列表
+    var reloadRequest by remember { mutableStateOf(0) }
+    var pendingReload by remember { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
     var searchKeyword by remember { mutableStateOf("") }
     var searchError by remember { mutableStateOf<String?>(null) }
@@ -197,8 +200,24 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         configKey = selected?.key
     }
 
-    // 配置切换：关掉旧会话再按新配置重建（引擎较重，不能并行两份）
-    LaunchedEffect(configKey) {
+    // 网页端保存/新建/删除后，服务端会发通知：列表页立刻重载
+    LaunchedEffect(Unit) {
+        app.webAdmin.reloadSignal.collect { signal ->
+            if (signal == 0) return@collect
+            if (screen is Screen.List) reloadRequest += 1 else pendingReload = true
+        }
+    }
+
+    // 阅读中先不动：等回到列表再重载，避免把正在看的页面拆掉
+    LaunchedEffect(screen) {
+        if (screen is Screen.List && pendingReload) {
+            pendingReload = false
+            reloadRequest += 1
+        }
+    }
+
+    // 配置切换或收到重载通知：关掉旧会话再按配置重建（引擎较重，不能并行两份）
+    LaunchedEffect(configKey, reloadRequest) {
         val key = configKey ?: return@LaunchedEffect
         screen = Screen.Loading
         session?.close()
@@ -371,7 +390,13 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 },
                 actions = {
                     Box {
-                        IconButton(onClick = { showConfigMenu = true }) {
+                        IconButton(onClick = {
+                            showConfigMenu = true
+                            // 每次打开都重新读：网页端可能刚新建/删除过配置
+                            scope.launch {
+                                configs = withContext(Dispatchers.IO) { app.configs.list() }
+                            }
+                        }) {
                             Icon(Icons.Default.MoreVert, contentDescription = "切换配置")
                         }
                         DropdownMenu(expanded = showConfigMenu, onDismissRequest = { showConfigMenu = false }) {
