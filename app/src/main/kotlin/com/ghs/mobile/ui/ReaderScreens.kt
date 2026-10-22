@@ -92,6 +92,7 @@ fun ComicReaderScreen(
     chapters: List<CContent>,
     startIndex: Int,
     quality: ImageQuality,
+    imageMaxWidth: Int,
     onQualityChange: (ImageQuality) -> Unit,
     onProgress: (pageIndex: Int) -> Unit,
     onBack: () -> Unit,
@@ -100,6 +101,7 @@ fun ComicReaderScreen(
         initialPage = startIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
     ) { pages.size }
     val current by remember { derivedStateOf { pagerState.currentPage } }
+    android.util.Log.i("GHS", "reader imageMaxWidth=$imageMaxWidth (quality=$quality)")
     val scope = rememberCoroutineScope()
 
     var showChapters by remember { mutableStateOf(false) }
@@ -126,6 +128,7 @@ fun ComicReaderScreen(
                     loader.enqueue(
                         ImageRequest.Builder(context)
                             .data(url)
+                            .size(imageMaxWidth)
                             .build(),
                     )
                 }
@@ -174,6 +177,7 @@ fun ComicReaderScreen(
                 page = pages.getOrNull(index),
                 index = index,
                 quality = quality,
+                imageMaxWidth = imageMaxWidth,
                 onTap = { chromeVisible = !chromeVisible },
                 onLongPress = { saveCurrentPage() },
             )
@@ -408,6 +412,7 @@ private fun ZoomablePage(
     page: Detail?,
     index: Int,
     quality: ImageQuality,
+    imageMaxWidth: Int,
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
@@ -460,7 +465,7 @@ private fun ZoomablePage(
         contentAlignment = Alignment.Center,
     ) {
         SubcomposeAsyncImage(
-            model = model,
+            model = ImageRequest.Builder(LocalContext.current).data(model).size(imageMaxWidth).build(),
             contentDescription = "第 ${index + 1} 页",
             modifier = Modifier
                 .fillMaxSize()

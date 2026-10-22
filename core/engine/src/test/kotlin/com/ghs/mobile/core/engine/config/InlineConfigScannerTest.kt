@@ -192,4 +192,24 @@ class InlineConfigScannerTest {
         println("旧式 net.request 事件写法：$flagged")
         assertTrue(flagged.size <= 1, "不应有多个样本使用旧式事件写法：$flagged")
     }
+
+    @Test
+    fun `抽取 comicImgMaxWidth 支持 vw 写法`() {
+        val withField = """
+            const getData = (): WebConfig => /* break */ ({
+              key: 'w1',
+              name: 'W',
+              homeUrl: 'https://example.com/',
+              comicImgMaxWidth: '80vw',
+              getUrlReplace($) { return []; },
+              getItems($) { return []; },
+              getPagination($) { return []; },
+              getTags($) { return []; },
+              async getDetailInfo(item, cheerio) { return null; },
+              adapterLoadUrl(url) { return url; },
+              adapterSearchUrl(key) { return this.homeUrl + key; },
+            });
+        """.trimIndent()
+        assertEquals("80vw", InlineConfigScanner.scan(withField).comicImgMaxWidth)
+    }
 }

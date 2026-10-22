@@ -425,6 +425,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 chapters = chapters,
                 startIndex = reader.startIndex,
                 quality = imageQuality,
+                imageMaxWidth = session?.imageMaxWidth ?: 1080,
                 onQualityChange = { next ->
                     imageQuality = next
                     scope.launch {
