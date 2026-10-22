@@ -73,61 +73,82 @@ fun SettingsScreen(
         },
     ) { padding ->
         Surface(modifier = Modifier.fillMaxSize().padding(padding)) {
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(16.dp),
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                SettingSection(title = "外观") {
-                    SettingRow(
-                        label = "主题",
-                        options = ThemeMode.entries.map { it.label },
-                        selectedIndex = ThemeMode.entries.indexOf(settings.theme),
-                        onSelect = { onThemeChange(ThemeMode.entries[it]) },
-                    )
-                    SettingRow(
-                        label = "字号",
-                        options = FontScale.entries.map { it.label },
-                        selectedIndex = FontScale.entries.indexOf(settings.fontScale),
-                        onSelect = { onFontScaleChange(FontScale.entries[it]) },
-                    )
-                    Text(
-                        "预览：这一段文字会按当前字号显示。",
-                        style = MaterialTheme.typography.bodyLarge,
-                        modifier = Modifier.padding(top = 8.dp),
-                    )
-                }
+            SettingsContent(
+                settings = settings,
+                proxy = proxy,
+                web = web,
+                onThemeChange = onThemeChange,
+                onFontScaleChange = onFontScaleChange,
+                onReaderModeChange = onReaderModeChange,
+                onProxyApply = onProxyApply,
+                onWebToggle = onWebToggle,
+                onWebPortChange = onWebPortChange,
+                onWebBindChange = onWebBindChange,
+                onWebResetToken = onWebResetToken,
+            )
+        }
+    }
+}
 
-                SettingSection(title = "Web 管理") {
-                    WebSection(
-                        web = web,
-                        onToggle = onWebToggle,
-                        onPortChange = onWebPortChange,
-                        onBindChange = onWebBindChange,
-                        onResetToken = onWebResetToken,
-                    )
-                }
+/** 设置内容本体：左侧抽屉与独立设置页共用（不含 Scaffold） */
+@Composable
+fun SettingsContent(
+    settings: AppSettings,
+    proxy: ProxyRules,
+    web: WebAdminController.WebSettings,
+    onThemeChange: (ThemeMode) -> Unit,
+    onFontScaleChange: (FontScale) -> Unit,
+    onReaderModeChange: (ReaderMode) -> Unit,
+    onProxyApply: (enabled: Boolean, url: String, username: String, password: String, whitelist: String) -> Unit,
+    onWebToggle: (Boolean) -> Unit,
+    onWebPortChange: (Int) -> Unit,
+    onWebBindChange: (Boolean) -> Unit,
+    onWebResetToken: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        SettingSection(title = "外观") {
+            SettingRow(
+                label = "主题",
+                options = ThemeMode.entries.map { it.label },
+                selectedIndex = ThemeMode.entries.indexOf(settings.theme),
+                onSelect = { onThemeChange(ThemeMode.entries[it]) },
+            )
+            SettingRow(
+                label = "字号",
+                options = FontScale.entries.map { it.label },
+                selectedIndex = FontScale.entries.indexOf(settings.fontScale),
+                onSelect = { onFontScaleChange(FontScale.entries[it]) },
+            )
+        }
 
-                SettingSection(title = "网络代理") {
-                    ProxyForm(proxy = proxy, onApply = onProxyApply)
-                }
+        SettingSection(title = "Web 管理") {
+            WebSection(
+                web = web,
+                onToggle = onWebToggle,
+                onPortChange = onWebPortChange,
+                onBindChange = onWebBindChange,
+                onResetToken = onWebResetToken,
+            )
+        }
 
-                SettingSection(title = "阅读") {
-                    SettingRow(
-                        label = "阅读器默认模式",
-                        options = ReaderMode.entries.map { it.label() },
-                        selectedIndex = ReaderMode.entries.indexOf(settings.readerMode),
-                        onSelect = { onReaderModeChange(ReaderMode.entries[it]) },
-                    )
-                    Text(
-                        "配置里的 readerMode 会被这里的用户选择覆盖，仅对当前来源生效。",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+        SettingSection(title = "网络代理") {
+            ProxyForm(proxy = proxy, onApply = onProxyApply)
+        }
+
+        SettingSection(title = "阅读") {
+            SettingRow(
+                label = "阅读器默认模式",
+                options = ReaderMode.entries.map { it.label() },
+                selectedIndex = ReaderMode.entries.indexOf(settings.readerMode),
+                onSelect = { onReaderModeChange(ReaderMode.entries[it]) },
+            )
         }
     }
 }

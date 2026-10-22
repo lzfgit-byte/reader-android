@@ -23,6 +23,7 @@ import com.ghs.mobile.ui.DemoApp
 import com.ghs.mobile.ui.ProbeScreen
 import com.ghs.mobile.ui.SettingsScreen
 import kotlinx.coroutines.launch
+import com.ghs.mobile.ui.SettingsContent
 
 /**
  * 入口：主界面 / 引擎自检 / 设置三个页面。
@@ -71,6 +72,23 @@ private fun AppRoot() {
 
             when (page) {
                 Page.MAIN -> DemoApp(
+                    drawerSettings = {
+                        SettingsContent(
+                            settings = settings,
+                            proxy = proxyRules,
+                            web = webState,
+                            onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
+                            onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
+                            onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
+                            onProxyApply = { enabled, url, user, pass, whitelist ->
+                                scope.launch { proxyStore.apply(enabled, url, user, pass, whitelist) }
+                            },
+                            onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
+                            onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
+                            onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },
+                            onWebResetToken = { scope.launch { webAdmin.resetToken() } },
+                        )
+                    },
                     onOpenProbe = { page = Page.PROBE },
                     onOpenSettings = { page = Page.SETTINGS },
                 )

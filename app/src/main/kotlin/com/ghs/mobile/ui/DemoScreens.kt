@@ -101,6 +101,11 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.collectAsState
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -139,7 +144,12 @@ private const val CONFIG_KEY = "demo"
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
+fun DemoApp(
+    onOpenProbe: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
+    /** 左侧抽屉里直接展开的设置内容（由外层提供，避免二级菜单） */
+    drawerSettings: @Composable () -> Unit = {},
+) {
     val app = GhsApp.instance
     val repository = app.repository
     // 会话（WebView 引擎）必须在后台线程创建：引擎内部会等待页面就绪，主线程等待会死锁
@@ -1068,47 +1078,39 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         }
     }
 
-    // 左侧菜单：设置 / 引擎自检
-    if (drawerOpen) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .background(Color(0x99000000))
-                .clickable { drawerOpen = false },
-        )
-        Surface(
-            modifier = Modifier
-                .fillMaxHeight()
-                .width(240.dp),
-            color = MaterialTheme.colorScheme.surface,
-            shadowElevation = 10.dp,
-        ) {
-            Column(modifier = Modifier.padding(top = 40.dp)) {
-                Text(
-                    "菜单",
-                    style = MaterialTheme.typography.titleSmall,
-                    modifier = Modifier.padding(start = 20.dp, bottom = 8.dp),
-                )
-                NavigationDrawerItem(
-                    label = { Text("设置") },
-                    selected = false,
-                    onClick = {
-                        drawerOpen = false
-                        onOpenSettings()
-                    },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                )
-                NavigationDrawerItem(
-                    label = { Text("引擎自检") },
-                    selected = false,
-                    onClick = {
-                        drawerOpen = false
-                        onOpenProbe()
-                    },
-                    icon = { Icon(Icons.Default.Info, contentDescription = null) },
-                    modifier = Modifier.padding(horizontal = 8.dp),
-                )
+    // 左侧抽屉：直接展开设置内容（不做二级菜单），底部是引擎自检
+    AnimatedVisibility(
+        visible = drawerOpen,
+        enter = fadeIn() + slideInHorizontally { -it / 2 },
+        exit = fadeOut() + slideOutHorizontally { -it / 2 },
+    ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0x99000000))
+                    .clickable { drawerOpen = false },
+            )
+            Surface(
+                modifier = Modifier
+                    .fillMaxHeight()
+                    .fillMaxWidth(0.88f),
+                color = MaterialTheme.colorScheme.surface,
+                shadowElevation = 12.dp,
+            ) {
+                Column(modifier = Modifier.fillMaxSize().padding(top = 24.dp)) {
+                    drawerSettings()
+                    NavigationDrawerItem(
+                        label = { Text("引擎自检") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            onOpenProbe()
+                        },
+                        icon = { Icon(Icons.Default.Info, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                }
             }
         }
     }
