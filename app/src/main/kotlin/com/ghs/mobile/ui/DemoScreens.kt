@@ -187,6 +187,8 @@ fun DemoApp(
     // 详情解析任务：允许手动取消，并统计已用时间
     var detailJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var detailElapsedSec by remember { mutableStateOf(0) }
+    // 正在解析的条目：不切页面，首页原地转圈
+    var parseTarget by remember { mutableStateOf<Item?>(null) }
     // 网页端改过配置后由服务端通知：在列表页立即重载，阅读中则等回到列表
     var reloadRequest by remember { mutableStateOf(0) }
     // 当前列表地址：刷新按钮用它重新取数据
@@ -395,26 +397,26 @@ fun DemoApp(
     }
 
     // 打开详情：解析 + 记录进度
-    // 打开详情：解析 + 记录进度（可取消，供弹窗上的「取消」使用）
-    val detailItem = (screen as? Screen.Detail)?.item
-    LaunchedEffect(detailItem) {
-        val item = detailItem ?: return@LaunchedEffect
+    // 打开详情：不切页面，首页原地转圈解析（可取消）
+    LaunchedEffect(parseTarget) {
+        val item = parseTarget ?: return@LaunchedEffect
         detailJob?.cancel()
         detailElapsedSec = 0
         detailJob = scope.launch {
-            val active = session ?: return@launch
+            val active = session ?: run { parseTarget = null; return@launch }
             detailError = null
             text = null
             textUrl = null
             val outcome = runCatching { withContext(Dispatchers.IO) { active.detail(item) } }
             val info = outcome.getOrNull()
-            // 失败必须能看见：否则 info == null 会被界面当成"还在解析"，永远转圈
             detailError = outcome.exceptionOrNull()?.let { it.message ?: it.toString() }
-            screen = Screen.Detail(item, info)
             if (info != null) {
                 withContext(Dispatchers.IO) { rememberOpened(repository, siteKey, item, info) }
             }
-            // 视频：解析出地址后直接播放，不再停留在中间的清晰度列表
+            // 解析结束，收起转圈
+            parseTarget = null
+
+            // 视频：解析出地址后直接播放
             if (info != null && (info.detailType == DetailType.MP4 || info.detailType == DetailType.M3U8)) {
                 val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
                 screen = Screen.VideoPlayer(
@@ -425,12 +427,12 @@ fun DemoApp(
                 )
                 return@launch
             }
-            // 剧集：解析出分段后进剧集页（线路 Tab → 集 → 播放）
+            // 剧集：线路 Tab → 集 → 播放
             if (info != null && info.detailType == DetailType.SERIES) {
                 screen = Screen.Series(item, info)
                 return@launch
             }
-            // 图片：解析出图集地址后直接进阅读器，从上次的页续看
+            // 图片：直接进阅读器，从上次的页续看
             if (info != null && info.detailType == DetailType.IMAGE && info.details.isNotEmpty()) {
                 val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
                 screen = Screen.ComicReader(
@@ -443,16 +445,17 @@ fun DemoApp(
             if (info?.detailType == DetailType.TEXT) {
                 textUrl = info.details.firstOrNull()?.url ?: item.jumpUrl
             }
+            // 其它情况（文本 / 解析失败）落到详情页展示
+            screen = Screen.Detail(item, info)
         }
     }
 
-    // 解析计时：只在"解析中"时累加，给弹窗显示
-    LaunchedEffect(detailItem) {
-        if (detailItem == null) return@LaunchedEffect
+    // 解析计时：只在解析中累加
+    LaunchedEffect(parseTarget) {
+        if (parseTarget == null) return@LaunchedEffect
         while (true) {
             delay(1_000)
-            val parsing = (screen as? Screen.Detail)?.info == null
-            if (!parsing) break
+            if (parseTarget == null) break
             detailElapsedSec += 1
         }
     }
@@ -888,7 +891,7 @@ fun DemoApp(
                     progress = progressByUrl,
                     collected = collected,
                     layout = layoutMode,
-                    onOpen = { item -> screen = Screen.Detail(item, null); tab = DemoTab.HOME },
+                    onOpen = { item -> tab = DemoTab.HOME; parseTarget = item },
                     onToggleCollect = { item -> toggleCollect(item) },
                 )
                 return@Surface
@@ -897,7 +900,7 @@ fun DemoApp(
                 HistoryScreen(
                     entries = historyEntries,
                     layout = layoutMode,
-                    onOpen = { item -> screen = Screen.Detail(item, null); tab = DemoTab.HOME },
+                    onOpen = { item -> tab = DemoTab.HOME; parseTarget = item },
                 )
                 return@Surface
             }
@@ -988,7 +991,7 @@ fun DemoApp(
                         layout = layoutMode,
                         loadingMore = loadingMore,
                         noMore = noMore,
-                        onOpen = { item -> screen = Screen.Detail(item, null) },
+                        onOpen = { item -> parseTarget = item },
                         onToggleCollect = { item -> toggleCollect(item) },
                         onLoadMore = { loadMore() },
                     )
@@ -1010,7 +1013,7 @@ fun DemoApp(
                         layout = layoutMode,
                         loadingMore = loadingMore,
                         noMore = noMore,
-                        onOpen = { item -> screen = Screen.Detail(item, null) },
+                        onOpen = { item -> parseTarget = item },
                         onToggleCollect = { item -> toggleCollect(item) },
                         onLoadMore = { loadMore() },
                     )
@@ -1101,34 +1104,48 @@ fun DemoApp(
     }
 
     // 解析详情弹窗：显示已用时间，可手动取消
-    val parsingDetail = (screen as? Screen.Detail)?.let { it.info == null && detailError == null && detailItem != null } == true
+    val parsingDetail = parseTarget != null
     if (parsingDetail) {
         Dialog(onDismissRequest = { /* 只能通过按钮关闭，避免误触中断 */ }) {
-            Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 6.dp) {
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                tonalElevation = 6.dp,
+                modifier = Modifier.width(320.dp),
+            ) {
                 Column(
-                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
-                    CircularProgressIndicator()
+                    CircularProgressIndicator(modifier = Modifier.size(40.dp))
                     Text(
                         "正在解析详情…",
-                        style = MaterialTheme.typography.titleSmall,
-                        modifier = Modifier.padding(top = 16.dp),
+                        style = MaterialTheme.typography.titleMedium,
+                        modifier = Modifier.padding(top = 20.dp),
                     )
+                    parseTarget?.let { item ->
+                        Text(
+                            item.title,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
                     Text(
                         "已用 ${detailElapsedSec}s",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(top = 6.dp),
+                        modifier = Modifier.padding(top = 8.dp),
                     )
-                    TextButton(
+                    Button(
                         onClick = {
                             detailJob?.cancel()
                             detailJob = null
                             detailError = null
-                            screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                            parseTarget = null
                         },
-                        modifier = Modifier.padding(top = 12.dp),
+                        modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
                     ) { Text("取消") }
                 }
             }
