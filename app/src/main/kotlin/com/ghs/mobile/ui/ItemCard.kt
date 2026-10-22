@@ -38,6 +38,7 @@ import com.ghs.mobile.core.model.ItemType
 import com.ghs.mobile.core.model.ReaderKind
 import com.ghs.mobile.core.model.ReadingProgress
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.material3.CardDefaults
 
 /**
  * 条目卡片。
@@ -73,17 +74,47 @@ private fun GridCard(
     onClick: () -> Unit,
     onToggleCollect: () -> Unit,
 ) {
-    Card(onClick = onClick) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
         Column {
             // 图片贴边铺满：核心是让封面尽量大
-            Cover(item, Modifier.fillMaxWidth().aspectRatio(4f / 3f))
+            Box {
+                Cover(item, Modifier.fillMaxWidth().aspectRatio(4f / 3f))
+                // 配置返回的 tag 悬浮在封面左上角
+                if (item.tags.isNotEmpty()) {
+                    Row(
+                        modifier = Modifier
+                            .align(Alignment.TopStart)
+                            .padding(6.dp),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp),
+                    ) {
+                        item.tags.take(3).forEach { tag ->
+                            Text(
+                                tag.title,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color.White,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier
+                                    .background(Color(0xB3000000), RoundedCornerShape(4.dp))
+                                    .padding(horizontal = 6.dp, vertical = 2.dp),
+                            )
+                        }
+                    }
+                }
+            }
             Row(
                 modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 0.dp, top = 2.dp, bottom = 2.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
                     item.title,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF1A1A1A),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).basicMarquee(),
@@ -114,7 +145,12 @@ private fun ListCard(
     onClick: () -> Unit,
     onToggleCollect: () -> Unit,
 ) {
-    Card(onClick = onClick) {
+    Card(
+        onClick = onClick,
+        shape = RoundedCornerShape(10.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+    ) {
         Row(modifier = Modifier.fillMaxWidth().height(112.dp)) {
             Cover(item, Modifier.width(150.dp).fillMaxSize())
             Column(
@@ -123,7 +159,8 @@ private fun ListCard(
             ) {
                 Text(
                     item.title,
-                    style = MaterialTheme.typography.titleSmall,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = Color(0xFF1A1A1A),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.basicMarquee(),

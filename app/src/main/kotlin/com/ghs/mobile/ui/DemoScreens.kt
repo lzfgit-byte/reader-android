@@ -86,6 +86,21 @@ import androidx.compose.material.icons.filled.Place
 import com.ghs.mobile.core.model.Analysis
 import com.ghs.mobile.core.model.AnalysisDetail
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.ContentScale
+import coil.compose.AsyncImage
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.material3.NavigationDrawerItem
+import androidx.compose.foundation.clickable
+import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.rememberModalBottomSheetState
+import androidx.compose.runtime.collectAsState
+import androidx.compose.material3.ModalBottomSheet
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -144,11 +159,23 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     var configs by remember { mutableStateOf<kotlin.collections.List<ConfigStore.StoredConfig>>(emptyList()) }
     var showConfigMenu by remember { mutableStateOf(false) }
     var showSiteSheet by remember { mutableStateOf(false) }
+    // 左侧菜单（设置 / 引擎自检）
+    var drawerOpen by remember { mutableStateOf(false) }
+    // 配置日志（LogMsgUtil / console.log）→ 应用内「日志云」
+    var logEntries by remember { mutableStateOf<List<String>>(emptyList()) }
+    DisposableEffect(Unit) {
+        val listener: (List<String>) -> Unit = { logEntries = it }
+        com.ghs.mobile.core.engine.script.LogHub.addListener(listener)
+        onDispose { com.ghs.mobile.core.engine.script.LogHub.removeListener(listener) }
+    }
+    var logSheetOpen by remember { mutableStateOf(false) }
     var showPageSheet by remember { mutableStateOf(false) }
     // 详情解析失败的原因：info == null 既可能是"还在解析"，也可能是"失败了"
     var detailError by remember { mutableStateOf<String?>(null) }
     // 网页端改过配置后由服务端通知：在列表页立即重载，阅读中则等回到列表
     var reloadRequest by remember { mutableStateOf(0) }
+    // 当前列表地址：刷新按钮用它重新取数据
+    var currentListUrl by remember { mutableStateOf<String?>(null) }
     var pendingReload by remember { mutableStateOf(false) }
     var searchOpen by remember { mutableStateOf(false) }
     var searchKeyword by remember { mutableStateOf("") }
@@ -239,6 +266,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
             val page = runCatching { withContext(Dispatchers.IO) { active.pageFrom(url) } }.getOrNull()
             if (page != null) {
                 noMore = false
+                currentListUrl = url
                 activeTagTitle = title
                 lastPage = page
                 screen = Screen.List(page)
@@ -330,6 +358,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         session = created
         runCatching { withContext(Dispatchers.IO) { created.page() } }
             .onSuccess {
+                currentListUrl = created.homeUrl
                 lastPage = it
                 screen = Screen.List(it)
             }
@@ -732,9 +761,9 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     Text(
                         when (tab) {
                             DemoTab.HOME -> activeTagTitle ?: titleFor(screen, null)
-                            DemoTab.FAVORITES -> "收藏 · ${favoriteItems.size}"
-                            DemoTab.HISTORY -> "历史 · ${historyEntries.size}"
-                            DemoTab.TAGS -> "标签 · ${lastPage?.tags?.size ?: 0}"
+                            DemoTab.FAVORITES -> "收藏"
+                            DemoTab.HISTORY -> "历史"
+                            DemoTab.TAGS -> "标签"
                         },
                     )
                 },
@@ -744,7 +773,19 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                         showSiteSheet = true
                         scope.launch { configs = withContext(Dispatchers.IO) { app.configs.list() } }
                     }) {
-                        Text(siteLabel())
+                        val favicon = configs.firstOrNull { it.key == configKey }?.let { siteFavicon(it) }
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            if (!favicon.isNullOrBlank()) {
+                                AsyncImage(
+                                    model = favicon,
+                                    contentDescription = null,
+                                    modifier = Modifier.size(18.dp).clip(RoundedCornerShape(4.dp)),
+                                    contentScale = ContentScale.Crop,
+                                )
+                                Spacer(Modifier.width(6.dp))
+                            }
+                            Text(siteLabel())
+                        }
                     }
 
                     // 页码：右上角，点开抽屉选页
@@ -756,31 +797,27 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                             }
                         }
                     }
-                    IconButton(onClick = {
+                    // 布局切换：单列 / 双列
+                    TextButton(onClick = {
                         layoutMode = if (layoutMode == ItemCardLayout.GRID) {
                             ItemCardLayout.LIST
                         } else {
                             ItemCardLayout.GRID
                         }
                     }) {
-                        Icon(
-                            Icons.Default.Menu,
-                            contentDescription = if (layoutMode == ItemCardLayout.GRID) "切换单列" else "切换双列",
-                        )
+                        Text(if (layoutMode == ItemCardLayout.GRID) "双列" else "单列")
                     }
                     if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
                         IconButton(onClick = { searchOpen = !searchOpen }) {
                             Icon(Icons.Default.Search, contentDescription = "搜索")
                         }
                     }
-                    IconButton(onClick = onOpenSettings) {
-                        Icon(Icons.Default.Settings, contentDescription = "设置")
-                    }
-                    IconButton(onClick = onOpenProbe) {
-                        Icon(Icons.Default.Info, contentDescription = "引擎自检")
-                    }
                 },
                 navigationIcon = {
+                    // 左侧菜单：设置 / 引擎自检
+                    IconButton(onClick = { drawerOpen = true }) {
+                        Icon(Icons.Default.Menu, contentDescription = "菜单")
+                    }
                     if (tab == DemoTab.HOME && (screen is Screen.Detail || screen is Screen.SearchResults)) {
                         IconButton(onClick = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -964,6 +1001,114 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 is Screen.ComicReader -> Unit
                 is Screen.VideoPlayer -> Unit
                 is Screen.Series -> Unit
+            }
+        }
+    }
+
+    // 首页悬浮刷新：用当前列表地址重新取数据
+    if (tab == DemoTab.HOME && screen is Screen.List) {
+        Box(modifier = Modifier.fillMaxSize().padding(bottom = 72.dp)) {
+            FloatingActionButton(
+                onClick = { openFromUrl(currentListUrl ?: session?.homeUrl ?: return@FloatingActionButton, activeTagTitle) },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(16.dp),
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                Icon(Icons.Default.Refresh, contentDescription = "刷新")
+            }
+        }
+    }
+
+    // 日志云：有日志时在顶部显示最新一条，点开看全部
+    val latestLog = logEntries.lastOrNull()
+    if (latestLog != null && !logSheetOpen) {
+        Surface(
+            onClick = { logSheetOpen = true },
+            shape = RoundedCornerShape(50),
+            color = Color(0xE62A2A2E),
+            shadowElevation = 6.dp,
+            modifier = Modifier
+                .padding(top = 56.dp)
+                .widthIn(max = 320.dp),
+        ) {
+            Text(
+                latestLog,
+                color = Color(0xFFE6E6EA),
+                style = MaterialTheme.typography.labelSmall,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            )
+        }
+    }
+    if (logSheetOpen) {
+        ModalBottomSheet(
+            onDismissRequest = { logSheetOpen = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text("引擎日志 · ${logEntries.size}", style = MaterialTheme.typography.titleSmall)
+                TextButton(onClick = { com.ghs.mobile.core.engine.script.LogHub.clear() }) { Text("清空") }
+            }
+            LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+                items(logEntries.reversed()) { line ->
+                    Text(
+                        line,
+                        style = MaterialTheme.typography.labelSmall,
+                        fontFamily = FontFamily.Monospace,
+                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                    )
+                }
+            }
+        }
+    }
+
+    // 左侧菜单：设置 / 引擎自检
+    if (drawerOpen) {
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .background(Color(0x99000000))
+                .clickable { drawerOpen = false },
+        )
+        Surface(
+            modifier = Modifier
+                .fillMaxHeight()
+                .width(240.dp),
+            color = MaterialTheme.colorScheme.surface,
+            shadowElevation = 10.dp,
+        ) {
+            Column(modifier = Modifier.padding(top = 40.dp)) {
+                Text(
+                    "菜单",
+                    style = MaterialTheme.typography.titleSmall,
+                    modifier = Modifier.padding(start = 20.dp, bottom = 8.dp),
+                )
+                NavigationDrawerItem(
+                    label = { Text("设置") },
+                    selected = false,
+                    onClick = {
+                        drawerOpen = false
+                        onOpenSettings()
+                    },
+                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
+                NavigationDrawerItem(
+                    label = { Text("引擎自检") },
+                    selected = false,
+                    onClick = {
+                        drawerOpen = false
+                        onOpenProbe()
+                    },
+                    icon = { Icon(Icons.Default.Info, contentDescription = null) },
+                    modifier = Modifier.padding(horizontal = 8.dp),
+                )
             }
         }
     }

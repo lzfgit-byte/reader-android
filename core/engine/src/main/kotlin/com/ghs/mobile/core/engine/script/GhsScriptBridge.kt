@@ -124,7 +124,10 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
         }
         engine.setFunction("__hash") { args -> sha1(textOf(args.getOrNull(0))) }
         engine.setFunction("__log") { args ->
-            logs += args.joinToString(" ") { textOf(it) }
+            val line = args.joinToString(" ") { textOf(it) }
+            logs += line
+            // 同时推给界面：配置里 LogMsgUtil 的输出会显示在应用内「日志云」里
+            LogHub.push(line)
             null
         }
 

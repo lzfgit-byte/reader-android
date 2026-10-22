@@ -216,7 +216,7 @@ private fun siteName(store: ConfigStore.StoredConfig): String {
 }
 
 /** 站点图标：读取配置里的 favicon（规范 §3 的字段），空串表示没有 */
-private fun siteFavicon(store: ConfigStore.StoredConfig): String =
+internal fun siteFavicon(store: ConfigStore.StoredConfig): String =
     Regex("""\bfavicon\s*:\s*['"]([^'"]+)['"]""")
         .find(store.source)?.groupValues?.get(1)?.trim().orEmpty()
 
