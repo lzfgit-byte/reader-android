@@ -102,4 +102,6 @@
 | v0.11 | 2026-10-19 | 无功能变更：按 3 份既有配置补齐 `config-spec` v1.5（字段/方法/选择器/返回值语义），M0 出口标准增加"至少 2 份既有配置零改动跑通" |
 | v0.12 | 2026-10-19 | 无功能变更：按 2 份图集类配置补齐 `config-spec` v1.6（`adapterImageCode` 契约、`CComic.info`、尺寸单位、自定义成员、搜索判定修正）；M0 出口标准要求覆盖图集与解图 |
 | v0.13 | 2026-10-19 | 无功能变更：明确文本正文的实际形态为「纯文本 + 内嵌 `<img>`」（**仅补事实说明，不新增字段、解析器或渲染器**） |
+| v0.15 | 2026-10-22 | 新增 **F30 剧集（多集/连载）**（M2，in-progress）：复用 `analysis[]` 分段，新增 `getAnalysisDetail` / `getAnalysisVideoDetail` 两个方法调用 |
 | v0.14 | 2026-10-19 | F24 范围微调（不新增编号）：源码编辑器改为 **Monaco + 类型驱动的智能提示**，实现变更见 ADR-0014、`web-console` v1.4（编辑器替 CodeMirror，体积与窄屏降级同步约束） |
+| F30 | 剧集（多集/连载） | P1 | M2 | in-progress | 分段 → 集 → 播放；`getAnalysisDetail` / `getAnalysisVideoDetail` 兼容对象与数组返回 |

@@ -189,6 +189,10 @@
   - `comicImgMaxWidth` 生效：支持 px / dp / vw / % / 纯数字(dp)，默认 1080px
   - 展示与预取请求都按上限解码，避免超长图整张解码
   - 新增扫描器单测覆盖字段抽取
+- **剧集（F30）**
+  - 新增三段式剧集流程：详情 → 分段（`analysis`）→ 集（`getAnalysisDetail`）→ 播放（`getAnalysisVideoDetail`）
+  - 引擎兼容两个方法返回**对象或数组**（配置常见 `return [res]`）
+  - 新增 `SeriesScreen`：分段列表 + 5 列集网格 + 「分段」返回
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -321,6 +325,10 @@
   - `comicImgMaxWidth` 生效：支持 px / dp / vw / % / 纯数字(dp)，默认 1080px
   - 展示与预取请求都按上限解码，避免超长图整张解码
   - 新增扫描器单测覆盖字段抽取
+- **剧集（F30）**
+  - 新增三段式剧集流程：详情 → 分段（`analysis`）→ 集（`getAnalysisDetail`）→ 播放（`getAnalysisVideoDetail`）
+  - 引擎兼容两个方法返回**对象或数组**（配置常见 `return [res]`）
+  - 新增 `SeriesScreen`：分段列表 + 5 列集网格 + 「分段」返回
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
