@@ -1,25 +1,24 @@
 package com.ghs.mobile.ui
 
+import android.app.Activity
+import android.content.Context
+import android.content.ContextWrapper
+import android.content.pm.ActivityInfo
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.List
+import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.DropdownMenu
@@ -37,6 +36,7 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -44,9 +44,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.core.view.WindowCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -56,13 +61,9 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
 import com.ghs.mobile.GhsApp
+import com.ghs.mobile.core.model.AnalysisDetail
 import com.ghs.mobile.core.model.Detail
 import kotlinx.coroutines.delay
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.lazy.grid.itemsIndexed
-import androidx.compose.material3.Tab
-import androidx.compose.material3.TabRow
-import com.ghs.mobile.core.model.AnalysisDetail
 
 /** 把毫秒格式化成 `12:34` / `1:02:03` */
 internal fun formatDuration(ms: Long): String {
@@ -74,14 +75,23 @@ internal fun formatDuration(ms: Long): String {
     return if (h > 0) "%d:%02d:%02d".format(h, m, s) else "%02d:%02d".format(m, s)
 }
 
+private tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
+}
+
 /**
  * 视频播放器：Media3（ExoPlayer）+ HLS，控制条用官方 `media3-ui` 的 PlayerView。
  *
- * - 进入即播：地址由详情/剧集解析阶段拿到，这里不再有中间列表页
- * - 多清晰度：顶栏菜单就地切换，保留当前播放位置
- * - 剧集：顶栏「选集」「线路」可直接切换，不必退回列表
- * - 续看：有历史进度时先提示"上次看到 mm:ss"，用户点「快进」才跳转
- * - 每 5 秒与退出时回写进度；失败显示错误码与地址
+ * - 进入即播；清晰度、线路、选集都能就地切换
+ * - 手势：单击显隐控制条，双击右半区快进 10s、左半区后退 10s
+ * - 全屏（横屏 + 隐藏系统栏）、锁屏（屏蔽手势防误触）
+ * - 续看：有历史进度时提示「上次看到 mm:ss」，点「快进」才跳
+ *
+ * 换集/换线路时按当前地址重置全部播放态，并**把新播放器塞回 PlayerView**
+ * （`AndroidView` 的 factory 只跑一次，不 update 会一直挂着已 release 的旧实例，
+ * 表现为"切换剧集后画面冻住"）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -97,25 +107,31 @@ fun VideoPlayerScreen(
     /** 剧集上下文；null 表示这不是剧集（或没有分段信息） */
     series: SeriesPlayback? = null,
     onSelectEpisode: (Int) -> Unit = {},
-    /** 切到「另一条线路」的某一集：由调用方加载该线路剧集后播放 */
     onPlayEpisode: (lineUrl: String, episodeIndex: Int) -> Unit = { _, _ -> },
-    /** 懒加载某条线路的剧集列表（切 Tab 时用） */
     loadEpisodes: suspend (lineUrl: String) -> List<AnalysisDetail> = { emptyList() },
     onProgress: (sourceUrl: String, positionMs: Long, durationMs: Long) -> Unit,
     onBack: () -> Unit,
 ) {
-    val context = androidx.compose.ui.platform.LocalContext.current
-    var index by remember { mutableIntStateOf(startIndex.coerceIn(0, (sources.size - 1).coerceAtLeast(0))) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var menuOpen by remember { mutableStateOf(false) }
-    var sheet by remember { mutableStateOf(PlayerSheet.NONE) }
-    // 以「线路」为主 Tab：切换线路后自动停在同一集
-    var pendingResume by remember { mutableStateOf(resumePositionMs.takeIf { it > 5_000 } ?: 0L) }
-    var resumeApplied by remember { mutableStateOf(false) }
-    // 切清晰度时保留播放位置
-    var resumeMs by remember { mutableStateOf(startPositionMs) }
+    val context = LocalContext.current
+    val activity = context.findActivity()
 
+    var index by remember(startIndex) {
+        mutableIntStateOf(startIndex.coerceIn(0, (sources.size - 1).coerceAtLeast(0)))
+    }
     val currentUrl = sources.getOrNull(index)?.url.orEmpty()
+
+    // ---- 全部按当前地址重置：换集/换线路后不能沿用上一集的状态 ----
+    var error by remember(currentUrl) { mutableStateOf<String?>(null) }
+    var menuOpen by remember(currentUrl) { mutableStateOf(false) }
+    var sheet by remember(currentUrl) { mutableStateOf(PlayerSheet.NONE) }
+    var locked by remember(currentUrl) { mutableStateOf(false) }
+    var fullscreen by remember(currentUrl) { mutableStateOf(false) }
+    var controllerVisible by remember(currentUrl) { mutableStateOf(true) }
+    var resumeMs by remember(currentUrl) { mutableLongStateOf(startPositionMs) }
+    var pendingResume by remember(currentUrl) {
+        mutableLongStateOf(resumePositionMs.takeIf { it > 5_000 } ?: 0L)
+    }
+    var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
 
     val player = remember(currentUrl) {
         // 视频 CDN 常拦截代理出口 IP（直连 200、走代理 403）：403 时直连重试一次
@@ -148,7 +164,6 @@ fun VideoPlayerScreen(
         ExoPlayer.Builder(context).build().apply {
             setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(MediaItem.fromUri(currentUrl)))
             prepare()
-            // 有待确认的续看位置时从 0 开始；用户点「快进」再跳
             if (resumeMs > 0 && pendingResume == 0L) seekTo(resumeMs)
             playWhenReady = true
         }
@@ -174,7 +189,6 @@ fun VideoPlayerScreen(
     LaunchedEffect(player) {
         while (true) {
             delay(5_000)
-            // 续看提示还没处理时不要回写：播放器停在 0，会把上次位置冲掉
             if (pendingResume == 0L) {
                 onProgress(currentUrl, player.currentPosition, player.duration.coerceAtLeast(0))
             }
@@ -186,6 +200,33 @@ fun VideoPlayerScreen(
         if (pendingResume > 0) {
             delay(12_000)
             pendingResume = 0L
+        }
+    }
+
+    // 全屏：横屏 + 隐藏系统栏
+    LaunchedEffect(fullscreen) {
+        activity?.requestedOrientation = if (fullscreen) {
+            ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+        } else {
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        val window = activity?.window ?: return@LaunchedEffect
+        val controller = WindowCompat.getInsetsController(window, window.decorView)
+        if (fullscreen) {
+            controller.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            controller.hide(WindowInsetsCompat.Type.systemBars())
+        } else {
+            controller.show(WindowInsetsCompat.Type.systemBars())
+        }
+    }
+    // 离开播放器时恢复竖屏与系统栏
+    DisposableEffect(Unit) {
+        onDispose {
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            activity?.window?.let { window ->
+                WindowCompat.getInsetsController(window, window.decorView)
+                    .show(WindowInsetsCompat.Type.systemBars())
+            }
         }
     }
 
@@ -202,80 +243,138 @@ fun VideoPlayerScreen(
                     setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
                     setShowNextButton(false)
                     setShowPreviousButton(false)
+                    playerViewRef = this
                 }
+            },
+            update = { view ->
+                // 换集后必须把新播放器交给 PlayerView，否则画面停留在旧实例
+                view.player = player
+                playerViewRef = view
             },
             modifier = Modifier.fillMaxSize(),
         )
 
-        // 顶栏：返回 + 标题 + 线路 + 选集 + 清晰度
-        Row(
+        // 手势层：单击显隐控制条，双击左右分别后退/快进 10s；锁屏时全部忽略
+        Box(
             modifier = Modifier
-                .fillMaxWidth()
-                .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color(0x00000000))))
-                .padding(horizontal = 4.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            IconButton(onClick = onBack) {
-                Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
-            }
-            Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    title,
-                    color = Color.White,
-                    style = MaterialTheme.typography.titleSmall,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-                series?.let { ctx ->
-                    val line = ctx.currentLine?.title.orEmpty()
-                    val episode = ctx.currentEpisode?.title.orEmpty()
-                    val label = listOf(line, episode).filter { it.isNotBlank() }.joinToString(" · ")
-                    if (label.isNotBlank()) {
-                        Text(
-                            label,
-                            color = Color(0xFFBDBDBD),
-                            style = MaterialTheme.typography.labelSmall,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-            }
-            if (series != null) {
-                TextButton(onClick = {
-                    sheet = PlayerSheet.SWITCHER
-                }) { Text("线路 / 选集") }
-            }
-            if (sources.size > 1) {
-                Box {
-                    IconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Default.List, contentDescription = "清晰度", tint = Color.White)
-                    }
-                    DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        sources.forEachIndexed { i, source ->
-                            DropdownMenuItem(
-                                text = {
-                                    Text(
-                                        (source.quality.ifEmpty { "默认" }) + if (i == index) " · 当前" else "",
-                                    )
-                                },
-                                onClick = {
-                                    menuOpen = false
-                                    if (i != index) {
-                                        resumeMs = player.currentPosition
-                                        error = null
-                                        index = i
+                .fillMaxSize()
+                .pointerInput(locked) {
+                    detectTapGestures(
+                        onTap = {
+                            if (!locked) {
+                                controllerVisible = !controllerVisible
+                                playerViewRef?.let { view ->
+                                    if (controllerVisible) view.showController() else view.hideController()
+                                }
+                            }
+                        },
+                        onDoubleTap = { offset ->
+                            if (!locked) {
+                                val width = size.width
+                                when {
+                                    offset.x > width * 0.55f -> {
+                                        val duration = player.duration
+                                        val limit = if (duration > 0) duration else Long.MAX_VALUE
+                                        player.seekTo((player.currentPosition + 10_000).coerceAtMost(limit))
                                     }
-                                },
+                                    offset.x < width * 0.45f -> {
+                                        player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
+                                    }
+                                }
+                                playerViewRef?.showController()
+                            }
+                        },
+                    )
+                },
+        )
+
+        if (!locked) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color(0x00000000))))
+                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                IconButton(onClick = onBack) {
+                    Icon(Icons.Default.ArrowBack, contentDescription = "返回", tint = Color.White)
+                }
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        title,
+                        color = Color.White,
+                        style = MaterialTheme.typography.titleSmall,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                    series?.let { ctx ->
+                        val label = listOf(
+                            ctx.currentLine?.title.orEmpty(),
+                            ctx.currentEpisode?.title.orEmpty(),
+                        ).filter { it.isNotBlank() }.joinToString(" · ")
+                        if (label.isNotBlank()) {
+                            Text(
+                                label,
+                                color = Color(0xFFBDBDBD),
+                                style = MaterialTheme.typography.labelSmall,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }
                 }
+                if (series != null) {
+                    TextButton(onClick = { sheet = PlayerSheet.SWITCHER }) { Text("线路 / 选集") }
+                }
+                if (sources.size > 1) {
+                    Box {
+                        IconButton(onClick = { menuOpen = true }) {
+                            Icon(Icons.Default.List, contentDescription = "清晰度", tint = Color.White)
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            sources.forEachIndexed { i, source ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text((source.quality.ifEmpty { "默认" }) + if (i == index) " · 当前" else "")
+                                    },
+                                    onClick = {
+                                        menuOpen = false
+                                        if (i != index) {
+                                            resumeMs = player.currentPosition
+                                            error = null
+                                            index = i
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                IconButton(onClick = { locked = true; playerViewRef?.hideController() }) {
+                    Icon(Icons.Default.Lock, contentDescription = "锁定", tint = Color.White)
+                }
+                TextButton(onClick = { fullscreen = !fullscreen }) {
+                    Text(if (fullscreen) "退出全屏" else "全屏")
+                }
+            }
+        } else {
+            IconButton(
+                onClick = {
+                    locked = false
+                    playerViewRef?.showController()
+                },
+                modifier = Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(8.dp)
+                    .size(40.dp)
+                    .background(Color(0x66000000), CircleShape),
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = "解锁", tint = Color.White)
             }
         }
 
         // 续看提示
-        if (pendingResume > 0) {
+        if (pendingResume > 0 && !locked) {
             Card(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
@@ -293,24 +392,20 @@ fun VideoPlayerScreen(
                         style = MaterialTheme.typography.bodyMedium,
                         modifier = Modifier.weight(1f),
                     )
-                    TextButton(
-                        onClick = {
-                            player.seekTo(pendingResume)
-                            resumeApplied = true
-                            pendingResume = 0L
-                        },
-                    ) { Text("快进") }
-                    TextButton(
-                        onClick = {
-                            player.seekTo(0)
-                            pendingResume = 0L
-                        },
-                    ) { Text("从头") }
+                    TextButton(onClick = {
+                        player.seekTo(pendingResume)
+                        pendingResume = 0L
+                        playerViewRef?.showController()
+                    }) { Text("快进") }
+                    TextButton(onClick = {
+                        player.seekTo(0)
+                        pendingResume = 0L
+                    }) { Text("从头") }
                 }
             }
         }
 
-        if (error != null) {
+        if (error != null && !locked) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -318,11 +413,7 @@ fun VideoPlayerScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text(
-                        "无法播放",
-                        color = Color(0xFFE6E6EA),
-                        style = MaterialTheme.typography.titleSmall,
-                    )
+                    Text("无法播放", color = Color(0xFFE6E6EA), style = MaterialTheme.typography.titleSmall)
                     Text(
                         error.orEmpty(),
                         color = Color(0xFFFF8A80),
@@ -335,9 +426,7 @@ fun VideoPlayerScreen(
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(top = 8.dp),
                     )
-                    TextButton(onClick = {
-                        sheet = PlayerSheet.SWITCHER
-                    }) { Text("换线路") }
+                    TextButton(onClick = { sheet = PlayerSheet.SWITCHER }) { Text("换线路") }
                 }
             }
         }
@@ -363,9 +452,13 @@ fun VideoPlayerScreen(
                     loadEpisodes = loadEpisodes,
                     currentLineUrl = series.lineUrl,
                     currentEpisodeIndex = series.currentIndex,
-                    onPick = { lineUrl, index ->
+                    onPick = { lineUrl, episodeIndex ->
                         sheet = PlayerSheet.NONE
-                        if (lineUrl == series.lineUrl) onSelectEpisode(index) else onPlayEpisode(lineUrl, index)
+                        if (lineUrl == series.lineUrl) {
+                            onSelectEpisode(episodeIndex)
+                        } else {
+                            onPlayEpisode(lineUrl, episodeIndex)
+                        }
                     },
                     maxGridHeight = 320,
                 )

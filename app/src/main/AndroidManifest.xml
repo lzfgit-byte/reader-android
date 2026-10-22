@@ -14,7 +14,9 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="GHS Mobile">
+            android:label="GHS Mobile"
+            android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
+            android:supportsPictureInPicture="false">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
