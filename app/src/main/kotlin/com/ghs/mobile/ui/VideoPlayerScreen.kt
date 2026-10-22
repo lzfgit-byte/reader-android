@@ -350,12 +350,6 @@ fun VideoPlayerScreen(
                         }
                     }
                 }
-                IconButton(onClick = { locked = true; playerViewRef?.hideController() }) {
-                    Icon(Icons.Default.Lock, contentDescription = "锁定", tint = Color.White)
-                }
-                TextButton(onClick = { fullscreen = !fullscreen }) {
-                    Text(if (fullscreen) "退出全屏" else "全屏")
-                }
             }
         } else {
             IconButton(
@@ -364,12 +358,45 @@ fun VideoPlayerScreen(
                     playerViewRef?.showController()
                 },
                 modifier = Modifier
-                    .align(Alignment.TopEnd)
+                    .align(Alignment.CenterStart)
                     .padding(8.dp)
                     .size(40.dp)
                     .background(Color(0x66000000), CircleShape),
             ) {
                 Icon(Icons.Default.Lock, contentDescription = "解锁", tint = Color.White)
+            }
+        }
+
+        // 锁定：左侧边缘、垂直居中（主流播放器习惯，避免误触前进度条）
+        if (!locked) {
+            IconButton(
+                onClick = {
+                    locked = true
+                    playerViewRef?.hideController()
+                },
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 4.dp)
+                    .size(40.dp)
+                    .background(Color(0x66000000), CircleShape),
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = "锁定", tint = Color.White)
+            }
+        }
+
+        // 全屏：右下角（播放控制区，与清晰度同类）
+        if (!locked) {
+            TextButton(
+                onClick = { fullscreen = !fullscreen },
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 12.dp, bottom = 56.dp),
+            ) {
+                Text(
+                    if (fullscreen) "退出全屏" else "全屏",
+                    color = Color.White,
+                    style = MaterialTheme.typography.labelLarge,
+                )
             }
         }
 
