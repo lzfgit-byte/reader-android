@@ -70,6 +70,9 @@ import com.ghs.mobile.core.model.AnalysisDetail
 import com.ghs.mobile.core.model.Detail
 import kotlinx.coroutines.delay
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import kotlinx.coroutines.launch
+import androidx.compose.ui.graphics.drawscope.rotate
 
 /** 把毫秒格式化成 `12:34` / `1:02:03` */
 internal fun formatDuration(ms: Long): String {
@@ -135,6 +138,7 @@ fun VideoPlayerScreen(
     onBack: () -> Unit,
 ) {
     val context = LocalContext.current
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val activity = context.findActivity()
 
     var index by remember(startIndex) {
@@ -154,6 +158,8 @@ fun VideoPlayerScreen(
         mutableLongStateOf(resumePositionMs.takeIf { it > 5_000 } ?: 0L)
     }
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+    // 长按倍速是否生效中
+    var boostActive by remember(currentUrl) { mutableStateOf(false) }
 
     // 播放进度镜像：给进度条与时间显示用
     var positionMs by remember(currentUrl) { mutableLongStateOf(0L) }
@@ -340,6 +346,68 @@ fun VideoPlayerScreen(
                                 }
                             }
                         },
+                        // 长按 2x 倍速：按住生效，松手恢复
+                        onPress = {
+                            if (locked) return@detectTapGestures
+                            val boostJob = scope.launch {
+                                delay(400)
+                                player.setPlaybackSpeed(2f)
+                                boostActive = true
+                            }
+                            tryAwaitRelease()
+                            boostJob.cancel()
+                            if (boostActive) {
+                                player.setPlaybackSpeed(1f)
+                                boostActive = false
+                            }
+                        },
+                    )
+                }
+                // 上下滑：左半边调亮度、右半边调音量
+                .pointerInput(locked, currentUrl) {
+                    var startX = 0f
+                    var startBrightness = 0.5f
+                    var startVolume = 0
+                    val audio = context.getSystemService(android.content.Context.AUDIO_SERVICE) as? android.media.AudioManager
+                    val maxVolume = audio?.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC) ?: 15
+                    startVolume = audio?.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) ?: 0
+
+                    detectVerticalDragGestures(
+                        onDragStart = { offset ->
+                            if (locked) return@detectVerticalDragGestures
+                            startX = offset.x
+                            val current = activity?.window?.attributes?.screenBrightness ?: -1f
+                            startBrightness = if (current < 0f) 0.5f else current
+                            startVolume = audio?.getStreamVolume(android.media.AudioManager.STREAM_MUSIC) ?: startVolume
+                        },
+                        onVerticalDrag = { change, dragAmount ->
+                            if (locked) return@detectVerticalDragGestures
+                            change.consume()
+                            // 向上滑为正 → 亮度/音量增大
+                            val ratio = -dragAmount / size.height
+                            if (startX < size.width / 2f) {
+                                val next = (startBrightness + ratio).coerceIn(0.02f, 1f)
+                                startBrightness = next
+                                activity?.window?.let { window ->
+                                    val attrs = window.attributes
+                                    attrs.screenBrightness = next
+                                    window.attributes = attrs
+                                }
+                            } else {
+                                val next = (startVolume + ratio * maxVolume * 2).toInt()
+                                    .coerceIn(0, maxVolume)
+                                if (next != startVolume) {
+                                    startVolume = next
+                                    runCatching {
+                                        audio?.setStreamVolume(
+                                            android.media.AudioManager.STREAM_MUSIC,
+                                            next,
+                                            0,
+                                        )
+                                    }
+                                }
+                            }
+                        },
                     )
                 },
         )
@@ -362,7 +430,7 @@ fun VideoPlayerScreen(
                     .size(40.dp)
                     .background(Color(0x66000000), CircleShape),
             ) {
-                Icon(Icons.Default.Lock, contentDescription = "锁定", tint = Color.White)
+                LockIcon(locked = false, tint = Color.White)
             }
         } else if (lockButtonVisible) {
             IconButton(
@@ -373,7 +441,7 @@ fun VideoPlayerScreen(
                     .size(40.dp)
                     .background(Color(0x66000000), CircleShape),
             ) {
-                Icon(Icons.Default.Lock, contentDescription = "解锁", tint = Color.White)
+                LockIcon(locked = true, tint = Color.White)
             }
         }
 
@@ -629,7 +697,7 @@ fun VideoPlayerScreen(
                             onPlayEpisode(lineUrl, episodeIndex)
                         }
                     },
-                    maxGridHeight = 320,
+                    maxGridHeight = 460,
                 )
             }
         }
@@ -674,3 +742,59 @@ private fun FullscreenIcon(expanded: Boolean, tint: Color, boxSize: androidx.com
 }
 
 private enum class PlayerSheet { NONE, SWITCHER }
+
+/**
+ * 锁图标：闭合 / 打开两种形态（开锁时锁梁绕锁体顶部倾斜）。
+ *
+ * `material-icons-extended` 里才有 `LockOpen`，为它引入整套图标库不划算，这里自绘。
+ */
+@Composable
+private fun LockIcon(locked: Boolean, tint: Color, boxSize: androidx.compose.ui.unit.Dp = 22.dp) {
+    Canvas(modifier = Modifier.size(boxSize)) {
+        val w = size.width
+        val stroke = w * 0.10f
+        val bodyTop = w * 0.46f
+
+        rotate(
+            degrees = if (locked) 0f else 32f,
+            pivot = androidx.compose.ui.geometry.Offset(w * 0.50f, bodyTop),
+        ) {
+            val radius = w * 0.17f
+            val cx = w * 0.50f
+            val cy = bodyTop - radius
+            drawArc(
+                color = tint,
+                startAngle = 180f,
+                sweepAngle = 180f,
+                useCenter = false,
+                topLeft = androidx.compose.ui.geometry.Offset(cx - radius, cy - radius),
+                size = androidx.compose.ui.geometry.Size(radius * 2, radius * 2),
+                style = androidx.compose.ui.graphics.drawscope.Stroke(
+                    width = stroke,
+                    cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                ),
+            )
+            drawLine(
+                color = tint,
+                start = androidx.compose.ui.geometry.Offset(cx - radius, cy),
+                end = androidx.compose.ui.geometry.Offset(cx - radius, bodyTop + w * 0.02f),
+                strokeWidth = stroke,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            )
+            drawLine(
+                color = tint,
+                start = androidx.compose.ui.geometry.Offset(cx + radius, cy),
+                end = androidx.compose.ui.geometry.Offset(cx + radius, bodyTop + w * 0.02f),
+                strokeWidth = stroke,
+                cap = androidx.compose.ui.graphics.StrokeCap.Round,
+            )
+        }
+
+        drawRoundRect(
+            color = tint,
+            topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, bodyTop),
+            size = androidx.compose.ui.geometry.Size(w * 0.56f, w * 0.42f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(w * 0.09f),
+        )
+    }
+}
