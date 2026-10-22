@@ -458,7 +458,8 @@ D2 与 D6 是本文档的**主要复杂度来源**：前者决定要在手机上
 ### 5.24 F30 剧集（多集/连载）
 
 - **数据来源**：`getDetailInfo` 返回 `detailType: 'series'` 时，`analysis[]` 描述「分段」（如不同线路/清晰度分组），每项含 `url` / `title` / `total`。
-- **三段式流程**：详情 → 分段列表 → 集列表 → 播放。分段由 `analysis` 直接给出；集由 `getAnalysisDetail(analysis, cheerio)` 展开；单集地址由 `getAnalysisVideoDetail(episode, cheerio)` 解析。
+- **交互**：**每条线路是一个 Tab**（横向可滚动），切 Tab 直接看该线路的剧集网格，不再有「分段列表 → 集列表」的两级跳转；剧集按线路懒加载并缓存。剧集详情页与播放器抽屉共用同一组件（`LineEpisodeTabs`），当前播放的「线路 + 集」高亮。
+- **数据流**：线路由 `analysis` 直接给出；集由 `getAnalysisDetail(analysis, cheerio)` 展开；单集地址由 `getAnalysisVideoDetail(episode, cheerio)` 解析。
 - **返回值容错**：这两个方法既可能返回单个对象，也可能返回数组（`[res]`），引擎都接受（数组取第一条）。
 - **取脚本内容**：配置常从 `<script type="application/ld+json">` 里读播放地址；脚本内容是 DataNode，`text()` 必须能取到（实现上 `text()` 为空时回落到 `data()`）。
 - **界面**：分段用列表（标题 + 集数）；集用 5 列数字网格，顶部「分段」按钮可返回上一层；解析中显示进度，解析失败显示原因与「分段」返回。
@@ -964,3 +965,4 @@ M0 是**唯一允许回退架构的阶段**，必须先做并产出书面结论�
 | v4.2 | 2026-10-22 | F30/F06：剧集播放打通——脚本 DataNode 读取、媒体带 Referer、403 直连重试 |
 | v4.3 | 2026-10-22 | F06 控制条改用 media3-ui PlayerView、播放器内换线路/选集；F30 记录线路+集+位置并直接续看、续看提示 |
 | v4.4 | 2026-10-22 | F06/F30：线路与选集合并为一个 Tab 抽屉，线路为主 Tab |
+| v4.5 | 2026-10-22 | F30：线路作为 Tab（详情页与播放器抽屉统一），切 Tab 即看该线路剧集 |
