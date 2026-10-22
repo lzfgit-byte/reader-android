@@ -12,6 +12,9 @@ import com.ghs.mobile.core.model.Page
 import com.ghs.mobile.core.model.TextContent
 import com.ghs.mobile.core.script.HttpScriptHost
 import com.ghs.mobile.core.script.WebViewScriptEngine
+import com.ghs.mobile.core.model.Analysis
+import com.ghs.mobile.core.model.AnalysisDetail
+import com.ghs.mobile.core.model.AnalysisVideoDetail
 
 /**
  * 阅读宿主：演示域名走内置样例页面，其它域名走真实网络。
@@ -108,9 +111,19 @@ class ReaderSession(
     fun page(): Page = pageFrom(homeUrl)
 
     fun pageFrom(url: String): Page {
-        configEngine.withHtml(host.fetchHtml(url))
+        // 配置若实现了 adapterGetHtml，优先用它取页（自己处理头 / Cookie / 二次请求）
+        val html = configEngine.adapterGetHtml(url) ?: host.fetchHtml(url)
+        android.util.Log.i("GHS", "page html=${html.length} hasOwl=${html.contains("owl-stage-outer")} hasWell=${html.contains("div class=\"well")} head=${html.take(200).replace("\n"," ")}")
+        configEngine.withHtml(html)
         return configEngine.page()
     }
+
+    /** 剧集：分析项 → 集列表 */
+    fun episodes(analysis: Analysis): List<AnalysisDetail> = configEngine.analysisDetail(analysis)
+
+    /** 剧集：单集 → 播放信息 */
+    fun episodeVideo(episode: AnalysisDetail): AnalysisVideoDetail? =
+        configEngine.analysisVideoDetail(episode)
 
     fun detail(item: Item): DetailInfo? {
         val started = System.currentTimeMillis()

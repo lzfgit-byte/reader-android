@@ -7,6 +7,8 @@
 import * as monaco from 'monaco-editor/esm/vs/editor/editor.api'
 import 'monaco-editor/esm/vs/editor/editor.all'
 import 'monaco-editor/esm/vs/language/typescript/monaco.contribution'
+// 语法着色来自 basic-languages：TypeScript 语言服务只负责补全/诊断，不做 token 着色
+import 'monaco-editor/esm/vs/basic-languages/javascript/javascript.contribution'
 import editorWorker from 'monaco-editor/esm/vs/editor/editor.worker?worker'
 import tsWorker from 'monaco-editor/esm/vs/language/typescript/ts.worker?worker'
 // 配置规范的派生物：随包本地打包，不联网获取

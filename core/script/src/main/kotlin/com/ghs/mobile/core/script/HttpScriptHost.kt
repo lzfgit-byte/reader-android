@@ -51,6 +51,12 @@ class HttpScriptHost(
                 try {
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
+                            // 站点用 403/429/503 或 JS 校验挡住直连时，退到无头 WebView 取渲染后的 HTML
+                            if (response.code in WEBVIEW_FALLBACK_CODES) {
+                                android.util.Log.w("GHS", "fetchHtml ${response.code} → webview fallback $url")
+                                val html = fetchWithWebView(url)
+                                if (html.isNotBlank()) return html
+                            }
                             throw IllegalStateException("取页失败：HTTP ${response.code} $url")
                         }
                         return response.body?.string() ?: throw IllegalStateException("取页为空：$url")
@@ -71,6 +77,55 @@ class HttpScriptHost(
 
     private fun logDone(url: String, started: Long) {
         android.util.Log.i("GHS", "fetchHtml done ${System.currentTimeMillis() - started}ms $url")
+    }
+
+    /** 给无头 WebView 套上与 OkHttp 相同的代理规则（WebView 代理是进程级的） */
+    private fun applyWebViewProxy() {
+        if (!androidx.webkit.WebViewFeature.isFeatureSupported(
+                androidx.webkit.WebViewFeature.PROXY_OVERRIDE,
+            )
+        ) {
+            return
+        }
+        val rules = proxyRules()
+        val endpoint = rules.endpoint
+        val builder = androidx.webkit.ProxyConfig.Builder()
+        if (rules.enabled && endpoint?.isConfigured == true) {
+            builder.addProxyRule("http://" + endpoint.authority)
+            rules.whitelist.forEach { entry ->
+                val pattern = entry.trim().removePrefix("*.").removePrefix(".")
+                if (pattern.isNotEmpty()) runCatching { builder.addBypassRule(pattern) }
+            }
+        } else {
+            builder.addDirect()
+        }
+        runCatching {
+            androidx.webkit.ProxyController.getInstance().setProxyOverride(
+                builder.build(),
+                { runnable -> android.os.Handler(android.os.Looper.getMainLooper()).post(runnable) },
+                {},
+            )
+        }
+    }
+    /**
+     * 无头 WebView 取渲染后的 HTML。
+     *
+     * 单独设上限（[FALLBACK_TIMEOUT_MS]），避免校验页一直不结束把请求拖到 180s；
+     * 失败返回空串，由调用方回落到原错误。
+     */
+    private fun fetchWithWebView(url: String): String {
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        return try {
+            val task = executor.submit(
+                java.util.concurrent.Callable { executePage(url, "document.documentElement.outerHTML") },
+            )
+            task.get(FALLBACK_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+        } catch (error: Throwable) {
+            android.util.Log.w("GHS", "webview fallback failed ${error.javaClass.simpleName}: ${error.message}")
+            ""
+        } finally {
+            executor.shutdownNow()
+        }
     }
 
     override fun request(
@@ -116,6 +171,8 @@ class HttpScriptHost(
         var failure: String? = null
 
         onMain {
+            // WebView 兜底也必须走代理，否则直连会被站点挡掉
+            applyWebViewProxy()
             @SuppressLint("SetJavaScriptEnabled")
             val view = WebView(context.applicationContext)
             view.settings.javaScriptEnabled = true
@@ -214,7 +271,12 @@ class HttpScriptHost(
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
         private const val PAGE_TIMEOUT_MS = 180_000L
-        private const val EVAL_TIMEOUT_MS = 15_000L
+        private const val EVAL_TIMEOUT_MS = 180_000L
+        /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
+        private const val FALLBACK_TIMEOUT_MS = 25_000L
+
+        /** 这些状态码说明直连被挡（Cloudflare / 校验页），值得用无头 WebView 再试一次 */
+        private val WEBVIEW_FALLBACK_CODES = setOf(403, 429, 503)
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         private fun defaultClient(rules: () -> ProxyRules): OkHttpClient = OkHttpClient.Builder()

@@ -83,6 +83,9 @@ import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Place
+import com.ghs.mobile.core.model.Analysis
+import com.ghs.mobile.core.model.AnalysisDetail
+import androidx.compose.material3.OutlinedButton
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -95,6 +98,7 @@ private sealed interface Screen {
     data class List(val page: Page) : Screen
     data class Detail(val item: Item, val info: DetailInfo?) : Screen
     data class ComicReader(val item: Item, val pages: kotlin.collections.List<com.ghs.mobile.core.model.Detail>, val startIndex: Int) : Screen
+    data class Series(val item: Item, val info: DetailInfo) : Screen
     data class VideoPlayer(
         val item: Item,
         val sources: kotlin.collections.List<com.ghs.mobile.core.model.Detail>,
@@ -364,6 +368,11 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
             )
             return@LaunchedEffect
         }
+        // 剧集：解析出分段后进剧集页（分段 → 集 → 播放）
+        if (info != null && info.detailType == DetailType.SERIES) {
+            screen = Screen.Series(item, info)
+            return@LaunchedEffect
+        }
         // 图片：解析出图集地址后直接进阅读器，从上次的页续看
         if (info != null && info.detailType == DetailType.IMAGE && info.details.isNotEmpty()) {
             val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
@@ -448,6 +457,69 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                                 updatedAt = System.currentTimeMillis(),
                             ),
                         )
+                    }
+                },
+                onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
+            )
+            return
+        }
+
+        is Screen.Series -> {
+            var selected by remember(reader.item.jumpUrl) { mutableStateOf<Analysis?>(null) }
+            var episodes by remember(reader.item.jumpUrl) {
+                mutableStateOf<kotlin.collections.List<AnalysisDetail>>(emptyList())
+            }
+            var seriesLoading by remember { mutableStateOf(false) }
+            var seriesError by remember { mutableStateOf<String?>(null) }
+
+            // 选中分段 → 取该分段下的每一集
+            LaunchedEffect(selected) {
+                val part = selected ?: return@LaunchedEffect
+                val active = session ?: return@LaunchedEffect
+                seriesLoading = true
+                seriesError = null
+                val result = runCatching { withContext(Dispatchers.IO) { active.episodes(part) } }
+                episodes = result.getOrDefault(emptyList())
+                seriesError = result.exceptionOrNull()?.message
+                seriesLoading = false
+            }
+
+            SeriesScreen(
+                title = reader.item.title,
+                analysis = reader.info.analysis,
+                episodes = episodes,
+                selected = selected,
+                loading = seriesLoading,
+                error = seriesError,
+                onSelect = { selected = it },
+                onBackToAnalysis = { selected = null },
+                onPlay = { episode ->
+                    val active = session
+                    if (active == null) {
+                        seriesError = "会话未就绪"
+                    } else {
+                        scope.launch {
+                            seriesError = null
+                            val video = runCatching {
+                                withContext(Dispatchers.IO) { active.episodeVideo(episode) }
+                            }.getOrNull()
+                            if (video != null && video.url.isNotEmpty()) {
+                                screen = Screen.VideoPlayer(
+                                    item = reader.item,
+                                    sources = listOf(
+                                        com.ghs.mobile.core.model.Detail(
+                                            url = video.url,
+                                            quality = video.name.ifEmpty { episode.title },
+                                            title = video.name,
+                                        ),
+                                    ),
+                                    startIndex = 0,
+                                    startMs = 0L,
+                                )
+                            } else {
+                                seriesError = "该集没有解析到播放地址"
+                            }
+                        }
                     }
                 },
                 onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
@@ -643,6 +715,28 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                     ) {
                         Text("重试")
                     }
+                    // 失败页要能换站点：否则某个站点挂了就彻底出不去
+                    if (configs.size > 1) {
+                        OutlinedButton(
+                            onClick = {
+                                val next = configs.firstOrNull { it.key != configKey && it.enabled }
+                                    ?: configs.firstOrNull { it.key != configKey }
+                                if (next != null) {
+                                    configKey = next.key
+                                    screen = Screen.Loading
+                                    reloadRequest += 1
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            repository.putSetting(SettingScope.PREFS, "currentConfig", next.key)
+                                        }
+                                    }
+                                }
+                            },
+                            modifier = Modifier.padding(top = 10.dp),
+                        ) {
+                            Text("换个站点")
+                        }
+                    }
                 }
 
                 is Screen.SearchResults -> Column(Modifier.fillMaxSize()) {
@@ -710,6 +804,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 // 阅读器在上面已整屏返回，这里只是为了让 when 穷尽
                 is Screen.ComicReader -> Unit
                 is Screen.VideoPlayer -> Unit
+                is Screen.Series -> Unit
             }
         }
     }
@@ -778,6 +873,7 @@ private fun titleFor(screen: Screen, tagTitle: String? = null): String = when (s
     is Screen.Detail -> screen.item.title.ifEmpty { "详情" }
     is Screen.SearchResults -> "搜索：${screen.keyword}"
     is Screen.VideoPlayer -> screen.item.title.ifEmpty { "播放" }
+    is Screen.Series -> screen.item.title.ifEmpty { "剧集" }
     is Screen.ComicReader -> screen.item.title.ifEmpty { "阅读" }
 }
 

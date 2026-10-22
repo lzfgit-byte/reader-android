@@ -19,6 +19,8 @@ import com.ghs.mobile.core.model.RenderType
 import com.ghs.mobile.core.model.Tag
 import com.ghs.mobile.core.model.TextBlock
 import com.ghs.mobile.core.model.TextContent
+import com.ghs.mobile.core.model.AnalysisDetail
+import com.ghs.mobile.core.model.AnalysisVideoDetail
 
 /**
  * 配置执行引擎：把「配置脚本 + 页面 HTML」变成领域模型。
@@ -147,6 +149,18 @@ class ConfigEngine(
         )
     }
 
+    /**
+     * `adapterGetHtml(url)` → 配置自定义取页。
+     *
+     * 有些站点要特殊头 / Cookie / 二次请求，配置用这个方法包住取页逻辑。
+     * 返回 null 表示配置没实现，调用方回落到宿主直取。
+     */
+    fun adapterGetHtml(url: String): String? {
+        if (!bridge.hasMethod("adapterGetHtml")) return null
+        return (bridge.invokeAwait("adapterGetHtml", quote(url)) as? String)
+            ?.takeIf { it.isNotBlank() }
+    }
+
     /** `getContents(url, cheerio)` → 章节 / 图集目录 */
     fun contents(url: String): List<CContent> =
         asList(bridge.invokeAwait("getContents", "${quote(url)}, cheerio"))
@@ -180,6 +194,38 @@ class ConfigEngine(
                     },
                 )
             }
+
+    /**
+     * `getAnalysisDetail(analysis, cheerio)` → 剧集列表。
+     *
+     * 入参是详情里 `analysis[]` 的一项（含 `url` / `title` / `total`），
+     * 配置据此展开出每一集的地址。
+     */
+    fun analysisDetail(analysis: Analysis): List<AnalysisDetail> {
+        val argument = "{ url: ${quote(analysis.url)}, title: ${quote(analysis.title)}, " +
+            "total: ${analysis.total} }, cheerio"
+        return asList(bridge.invokeAwait("getAnalysisDetail", argument)).mapNotNull { row ->
+            val url = text(row["url"])
+            val title = text(row["title"])
+            if (url.isEmpty() && title.isEmpty()) null else AnalysisDetail(url = url, title = title)
+        }
+    }
+
+    /** `getAnalysisVideoDetail(episode, cheerio)` → 单集播放信息（类型 / 地址 / 标题） */
+    fun analysisVideoDetail(episode: AnalysisDetail): AnalysisVideoDetail? {
+        val argument = "{ url: ${quote(episode.url)}, title: ${quote(episode.title)} }, cheerio"
+        // 配置可能返回单个对象，也可能返回数组（取第一条），两种都接受
+        val value = bridge.invokeAwait("getAnalysisVideoDetail", argument)
+        val raw = (value as? Map<*, *>)
+            ?: (value as? List<*>)?.firstOrNull() as? Map<*, *>
+            ?: return null
+        return AnalysisVideoDetail(
+            type = detailType(raw["type"]),
+            url = text(raw["url"]),
+            name = text(raw["name"]),
+            description = text(raw["description"]),
+        )
+    }
 
     /**
      * `getTextContent(url, cheerio)` → 文本正文。

@@ -126,6 +126,8 @@ class WebViewScriptEngine(
                 return 's' + String(v);
               }).join('\u0001');
               var raw = __ghs.call(${quote(name)}, encoded);
+              // \u0003 是宿主异常哨兵：还原成 JS 异常，避免错误消息被配置当成返回值
+              if (typeof raw === 'string' && raw.charCodeAt(0) === 3) throw new Error(raw.slice(1));
               if (raw === 'null' || raw === null) return null;
               if (raw === 'true') return true;
               if (raw === 'false') return false;
@@ -233,7 +235,8 @@ class WebViewScriptEngine(
             val args = decodeArgs(encodedArgs)
             val result = runCatching { fn(args) }
                 .getOrElse { error ->
-                    return "\"" + quote(MiniJson.stringify(error.message ?: error.toString())) + "\""
+                    // 哨兵前缀：JS 侧据此抛出异常；否则错误消息会被配置当成"取到的 HTML"
+                    return "\u0003" + (error.message ?: error.toString())
                 }
             return MiniJson.stringify(result)
         }
