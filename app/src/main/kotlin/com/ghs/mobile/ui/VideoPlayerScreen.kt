@@ -62,6 +62,7 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.material3.Tab
 import androidx.compose.material3.TabRow
+import com.ghs.mobile.core.model.AnalysisDetail
 
 /** 把毫秒格式化成 `12:34` / `1:02:03` */
 internal fun formatDuration(ms: Long): String {
@@ -96,7 +97,10 @@ fun VideoPlayerScreen(
     /** 剧集上下文；null 表示这不是剧集（或没有分段信息） */
     series: SeriesPlayback? = null,
     onSelectEpisode: (Int) -> Unit = {},
-    onSelectLine: (String) -> Unit = {},
+    /** 切到「另一条线路」的某一集：由调用方加载该线路剧集后播放 */
+    onPlayEpisode: (lineUrl: String, episodeIndex: Int) -> Unit = { _, _ -> },
+    /** 懒加载某条线路的剧集列表（切 Tab 时用） */
+    loadEpisodes: suspend (lineUrl: String) -> List<AnalysisDetail> = { emptyList() },
     onProgress: (sourceUrl: String, positionMs: Long, durationMs: Long) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -106,9 +110,6 @@ fun VideoPlayerScreen(
     var menuOpen by remember { mutableStateOf(false) }
     var sheet by remember { mutableStateOf(PlayerSheet.NONE) }
     // 以「线路」为主 Tab：切换线路后自动停在同一集
-    var sheetTab by remember { mutableStateOf(SHEET_TAB_LINES) }
-
-    // 有历史进度时先不自动跳，等用户点「快进」
     var pendingResume by remember { mutableStateOf(resumePositionMs.takeIf { it > 5_000 } ?: 0L) }
     var resumeApplied by remember { mutableStateOf(false) }
     // 切清晰度时保留播放位置
@@ -242,7 +243,6 @@ fun VideoPlayerScreen(
             }
             if (series != null) {
                 TextButton(onClick = {
-                    sheetTab = SHEET_TAB_LINES
                     sheet = PlayerSheet.SWITCHER
                 }) { Text("线路 / 选集") }
             }
@@ -336,7 +336,6 @@ fun VideoPlayerScreen(
                         modifier = Modifier.padding(top = 8.dp),
                     )
                     TextButton(onClick = {
-                        sheetTab = SHEET_TAB_LINES
                         sheet = PlayerSheet.SWITCHER
                     }) { Text("换线路") }
                 }
@@ -344,8 +343,7 @@ fun VideoPlayerScreen(
         }
     }
 
-    // 线路 / 选集抽屉
-    // 线路 / 选集合并成一个抽屉：Tab 切换，换线路时保留当前集
+    // 线路 Tab → 该线路剧集（与剧集详情页同一组件）
     if (sheet != PlayerSheet.NONE && series != null) {
         ModalBottomSheet(
             onDismissRequest = { sheet = PlayerSheet.NONE },
@@ -357,108 +355,23 @@ fun VideoPlayerScreen(
                     style = MaterialTheme.typography.titleSmall,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 8.dp),
+                    modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
                 )
-                TabRow(selectedTabIndex = sheetTab) {
-                    Tab(
-                        selected = sheetTab == SHEET_TAB_LINES,
-                        onClick = { sheetTab = SHEET_TAB_LINES },
-                        text = { Text("线路 · ${series.analysis.size}") },
-                    )
-                    Tab(
-                        selected = sheetTab == SHEET_TAB_EPISODES,
-                        onClick = { sheetTab = SHEET_TAB_EPISODES },
-                        text = { Text("选集 · ${series.episodes.size}") },
-                    )
-                }
-
-                if (sheetTab == SHEET_TAB_LINES) {
-                    LazyColumn(
-                        contentPadding = PaddingValues(vertical = 8.dp),
-                        modifier = Modifier.heightIn(max = 420.dp),
-                    ) {
-                        items(series.analysis) { line ->
-                            val current = line.url == series.lineUrl
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clickable {
-                                        sheet = PlayerSheet.NONE
-                                        if (!current) onSelectLine(line.url)
-                                    }
-                                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                                horizontalArrangement = Arrangement.SpaceBetween,
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Text(
-                                    line.title.ifEmpty { line.url },
-                                    style = MaterialTheme.typography.bodyMedium,
-                                    color = if (current) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
-                                    maxLines = 1,
-                                    overflow = TextOverflow.Ellipsis,
-                                    modifier = Modifier.weight(1f),
-                                )
-                                if (current) {
-                                    Text(
-                                        "当前",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.primary,
-                                    )
-                                } else {
-                                    Text(
-                                        if (line.total > 0) "${line.total} 集" else "",
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    LazyVerticalGrid(
-                        columns = GridCells.Fixed(5),
-                        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 8.dp, bottom = 28.dp),
-                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
-                    ) {
-                        itemsIndexed(series.episodes) { i, episode ->
-                            val current = i == series.currentIndex
-                            Card(
-                                onClick = {
-                                    sheet = PlayerSheet.NONE
-                                    if (!current) onSelectEpisode(i)
-                                },
-                                colors = CardDefaults.cardColors(
-                                    containerColor = if (current) {
-                                        MaterialTheme.colorScheme.primaryContainer
-                                    } else {
-                                        MaterialTheme.colorScheme.surfaceVariant
-                                    },
-                                ),
-                            ) {
-                                Box(
-                                    modifier = Modifier.fillMaxWidth().padding(vertical = 14.dp),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Text(
-                                        episode.title.ifEmpty { "${i + 1}" },
-                                        style = MaterialTheme.typography.titleSmall,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                    )
-                                }
-                            }
-                        }
-                    }
-                }
+                LineEpisodeTabs(
+                    analysis = series.analysis,
+                    initialLineUrl = series.lineUrl,
+                    loadEpisodes = loadEpisodes,
+                    currentLineUrl = series.lineUrl,
+                    currentEpisodeIndex = series.currentIndex,
+                    onPick = { lineUrl, index ->
+                        sheet = PlayerSheet.NONE
+                        if (lineUrl == series.lineUrl) onSelectEpisode(index) else onPlayEpisode(lineUrl, index)
+                    },
+                    maxGridHeight = 320,
+                )
             }
         }
     }
 }
-
-/** 抽屉里的两个 Tab 下标 */
-private const val SHEET_TAB_LINES = 0
-private const val SHEET_TAB_EPISODES = 1
 
 private enum class PlayerSheet { NONE, SWITCHER }

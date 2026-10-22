@@ -567,30 +567,32 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
             SeriesScreen(
                 title = reader.item.title,
                 analysis = reader.info.analysis,
-                episodes = episodes,
-                selected = selected,
-                loading = seriesLoading,
-                error = seriesError,
-                onSelect = { selected = it },
-                onBackToAnalysis = { selected = null },
-                onPlay = { episode ->
-                    val line = selected
-                    if (session == null) {
-                        seriesError = "会话未就绪"
-                    } else if (line == null) {
-                        seriesError = "请先选择分段"
-                    } else {
-                        val epIndex = episodes.indexOfFirst { it.url == episode.url }.coerceAtLeast(0)
-                        playSeriesEpisode(
-                            item = reader.item,
-                            info = reader.info,
-                            analysis = reader.info.analysis,
-                            line = line,
-                            episodes = episodes,
-                            episodeIndex = epIndex,
-                            startMs = 0L,
-                            resumeMs = 0L,
-                        )
+                loadEpisodes = { lineUrl ->
+                    val line = reader.info.analysis.firstOrNull { it.url == lineUrl }
+                    if (line == null) emptyList() else withContext(Dispatchers.IO) {
+                        runCatching { session?.episodes(line) }.getOrNull().orEmpty()
+                    }
+                },
+                onPlay = { lineUrl, episodeIndex ->
+                    val line = reader.info.analysis.firstOrNull { it.url == lineUrl }
+                    if (line != null && session != null) {
+                        scope.launch {
+                            val list = withContext(Dispatchers.IO) {
+                                runCatching { session?.episodes(line) }.getOrNull().orEmpty()
+                            }
+                            if (list.isNotEmpty()) {
+                                playSeriesEpisode(
+                                    item = reader.item,
+                                    info = reader.info,
+                                    analysis = reader.info.analysis,
+                                    line = line,
+                                    episodes = list,
+                                    episodeIndex = episodeIndex.coerceIn(0, list.size - 1),
+                                    startMs = 0L,
+                                    resumeMs = 0L,
+                                )
+                            }
+                        }
                     }
                 },
                 onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
@@ -622,7 +624,13 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                         )
                     }
                 },
-                onSelectLine = { lineUrl ->
+                loadEpisodes = { lineUrl ->
+                    val line = reader.series?.analysis?.firstOrNull { it.url == lineUrl }
+                    if (line == null) emptyList() else withContext(Dispatchers.IO) {
+                        runCatching { session?.episodes(line) }.getOrNull().orEmpty()
+                    }
+                },
+                onPlayEpisode = { lineUrl, nextIndex ->
                     val ctx = reader.series
                     val line = ctx?.analysis?.firstOrNull { it.url == lineUrl }
                     if (ctx != null && line != null) {
@@ -631,15 +639,13 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                                 withContext(Dispatchers.IO) { session?.episodes(line) }
                             }.getOrNull().orEmpty()
                             if (list.isNotEmpty()) {
-                                // 换线路尽量停在同一集
-                                val nextIndex = ctx.currentIndex.coerceIn(0, list.size - 1)
                                 playSeriesEpisode(
                                     item = reader.item,
                                     info = reader.backToSeries,
                                     analysis = ctx.analysis,
                                     line = line,
                                     episodes = list,
-                                    episodeIndex = nextIndex,
+                                    episodeIndex = nextIndex.coerceIn(0, list.size - 1),
                                     startMs = 0L,
                                     resumeMs = 0L,
                                 )
