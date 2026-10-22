@@ -106,6 +106,8 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
+import androidx.compose.ui.window.Dialog
+import kotlinx.coroutines.delay
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -182,6 +184,9 @@ fun DemoApp(
     var showPageSheet by remember { mutableStateOf(false) }
     // 详情解析失败的原因：info == null 既可能是"还在解析"，也可能是"失败了"
     var detailError by remember { mutableStateOf<String?>(null) }
+    // 详情解析任务：允许手动取消，并统计已用时间
+    var detailJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    var detailElapsedSec by remember { mutableStateOf(0) }
     // 网页端改过配置后由服务端通知：在列表页立即重载，阅读中则等回到列表
     var reloadRequest by remember { mutableStateOf(0) }
     // 当前列表地址：刷新按钮用它重新取数据
@@ -390,53 +395,67 @@ fun DemoApp(
     }
 
     // 打开详情：解析 + 记录进度
+    // 打开详情：解析 + 记录进度（可取消，供弹窗上的「取消」使用）
     val detailItem = (screen as? Screen.Detail)?.item
     LaunchedEffect(detailItem) {
         val item = detailItem ?: return@LaunchedEffect
-        val active = session ?: return@LaunchedEffect
-        screen = Screen.Detail(item, null)
-        detailError = null
-        text = null
-        textUrl = null
-        val outcome = runCatching { withContext(Dispatchers.IO) { active.detail(item) } }
-        val info = outcome.getOrNull()
-        // 失败必须能看见：否则 info == null 会被界面当成"还在解析"，永远转圈
-        detailError = outcome.exceptionOrNull()?.let { it.message ?: it.toString() }
-        screen = Screen.Detail(item, info)
-        if (info != null) {
-            withContext(Dispatchers.IO) { rememberOpened(repository, siteKey, item, info) }
-        }
-        // 视频：解析出地址后直接播放，不再停留在中间的清晰度列表
-        if (info != null && (info.detailType == DetailType.MP4 || info.detailType == DetailType.M3U8)) {
-            val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
-            screen = Screen.VideoPlayer(
-                item = item,
-                sources = info.details,
-                startIndex = 0,
-                startMs = saved?.positionMs ?: 0L,
-            )
-            return@LaunchedEffect
-        }
-        // 剧集：解析出分段后进剧集页（分段 → 集 → 播放）
-        if (info != null && info.detailType == DetailType.SERIES) {
-            screen = Screen.Series(item, info)
-            return@LaunchedEffect
-        }
-        // 图片：解析出图集地址后直接进阅读器，从上次的页续看
-        if (info != null && info.detailType == DetailType.IMAGE && info.details.isNotEmpty()) {
-            val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
-            screen = Screen.ComicReader(
-                item = item,
-                pages = info.details,
-                startIndex = saved?.chapterOffset ?: 0,
-            )
-            return@LaunchedEffect
-        }
-        if (info?.detailType == DetailType.TEXT) {
-            textUrl = info.details.firstOrNull()?.url ?: item.jumpUrl
+        detailJob?.cancel()
+        detailElapsedSec = 0
+        detailJob = scope.launch {
+            val active = session ?: return@launch
+            detailError = null
+            text = null
+            textUrl = null
+            val outcome = runCatching { withContext(Dispatchers.IO) { active.detail(item) } }
+            val info = outcome.getOrNull()
+            // 失败必须能看见：否则 info == null 会被界面当成"还在解析"，永远转圈
+            detailError = outcome.exceptionOrNull()?.let { it.message ?: it.toString() }
+            screen = Screen.Detail(item, info)
+            if (info != null) {
+                withContext(Dispatchers.IO) { rememberOpened(repository, siteKey, item, info) }
+            }
+            // 视频：解析出地址后直接播放，不再停留在中间的清晰度列表
+            if (info != null && (info.detailType == DetailType.MP4 || info.detailType == DetailType.M3U8)) {
+                val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+                screen = Screen.VideoPlayer(
+                    item = item,
+                    sources = info.details,
+                    startIndex = 0,
+                    startMs = saved?.positionMs ?: 0L,
+                )
+                return@launch
+            }
+            // 剧集：解析出分段后进剧集页（线路 Tab → 集 → 播放）
+            if (info != null && info.detailType == DetailType.SERIES) {
+                screen = Screen.Series(item, info)
+                return@launch
+            }
+            // 图片：解析出图集地址后直接进阅读器，从上次的页续看
+            if (info != null && info.detailType == DetailType.IMAGE && info.details.isNotEmpty()) {
+                val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+                screen = Screen.ComicReader(
+                    item = item,
+                    pages = info.details,
+                    startIndex = saved?.chapterOffset ?: 0,
+                )
+                return@launch
+            }
+            if (info?.detailType == DetailType.TEXT) {
+                textUrl = info.details.firstOrNull()?.url ?: item.jumpUrl
+            }
         }
     }
 
+    // 解析计时：只在"解析中"时累加，给弹窗显示
+    LaunchedEffect(detailItem) {
+        if (detailItem == null) return@LaunchedEffect
+        while (true) {
+            delay(1_000)
+            val parsing = (screen as? Screen.Detail)?.info == null
+            if (!parsing) break
+            detailElapsedSec += 1
+        }
+    }
     // 文本章节：按当前章节 URL 加载，并回写进度
     LaunchedEffect(textUrl) {
         val url = textUrl ?: return@LaunchedEffect
@@ -1076,6 +1095,41 @@ fun DemoApp(
                         fontFamily = FontFamily.Monospace,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
                     )
+                }
+            }
+        }
+    }
+
+    // 解析详情弹窗：显示已用时间，可手动取消
+    val parsingDetail = (screen as? Screen.Detail)?.let { it.info == null && detailError == null && detailItem != null } == true
+    if (parsingDetail) {
+        Dialog(onDismissRequest = { /* 只能通过按钮关闭，避免误触中断 */ }) {
+            Surface(shape = RoundedCornerShape(16.dp), tonalElevation = 6.dp) {
+                Column(
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    CircularProgressIndicator()
+                    Text(
+                        "正在解析详情…",
+                        style = MaterialTheme.typography.titleSmall,
+                        modifier = Modifier.padding(top = 16.dp),
+                    )
+                    Text(
+                        "已用 ${detailElapsedSec}s",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 6.dp),
+                    )
+                    TextButton(
+                        onClick = {
+                            detailJob?.cancel()
+                            detailJob = null
+                            detailError = null
+                            screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                        },
+                        modifier = Modifier.padding(top = 12.dp),
+                    ) { Text("取消") }
                 }
             }
         }
