@@ -73,6 +73,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /** 图片清晰度：原图（`fullUrl`）或展示图（`url`） */
 enum class ImageQuality { ORIGINAL, PREVIEW }
@@ -133,6 +135,32 @@ fun ComicReaderScreen(
     // 看图时点一下隐藏顶栏/页码，再点恢复（沉浸式）
     var chromeVisible by remember { mutableStateOf(true) }
 
+    /** 长按保存当前页到相册（按当前清晰度取地址） */
+    fun saveCurrentPage() {
+        val page = pages.getOrNull(current) ?: return
+        val url = when (quality) {
+            ImageQuality.ORIGINAL -> page.fullUrl?.takeIf { it.isNotBlank() } ?: page.url
+            ImageQuality.PREVIEW -> page.url.ifEmpty { page.fullUrl.orEmpty() }
+        }
+        if (url.isBlank()) return
+        // 图床常校验 Referer，用图片所在站点的 origin 兜底
+        val referer = runCatching {
+            val uri = java.net.URI(url)
+            "${uri.scheme}://${uri.host}/"
+        }.getOrNull()
+
+        scope.launch {
+            val result = runCatching {
+                withContext(Dispatchers.IO) { ImageSaver.save(context, url, referer) }
+            }
+            val text = result.fold(
+                onSuccess = { "已保存到 $it" },
+                onFailure = { "保存失败：${it.message ?: it.toString()}" },
+            )
+            android.widget.Toast.makeText(context, text, android.widget.Toast.LENGTH_SHORT).show()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -147,6 +175,7 @@ fun ComicReaderScreen(
                 index = index,
                 quality = quality,
                 onTap = { chromeVisible = !chromeVisible },
+                onLongPress = { saveCurrentPage() },
             )
         }
 
@@ -380,6 +409,7 @@ private fun ZoomablePage(
     index: Int,
     quality: ImageQuality,
     onTap: () -> Unit,
+    onLongPress: () -> Unit,
 ) {
     var scale by remember(index) { mutableFloatStateOf(1f) }
     var offset by remember(index) { mutableStateOf(Offset.Zero) }
@@ -416,6 +446,7 @@ private fun ZoomablePage(
             .pointerInput(index) {
                 detectTapGestures(
                     onTap = { onTap() },
+                    onLongPress = { onLongPress() },
                     onDoubleTap = {
                         if (scale > 1.01f) {
                             scale = 1f
