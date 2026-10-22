@@ -55,6 +55,17 @@ import com.ghs.mobile.core.model.CContent
 import com.ghs.mobile.core.model.Detail
 import com.ghs.mobile.core.model.TextContent
 import kotlinx.coroutines.launch
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 
 /**
  * 图集阅读器：横向翻页 + 页码指示 + 目录 + 进度回写。
@@ -84,8 +95,31 @@ fun ComicReaderScreen(
         snapshotFlow { pagerState.currentPage }.collect { index -> onProgress(index) }
     }
 
-    Scaffold(
-        topBar = {
+    // 看图时点一下隐藏顶栏/页码，再点恢复（沉浸式）
+    var chromeVisible by remember { mutableStateOf(true) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(Color(0xFF1B1B1F)),
+    ) {
+        HorizontalPager(
+            state = pagerState,
+            modifier = Modifier.fillMaxSize(),
+        ) { index ->
+            ZoomablePage(
+                page = pages.getOrNull(index),
+                index = index,
+                onTap = { chromeVisible = !chromeVisible },
+            )
+        }
+
+        AnimatedVisibility(
+            visible = chromeVisible,
+            enter = fadeIn() + slideInVertically { -it },
+            exit = fadeOut() + slideOutVertically { -it },
+            modifier = Modifier.align(Alignment.TopCenter),
+        ) {
             TopAppBar(
                 title = { Text(title) },
                 navigationIcon = {
@@ -99,45 +133,19 @@ fun ComicReaderScreen(
                     }
                 },
             )
-        },
-    ) { padding ->
-        Surface(modifier = Modifier.fillMaxSize().padding(padding), color = Color(0xFF1B1B1F)) {
-            Column(modifier = Modifier.fillMaxSize()) {
-                HorizontalPager(
-                    state = pagerState,
-                    modifier = Modifier.weight(1f).fillMaxWidth(),
-                ) { index ->
-                    val page = pages.getOrNull(index)
-                    Box(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(12.dp)
-                            .background(Color(0xFF26262B), RoundedCornerShape(12.dp)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        SubcomposeAsyncImage(
-                            model = page?.preferredUrl.orEmpty(),
-                            contentDescription = "第 ${index + 1} 页",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit,
-                            loading = { PagePlaceholder(page, index, "加载中…") },
-                            error = { PagePlaceholder(page, index, null) },
-                        )
-                    }
-                }
+        }
 
-                Row(
-                    modifier = Modifier.fillMaxWidth().padding(16.dp),
-                    horizontalArrangement = Arrangement.Center,
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Text(
-                        "${current + 1} / ${pages.size}",
-                        style = MaterialTheme.typography.titleMedium,
-                        color = Color(0xFFE6E6EA),
-                    )
-                }
-            }
+        if (chromeVisible) {
+            Text(
+                "${current + 1} / ${pages.size}",
+                style = MaterialTheme.typography.titleMedium,
+                color = Color(0xFFE6E6EA),
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 28.dp)
+                    .background(Color(0x99000000), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 14.dp, vertical = 6.dp),
+            )
         }
     }
 
@@ -302,5 +310,58 @@ fun TextReaderScreen(
                 }
             }
         }
+    }
+}
+
+/**
+ * 单页图片：双指缩放 + 拖动，双击在 1x / 2.5x 之间切换。
+ *
+ * 缩放到 1x 时横向拖动交还给 Pager，保证翻页手势不被吃掉。
+ */
+@Composable
+private fun ZoomablePage(page: Detail?, index: Int, onTap: () -> Unit) {
+    var scale by remember(index) { mutableFloatStateOf(1f) }
+    var offset by remember(index) { mutableStateOf(Offset.Zero) }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .pointerInput(index) {
+                detectTransformGestures { _, pan, zoom, _ ->
+                    val next = (scale * zoom).coerceIn(1f, 5f)
+                    scale = next
+                    offset = if (next > 1.01f) offset + pan else Offset.Zero
+                }
+            }
+            .pointerInput(index) {
+                detectTapGestures(
+                    onTap = { onTap() },
+                    onDoubleTap = {
+                        if (scale > 1.01f) {
+                            scale = 1f
+                            offset = Offset.Zero
+                        } else {
+                            scale = 2.5f
+                        }
+                    },
+                )
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        SubcomposeAsyncImage(
+            model = page?.preferredUrl.orEmpty(),
+            contentDescription = "第 ${index + 1} 页",
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = scale
+                    scaleY = scale
+                    translationX = offset.x
+                    translationY = offset.y
+                },
+            contentScale = ContentScale.Fit,
+            loading = { PagePlaceholder(page, index, "加载中…") },
+            error = { PagePlaceholder(page, index, null) },
+        )
     }
 }
