@@ -201,13 +201,16 @@ fun DemoApp(
     var collected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var favoriteItems by remember { mutableStateOf<kotlin.collections.List<Item>>(emptyList()) }
     var historyEntries by remember { mutableStateOf<kotlin.collections.List<HistoryEntry>>(emptyList()) }
+    // 当前站点 key：收藏/历史都按站点隔离（历史只显示当前站点）
+    val siteKey = configKey ?: CONFIG_KEY
+
 
     fun refreshLibrary() {
         scope.launch {
             val snapshot = withContext(Dispatchers.IO) {
-                val collects = repository.collects(CONFIG_KEY)
+                val collects = repository.collects(siteKey)
                 val favorites = collects.mapNotNull { record -> ItemCodec.decode(record.url, record.payload) }
-                val history = repository.history(CONFIG_KEY, 100).mapNotNull { record ->
+                val history = repository.history(siteKey, 100).mapNotNull { record ->
                     ItemCodec.decode(record.url, record.payload)?.let { item -> HistoryEntry(item, record.createTime) }
                 }
                 Triple(collects.map { it.url }.toSet(), favorites, history)
@@ -218,7 +221,7 @@ fun DemoApp(
         }
     }
 
-    LaunchedEffect(Unit) { refreshLibrary() }
+    LaunchedEffect(Unit, siteKey) { refreshLibrary() }
 
     // 切到收藏/历史时重新读一次：数据可能在别处（阅读、收藏）被改过
     LaunchedEffect(tab) { if (tab != DemoTab.HOME) refreshLibrary() }
@@ -226,10 +229,10 @@ fun DemoApp(
     fun toggleCollect(item: Item) {
         scope.launch {
             withContext(Dispatchers.IO) {
-                if (repository.isCollected(CONFIG_KEY, item.jumpUrl)) {
-                    repository.uncollect(CONFIG_KEY, item.jumpUrl)
+                if (repository.isCollected(siteKey, item.jumpUrl)) {
+                    repository.uncollect(siteKey, item.jumpUrl)
                 } else {
-                    repository.collect(CONFIG_KEY, item.jumpUrl, ItemCodec.encode(item))
+                    repository.collect(siteKey, item.jumpUrl, ItemCodec.encode(item))
                 }
             }
             refreshLibrary()
@@ -401,7 +404,7 @@ fun DemoApp(
         detailError = outcome.exceptionOrNull()?.let { it.message ?: it.toString() }
         screen = Screen.Detail(item, info)
         if (info != null) {
-            withContext(Dispatchers.IO) { rememberOpened(repository, item, info) }
+            withContext(Dispatchers.IO) { rememberOpened(repository, siteKey, item, info) }
         }
         // 视频：解析出地址后直接播放，不再停留在中间的清晰度列表
         if (info != null && (info.detailType == DetailType.MP4 || info.detailType == DetailType.M3U8)) {
@@ -1148,7 +1151,12 @@ fun DemoApp(
     }
 }
 
-private suspend fun rememberOpened(repository: LocalRepository, item: Item, info: DetailInfo) {
+private suspend fun rememberOpened(
+    repository: LocalRepository,
+    configKey: String,
+    item: Item,
+    info: DetailInfo,
+) {
     val kind = when (info.detailType) {
         DetailType.TEXT -> ReaderKind.TEXT
         DetailType.COMIC -> ReaderKind.IMAGE

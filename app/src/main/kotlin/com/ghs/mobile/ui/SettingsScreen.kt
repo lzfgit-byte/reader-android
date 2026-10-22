@@ -57,7 +57,6 @@ fun SettingsScreen(
     onWebToggle: (Boolean) -> Unit,
     onWebPortChange: (Int) -> Unit,
     onWebBindChange: (Boolean) -> Unit,
-    onWebResetToken: () -> Unit,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -84,7 +83,7 @@ fun SettingsScreen(
                 onWebToggle = onWebToggle,
                 onWebPortChange = onWebPortChange,
                 onWebBindChange = onWebBindChange,
-                onWebResetToken = onWebResetToken,
+
             )
         }
     }
@@ -103,7 +102,6 @@ fun SettingsContent(
     onWebToggle: (Boolean) -> Unit,
     onWebPortChange: (Int) -> Unit,
     onWebBindChange: (Boolean) -> Unit,
-    onWebResetToken: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Column(
@@ -134,7 +132,7 @@ fun SettingsContent(
                 onToggle = onWebToggle,
                 onPortChange = onWebPortChange,
                 onBindChange = onWebBindChange,
-                onResetToken = onWebResetToken,
+
             )
         }
 
@@ -262,7 +260,7 @@ private fun WebSection(
     onToggle: (Boolean) -> Unit,
     onPortChange: (Int) -> Unit,
     onBindChange: (Boolean) -> Unit,
-    onResetToken: () -> Unit,
+
 ) {
     var portText by remember(web.port) { mutableStateOf(web.port.toString()) }
 
@@ -299,18 +297,9 @@ private fun WebSection(
         }
 
         Text(
-            if (web.enabled) "打开地址：${web.consoleUrl}" else "启用后在此显示带令牌的访问地址",
+            if (web.enabled) "打开地址：${web.consoleUrl}" else "启用后在此显示局域网访问地址",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
-        Text(
-            "令牌：" + web.token.take(16) + "…（仅本机保存，接口不提供修改）",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = onResetToken) { Text("重置令牌") }
-        }
     }
 }

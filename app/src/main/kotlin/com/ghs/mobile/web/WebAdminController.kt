@@ -30,11 +30,12 @@ class WebAdminController(
         val enabled: Boolean = false,
         val port: Int = DEFAULT_PORT,
         val bindAll: Boolean = false,
-        val token: String = "",
     ) {
+        /** 监听地址：允许局域网时绑 0.0.0.0，否则只绑本机 */
         val bindHost: String get() = if (bindAll) "0.0.0.0" else "127.0.0.1"
-        val baseUrl: String get() = "http://${if (bindAll) "<局域网IP>" else "127.0.0.1"}:$port"
-        val consoleUrl: String get() = "$baseUrl/console/?t=$token"
+
+        /** 展示给用户的地址：一律用本机局域网 IP（令牌已取消，无需带 t 参数） */
+        val consoleUrl: String get() = "http://${localIpAddress() ?: "127.0.0.1"}:$port/console/"
     }
 
     private val _state = MutableStateFlow(WebSettings())
@@ -49,12 +50,12 @@ class WebAdminController(
 
     suspend fun load() {
         val saved = withContext(Dispatchers.IO) { repository.settings(SettingScope.DEVICE) }
-        val token = saved["web_token"]?.takeIf { it.length >= 16 } ?: newToken()
+
         _state.value = WebSettings(
             enabled = saved["web_enabled"]?.toBooleanStrictOrNull() ?: false,
             port = saved["web_port"]?.toIntOrNull()?.takeIf { it in 1024..65535 } ?: DEFAULT_PORT,
             bindAll = saved["web_bind_all"]?.toBooleanStrictOrNull() ?: false,
-            token = token,
+
         )
         persist(_state.value)
         if (_state.value.enabled) start()
@@ -68,9 +69,7 @@ class WebAdminController(
         if (next.enabled) start()
     }
 
-    suspend fun resetToken() {
-        update { it.copy(token = newToken()) }
-    }
+
 
     /**
      * 启动；端口被占用时顺延（web-admin-api.md §1："被占用时自动顺延并提示实际端口"）。
@@ -85,7 +84,7 @@ class WebAdminController(
                 store = configStore,
                 port = candidate,
                 bindHost = settings.bindHost,
-                token = settings.token,
+    
                 appVersion = appVersion,
                 onConfigsChanged = { _reloadSignal.value = _reloadSignal.value + 1 },
             )
@@ -114,11 +113,11 @@ class WebAdminController(
             repository.putSetting(SettingScope.DEVICE, "web_enabled", settings.enabled.toString())
             repository.putSetting(SettingScope.DEVICE, "web_port", settings.port.toString())
             repository.putSetting(SettingScope.DEVICE, "web_bind_all", settings.bindAll.toString())
-            repository.putSetting(SettingScope.DEVICE, "web_token", settings.token)
+    
         }
     }
 
-    private fun newToken(): String {
+    private fun unusedTokenPlaceholder(): String {
         val bytes = ByteArray(24)
         SecureRandom().nextBytes(bytes)
         return bytes.joinToString("") { "%02x".format(it) }
@@ -129,4 +128,16 @@ class WebAdminController(
         private const val PORT_ATTEMPTS = 10
         private const val SOCKET_READ_TIMEOUT_MS = 10_000
     }
+}
+/** 取本机局域网 IPv4（用于展示访问地址）；取不到返回 null */
+private fun localIpAddress(): String? {
+    return runCatching {
+        java.net.NetworkInterface.getNetworkInterfaces().toList()
+            .asSequence()
+            .filter { it.isUp && !it.isLoopback }
+            .flatMap { it.inetAddresses.toList().asSequence() }
+            .filterIsInstance<java.net.Inet4Address>()
+            .firstOrNull { !it.isLoopbackAddress }
+            ?.hostAddress
+    }.getOrNull()
 }

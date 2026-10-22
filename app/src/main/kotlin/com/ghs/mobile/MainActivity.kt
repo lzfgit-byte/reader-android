@@ -86,7 +86,6 @@ private fun AppRoot() {
                             onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
                             onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
                             onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },
-                            onWebResetToken = { scope.launch { webAdmin.resetToken() } },
                         )
                     },
                     onOpenProbe = { page = Page.PROBE },
@@ -108,7 +107,6 @@ private fun AppRoot() {
                     onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
                     onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
                     onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },
-                    onWebResetToken = { scope.launch { webAdmin.resetToken() } },
                     onBack = { page = Page.MAIN },
                 )
             }

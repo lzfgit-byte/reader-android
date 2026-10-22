@@ -22,7 +22,6 @@ class AdminServer(
     private val store: ConfigStore,
     private val port: Int,
     private val bindHost: String,
-    private val token: String,
     private val appVersion: String,
     /** 配置被改动后的通知：让 App 立刻重载，不必手动重启 */
     private val onConfigsChanged: () -> Unit = {},
@@ -44,14 +43,7 @@ class AdminServer(
     // ── 静态资源 ────────────────────────────────────────────────────────────
 
     private fun serveConsole(session: IHTTPSession): Response {
-        // `/console/?t=xxx` 换取 Cookie，之后页面内的 fetch 复用 Cookie
-        val incomingToken = session.parameters["t"]?.firstOrNull()
-        if (incomingToken != null && incomingToken == token) {
-            return staticFile("index.html")?.apply {
-                addHeader("Set-Cookie", "ghs_token=$token; Path=/; SameSite=Lax")
-            } ?: text("console 未打包", Response.Status.NOT_FOUND)
-        }
-
+        // 令牌已取消：局域网内直接访问即可
         val relative = session.uri.removePrefix("/console").trimStart('/').ifEmpty { "index.html" }
         val file = relative.takeIf { it.isNotBlank() && !it.contains("..") }
         if (file != null) staticFile(file)?.let { return it }
@@ -133,12 +125,8 @@ class AdminServer(
         }
     }
 
-    private fun isAuthorized(session: IHTTPSession): Boolean {
-        val auth = session.headers["authorization"].orEmpty()
-        if (auth.startsWith("Bearer ") && auth.removePrefix("Bearer ").trim() == token) return true
-        val cookie = session.headers["cookie"].orEmpty()
-        return cookie.split(';').any { it.trim() == "ghs_token=$token" }
-    }
+    /** 令牌已取消：Web 管理仅在本机/局域网内网使用，不再校验凭证 */
+    private fun isAuthorized(session: IHTTPSession): Boolean = true
 
     private fun configList(): JSONObject {
         val array = JSONArray()
