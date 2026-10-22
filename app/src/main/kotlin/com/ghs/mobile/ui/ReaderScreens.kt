@@ -75,6 +75,7 @@ import androidx.compose.foundation.gestures.calculatePan
 import androidx.compose.foundation.gestures.calculateZoom
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import androidx.compose.foundation.basicMarquee
 
 /** 图片清晰度：原图（`fullUrl`）或展示图（`url`） */
 enum class ImageQuality { ORIGINAL, PREVIEW }
@@ -190,7 +191,14 @@ fun ComicReaderScreen(
             modifier = Modifier.align(Alignment.TopCenter),
         ) {
             TopAppBar(
-                title = { Text(title) },
+                title = {
+                    Text(
+                        title,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.basicMarquee(),
+                    )
+                },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "返回")

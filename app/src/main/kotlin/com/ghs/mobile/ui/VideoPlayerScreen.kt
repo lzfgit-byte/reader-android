@@ -73,6 +73,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.drawscope.rotate
+import androidx.compose.foundation.basicMarquee
 
 /** 把毫秒格式化成 `12:34` / `1:02:03` */
 internal fun formatDuration(ms: Long): String {
@@ -465,6 +466,7 @@ fun VideoPlayerScreen(
                         style = MaterialTheme.typography.titleSmall,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.basicMarquee(),
                     )
                     series?.let { ctx ->
                         val label = listOf(
