@@ -67,6 +67,12 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.material3.TextButton
+import coil.imageLoader
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 
 /** 图片清晰度：原图（`fullUrl`）或展示图（`url`） */
 enum class ImageQuality { ORIGINAL, PREVIEW }
@@ -99,6 +105,29 @@ fun ComicReaderScreen(
 
     LaunchedEffect(pagerState) {
         snapshotFlow { pagerState.currentPage }.collect { index -> onProgress(index) }
+    }
+
+    // 预取相邻页（±1 与 +2）：翻页时不用等下载，也不占太多内存
+    val context = LocalContext.current
+    LaunchedEffect(current, quality, pages) {
+        val loader = context.imageLoader
+        listOf(current - 1, current + 1, current + 2)
+            .filter { it in pages.indices && it != current }
+            .forEach { i ->
+                val page = pages[i]
+                val url = when (quality) {
+                    ImageQuality.ORIGINAL -> page.fullUrl?.takeIf { it.isNotBlank() } ?: page.url
+                    ImageQuality.PREVIEW -> page.url.ifEmpty { page.fullUrl.orEmpty() }
+                }
+                if (url.isNotEmpty()) {
+                    android.util.Log.i("GHS", "prefetch page ${i + 1} $url")
+                    loader.enqueue(
+                        ImageRequest.Builder(context)
+                            .data(url)
+                            .build(),
+                    )
+                }
+            }
     }
 
     // 看图时点一下隐藏顶栏/页码，再点恢复（沉浸式）
@@ -367,11 +396,21 @@ private fun ZoomablePage(
     Box(
         modifier = Modifier
             .fillMaxSize()
+            // 只有「双指」或「已经放大」时才消费手势；否则单指横滑交还给 Pager 翻页
             .pointerInput(index) {
-                detectTransformGestures { _, pan, zoom, _ ->
-                    val next = (scale * zoom).coerceIn(1f, 5f)
-                    scale = next
-                    offset = if (next > 1.01f) offset + pan else Offset.Zero
+                awaitEachGesture {
+                    do {
+                        val event = awaitPointerEvent()
+                        val pressed = event.changes.count { it.pressed }
+                        if (pressed >= 2 || scale > 1.01f) {
+                            val zoom = event.calculateZoom()
+                            val pan = event.calculatePan()
+                            val next = (scale * zoom).coerceIn(1f, 5f)
+                            scale = next
+                            offset = if (next > 1.01f) offset + pan else Offset.Zero
+                            event.changes.forEach { it.consume() }
+                        }
+                    } while (event.changes.any { it.pressed })
                 }
             }
             .pointerInput(index) {
@@ -407,7 +446,7 @@ private fun ZoomablePage(
                 if (quality == ImageQuality.ORIGINAL && !fellBack && original != null && preview.isNotEmpty()) {
                     fellBack = true
                 }
-                PagePlaceholder(page, index, if (fellBack) null else "加载失败，已切到展示图")
+                PagePlaceholder(page, index, null)
             },
         )
     }
