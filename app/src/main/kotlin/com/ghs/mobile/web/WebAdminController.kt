@@ -34,8 +34,19 @@ class WebAdminController(
         /** 监听地址：允许局域网时绑 0.0.0.0，否则只绑本机 */
         val bindHost: String get() = if (bindAll) "0.0.0.0" else "127.0.0.1"
 
-        /** 展示给用户的地址：一律用本机局域网 IP（令牌已取消，无需带 t 参数） */
-        val consoleUrl: String get() = "http://${localIpAddress() ?: "127.0.0.1"}:$port/console/"
+        /**
+         * 展示给用户的所有可访问地址。
+         *
+         * 设备可能同时有 Wi-Fi、热点、有线等多个 IPv4（例如 192.168.x.x 与 10.x.x.x），
+         * 全部列出来由用户挑；一个都没有时回落 127.0.0.1。
+         */
+        val consoleUrls: List<String>
+            get() = localIpAddresses()
+                .ifEmpty { listOf("127.0.0.1") }
+                .map { "http://$it:$port/console/" }
+
+        /** 兼容旧调用：取第一个地址 */
+        val consoleUrl: String get() = consoleUrls.first()
     }
 
     private val _state = MutableStateFlow(WebSettings())
@@ -130,14 +141,17 @@ class WebAdminController(
     }
 }
 /** 取本机局域网 IPv4（用于展示访问地址）；取不到返回 null */
-private fun localIpAddress(): String? {
+private fun localIpAddresses(): List<String> {
     return runCatching {
         java.net.NetworkInterface.getNetworkInterfaces().toList()
             .asSequence()
             .filter { it.isUp && !it.isLoopback }
             .flatMap { it.inetAddresses.toList().asSequence() }
             .filterIsInstance<java.net.Inet4Address>()
-            .firstOrNull { !it.isLoopbackAddress }
-            ?.hostAddress
-    }.getOrNull()
+            .filter { !it.isLoopbackAddress && !it.isLinkLocalAddress }
+            .mapNotNull { it.hostAddress }
+            .distinct()
+            .sortedBy { if (it.startsWith("192.168.")) 0 else 1 }
+            .toList()
+    }.getOrDefault(emptyList())
 }

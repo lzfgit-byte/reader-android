@@ -38,6 +38,7 @@ import androidx.compose.runtime.setValue
 import com.ghs.mobile.core.engine.proxy.ProxyRules
 import androidx.compose.ui.Alignment
 import com.ghs.mobile.web.WebAdminController
+import androidx.compose.foundation.clickable
 
 /**
  * 设置页：主题 / 字号 / 阅读器默认模式。
@@ -260,8 +261,14 @@ private fun WebSection(
     onToggle: (Boolean) -> Unit,
     onPortChange: (Int) -> Unit,
     onBindChange: (Boolean) -> Unit,
-
 ) {
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val clipboard = remember(context) {
+        context.getSystemService(android.content.Context.CLIPBOARD_SERVICE) as? android.content.ClipboardManager
+    }
+    val copyHint = remember(context) {
+        android.widget.Toast.makeText(context, "地址已复制", android.widget.Toast.LENGTH_SHORT)
+    }
     var portText by remember(web.port) { mutableStateOf(web.port.toString()) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -296,10 +303,34 @@ private fun WebSection(
             Switch(checked = web.bindAll, onCheckedChange = onBindChange)
         }
 
-        Text(
-            if (web.enabled) "打开地址：${web.consoleUrl}" else "启用后在此显示局域网访问地址",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
+        if (web.enabled) {
+            Text(
+                "打开地址（点一下复制）：",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            web.consoleUrls.forEach { url ->
+                Text(
+                    url,
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable {
+                            clipboard?.setPrimaryClip(
+                                android.content.ClipData.newPlainText("web-console", url),
+                            )
+                            copyHint.show()
+                        }
+                        .padding(vertical = 4.dp),
+                )
+            }
+        } else {
+            Text(
+                "启用后在此显示局域网访问地址",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
     }
 }
