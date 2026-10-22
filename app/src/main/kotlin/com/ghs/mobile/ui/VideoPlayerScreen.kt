@@ -57,6 +57,8 @@ fun VideoPlayerScreen(
     sources: List<Detail>,
     startIndex: Int,
     startPositionMs: Long,
+    /** 资源站点 origin：很多 CDN 校验 Referer，缺了会返回 403 */
+    referer: String? = null,
     onProgress: (sourceUrl: String, positionMs: Long, durationMs: Long) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -70,9 +72,35 @@ fun VideoPlayerScreen(
     val currentUrl = sources.getOrNull(index)?.url.orEmpty()
 
     val player = remember(index, currentUrl) {
+        // 视频 CDN 常拦截代理出口 IP（直连 200、走代理 403）：403 时直连重试一次
+        val baseClient = GhsApp.instance.proxiedClient()
+        val directClient = baseClient.newBuilder()
+            .proxy(java.net.Proxy.NO_PROXY)
+            .build()
+        val mediaClient = baseClient.newBuilder()
+            .addInterceptor { chain ->
+                val response = chain.proceed(chain.request())
+                if (response.code == 403) {
+                    response.close()
+                    directClient.newCall(chain.request()).execute()
+                } else {
+                    response
+                }
+            }
+            .build()
+        val httpFactory = OkHttpDataSource.Factory(mediaClient)
+            .setDefaultRequestProperties(
+                buildMap {
+                    referer?.takeIf { it.isNotBlank() }?.let { put("Referer", it) }
+                    put(
+                        "User-Agent",
+                        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
+                    )
+                },
+            )
         val dataSource = DefaultDataSource.Factory(
             context,
-            OkHttpDataSource.Factory(GhsApp.instance.proxiedClient()),
+            httpFactory,
         )
         ExoPlayer.Builder(context).build().apply {
             setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(MediaItem.fromUri(currentUrl)))

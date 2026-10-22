@@ -55,8 +55,17 @@ class Selection internal constructor(private val elements: List<Element>) {
     /** 取属性；不存在返回 '' */
     fun attr(name: String): String = elements.firstOrNull()?.attr(name) ?: ""
 
-    /** 取文本；不存在返回 '' */
-    fun text(): String = elements.joinToString("") { it.text() }
+    /**
+     * 取文本；不存在返回 ''。
+     *
+     * `<script>` / `<style>` 的内容在 Jsoup 里是 **DataNode** 而不是 TextNode，
+     * `Element.text()` 会返回空串——但配置常用 `$("[type='application/ld+json']")`
+     * 读 JSON（如剧集播放地址），所以这里退回到 `data()`。
+     */
+    fun text(): String = elements.joinToString("") { element ->
+        val text = element.text()
+        if (text.isEmpty() && element.normalName() in DATA_ONLY_TAGS) element.data() else text
+    }
 
     /** 取内部 HTML */
     fun html(): String = elements.joinToString("") { it.html() }
@@ -133,3 +142,6 @@ internal object SelectorTranslator {
         return parts.filter { it.isNotEmpty() }
     }
 }
+
+/** 内容以 DataNode 形式存放的标签：`text()` 取不到，需要 `data()` */
+private val DATA_ONLY_TAGS = setOf("script", "style")

@@ -104,6 +104,7 @@ private sealed interface Screen {
         val sources: kotlin.collections.List<com.ghs.mobile.core.model.Detail>,
         val startIndex: Int,
         val startMs: Long,
+        val referer: String? = null,
     ) : Screen
     data class SearchResults(val keyword: String, val page: Page) : Screen
     data class Failed(val message: String) : Screen
@@ -515,6 +516,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                                     ),
                                     startIndex = 0,
                                     startMs = 0L,
+                                    referer = deviceReferer(session, reader.item),
                                 )
                             } else {
                                 seriesError = "该集没有解析到播放地址"
@@ -533,6 +535,7 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 sources = reader.sources,
                 startIndex = reader.startIndex,
                 startPositionMs = reader.startMs,
+                referer = reader.referer,
                 onProgress = { sourceUrl, position, duration ->
                     scope.launch {
                         repository.saveProgress(
@@ -1133,4 +1136,13 @@ private fun nextPageUrl(page: Page): String? {
     val currentIndex = page.pagination.indexOfFirst { it.isCurrent }
     val candidates = if (currentIndex >= 0) page.pagination.drop(currentIndex + 1) else page.pagination
     return candidates.firstOrNull { it.url.isNotBlank() }?.url
+}
+
+/** 播放器/图片下载用的 Referer：取站点 origin，CDN 常校验它 */
+private fun deviceReferer(session: ReaderSession?, item: Item): String? {
+    val base = session?.homeUrl?.takeIf { it.isNotBlank() } ?: item.jumpUrl
+    return runCatching {
+        val uri = java.net.URI(base)
+        "${uri.scheme}://${uri.host}/"
+    }.getOrNull()
 }
