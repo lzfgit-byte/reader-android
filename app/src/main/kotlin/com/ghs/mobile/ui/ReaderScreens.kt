@@ -341,7 +341,7 @@ private fun ZoomablePage(page: Detail?, index: Int, onTap: () -> Unit) {
                             scale = 1f
                             offset = Offset.Zero
                         } else {
-                            scale = 2.5f
+                            scale = 2f
                         }
                     },
                 )
