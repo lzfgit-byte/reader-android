@@ -4,8 +4,10 @@ import android.app.Activity
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.pm.ActivityInfo
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -17,10 +19,11 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
-import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -28,6 +31,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
@@ -64,7 +69,7 @@ import com.ghs.mobile.GhsApp
 import com.ghs.mobile.core.model.AnalysisDetail
 import com.ghs.mobile.core.model.Detail
 import kotlinx.coroutines.delay
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.layout.height
 
 /** 把毫秒格式化成 `12:34` / `1:02:03` */
 internal fun formatDuration(ms: Long): String {
@@ -82,17 +87,30 @@ private tailrec fun Context.findActivity(): Activity? = when (this) {
     else -> null
 }
 
+/** 双击分区的边界：左右各 40% 是快退/快进，中间 20% 是播放暂停 */
+private const val EDGE_TAP_THRESHOLD = 0.4f
+
+/** 连击累加窗口：900ms 内同方向连续双击，每次再进 10s */
+private const val SMART_SEEK_WINDOW_MS = 900L
+
+/** 每步快进/快退毫秒数 */
+private const val SEEK_STEP_MS = 10_000L
+
+/** 控制层自动隐藏时间 */
+private const val CONTROLS_HIDE_MS = 3_500L
+
 /**
- * 视频播放器：Media3（ExoPlayer）+ HLS，控制条用官方 `media3-ui` 的 PlayerView。
+ * 视频播放器：Media3（ExoPlayer）+ HLS，控制层自绘（**不用 PlayerView 自带控制器**）。
  *
- * - 进入即播；清晰度、线路、选集都能就地切换
- * - 手势：单击显隐控制条，双击右半区快进 10s、左半区后退 10s
- * - 全屏（横屏 + 隐藏系统栏）、锁屏（屏蔽手势防误触）
- * - 续看：有历史进度时提示「上次看到 mm:ss」，点「快进」才跳
+ * 布局与手势对齐主流播放器：
+ * - 顶栏：返回、标题、「线路 · 第 N 集」、线路/选集
+ * - 底栏：进度条 + 时间，以及 上一集 / 播放暂停 / 下一集 / 清晰度 / 全屏
+ * - 左侧边缘：锁屏；锁后单击只切换锁按钮显隐
+ * - 手势：单击显隐控制层（3.5s 自动隐藏）；双击左 40% 快退、右 40% 快进、中间 20% 播放暂停；
+ *   900ms 内连续双击同方向按 10s 累加
  *
  * 换集/换线路时按当前地址重置全部播放态，并**把新播放器塞回 PlayerView**
- * （`AndroidView` 的 factory 只跑一次，不 update 会一直挂着已 release 的旧实例，
- * 表现为"切换剧集后画面冻住"）。
+ * （`AndroidView` 的 factory 只跑一次，不 update 会一直挂着已 release 的旧实例）。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -107,6 +125,9 @@ fun VideoPlayerScreen(
     resumePositionMs: Long = 0L,
     /** 剧集上下文；null 表示这不是剧集（或没有分段信息） */
     series: SeriesPlayback? = null,
+    /** 传入时底栏显示上一集/下一集 */
+    onPrevEpisode: (() -> Unit)? = null,
+    onNextEpisode: (() -> Unit)? = null,
     onSelectEpisode: (Int) -> Unit = {},
     onPlayEpisode: (lineUrl: String, episodeIndex: Int) -> Unit = { _, _ -> },
     loadEpisodes: suspend (lineUrl: String) -> List<AnalysisDetail> = { emptyList() },
@@ -121,18 +142,26 @@ fun VideoPlayerScreen(
     }
     val currentUrl = sources.getOrNull(index)?.url.orEmpty()
 
-    // ---- 全部按当前地址重置：换集/换线路后不能沿用上一集的状态 ----
     var error by remember(currentUrl) { mutableStateOf<String?>(null) }
     var menuOpen by remember(currentUrl) { mutableStateOf(false) }
     var sheet by remember(currentUrl) { mutableStateOf(PlayerSheet.NONE) }
     var locked by remember(currentUrl) { mutableStateOf(false) }
+    var lockButtonVisible by remember(currentUrl) { mutableStateOf(true) }
     var fullscreen by remember(currentUrl) { mutableStateOf(false) }
-    var controllerVisible by remember(currentUrl) { mutableStateOf(true) }
+    var controlsVisible by remember(currentUrl) { mutableStateOf(true) }
     var resumeMs by remember(currentUrl) { mutableLongStateOf(startPositionMs) }
     var pendingResume by remember(currentUrl) {
         mutableLongStateOf(resumePositionMs.takeIf { it > 5_000 } ?: 0L)
     }
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+
+    // 播放进度镜像：给进度条与时间显示用
+    var positionMs by remember(currentUrl) { mutableLongStateOf(0L) }
+    var durationMs by remember(currentUrl) { mutableLongStateOf(0L) }
+    var playing by remember(currentUrl) { mutableStateOf(false) }
+    var buffering by remember(currentUrl) { mutableStateOf(true) }
+    var dragging by remember(currentUrl) { mutableStateOf(false) }
+    var dragPosition by remember(currentUrl) { mutableLongStateOf(0L) }
 
     val player = remember(currentUrl) {
         // 视频 CDN 常拦截代理出口 IP（直连 200、走代理 403）：403 时直连重试一次
@@ -178,7 +207,6 @@ fun VideoPlayerScreen(
         }
         player.addListener(listener)
         onDispose {
-            // 续看提示还没处理时不要回写：播放器停在 0，会把上次位置冲掉
             if (pendingResume == 0L && player.currentPosition > 0) {
                 runCatching { onProgress(currentUrl, player.currentPosition, player.duration.coerceAtLeast(0)) }
             }
@@ -187,20 +215,35 @@ fun VideoPlayerScreen(
         }
     }
 
+    // 每 500ms 刷新进度条，同时每 5s 回写一次进度
     LaunchedEffect(player) {
+        var tick = 0
         while (true) {
-            delay(5_000)
-            if (pendingResume == 0L) {
+            delay(500)
+            tick++
+            positionMs = player.currentPosition
+            durationMs = player.duration.coerceAtLeast(0)
+            playing = player.isPlaying
+            buffering = player.playbackState == Player.STATE_BUFFERING
+            if (tick % 10 == 0 && pendingResume == 0L) {
                 onProgress(currentUrl, player.currentPosition, player.duration.coerceAtLeast(0))
             }
         }
     }
 
-    // 提示 12 秒后自动消失（用户没点就从头播）
+    // 控制层自动隐藏
+    LaunchedEffect(controlsVisible, playing) {
+        if (controlsVisible && playing && pendingResume == 0L) {
+            delay(CONTROLS_HIDE_MS)
+            controlsVisible = false
+        }
+    }
+
     LaunchedEffect(pendingResume) {
         if (pendingResume > 0) {
             delay(12_000)
             pendingResume = 0L
+            controlsVisible = false
         }
     }
 
@@ -220,7 +263,6 @@ fun VideoPlayerScreen(
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
     }
-    // 离开播放器时恢复竖屏与系统栏
     DisposableEffect(Unit) {
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -229,6 +271,16 @@ fun VideoPlayerScreen(
                     .show(WindowInsetsCompat.Type.systemBars())
             }
         }
+    }
+
+    /** 快进/快退：900ms 内同方向连续双击按步长累加 */
+    fun smartSeek(direction: Int) {
+        val duration = player.duration.takeIf { it > 0 } ?: durationMs
+        val target = (player.currentPosition + SEEK_STEP_MS * direction)
+            .coerceAtLeast(0)
+            .let { if (duration > 0) it.coerceAtMost(duration) else it }
+        player.seekTo(target)
+        controlsVisible = true
     }
 
     Box(
@@ -240,10 +292,8 @@ fun VideoPlayerScreen(
             factory = { ctx ->
                 PlayerView(ctx).apply {
                     this.player = player
-                    useController = true
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_WHEN_PLAYING)
-                    setShowNextButton(false)
-                    setShowPreviousButton(false)
+                    useController = false // 控制层由我们自己画
+                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
                     playerViewRef = this
                 }
             },
@@ -255,46 +305,86 @@ fun VideoPlayerScreen(
             modifier = Modifier.fillMaxSize(),
         )
 
-        // 手势层：单击显隐控制条，双击左右分别后退/快进 10s；锁屏时全部忽略
+        // 手势层
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .pointerInput(locked) {
+                .pointerInput(locked, currentUrl) {
+                    var lastSeekAt = 0L
+                    var lastSeekDir = 0
                     detectTapGestures(
                         onTap = {
-                            if (!locked) {
-                                controllerVisible = !controllerVisible
-                                playerViewRef?.let { view ->
-                                    if (controllerVisible) view.showController() else view.hideController()
-                                }
+                            if (locked) {
+                                lockButtonVisible = !lockButtonVisible
+                            } else {
+                                controlsVisible = !controlsVisible
                             }
                         },
                         onDoubleTap = { offset ->
                             if (!locked) {
                                 val width = size.width
-                                when {
-                                    offset.x > width * 0.55f -> {
-                                        val duration = player.duration
-                                        val limit = if (duration > 0) duration else Long.MAX_VALUE
-                                        player.seekTo((player.currentPosition + 10_000).coerceAtMost(limit))
-                                    }
-                                    offset.x < width * 0.45f -> {
-                                        player.seekTo((player.currentPosition - 10_000).coerceAtLeast(0))
-                                    }
+                                val dir = when {
+                                    offset.x < width * EDGE_TAP_THRESHOLD -> -1
+                                    offset.x > width * (1f - EDGE_TAP_THRESHOLD) -> 1
+                                    else -> 0
                                 }
-                                playerViewRef?.showController()
+                                if (dir == 0) {
+                                    if (player.isPlaying) player.pause() else player.play()
+                                    controlsVisible = true
+                                } else {
+                                    val now = System.currentTimeMillis()
+                                    val continued = dir == lastSeekDir && now - lastSeekAt <= SMART_SEEK_WINDOW_MS
+                                    lastSeekDir = dir
+                                    lastSeekAt = now
+                                    smartSeek(dir * if (continued) 2 else 1)
+                                }
                             }
                         },
                     )
                 },
         )
 
+        // 缓冲圈
+        if (buffering && error == null) {
+            CircularProgressIndicator(
+                modifier = Modifier.align(Alignment.Center).size(44.dp),
+                color = Color(0xFF4DD0E1),
+            )
+        }
+
+        // 锁按钮：左侧边缘垂直居中
         if (!locked) {
+            IconButton(
+                onClick = { locked = true; controlsVisible = false },
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 4.dp)
+                    .size(40.dp)
+                    .background(Color(0x66000000), CircleShape),
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = "锁定", tint = Color.White)
+            }
+        } else if (lockButtonVisible) {
+            IconButton(
+                onClick = { locked = false },
+                modifier = Modifier
+                    .align(Alignment.CenterStart)
+                    .padding(start = 4.dp)
+                    .size(40.dp)
+                    .background(Color(0x66000000), CircleShape),
+            ) {
+                Icon(Icons.Default.Lock, contentDescription = "解锁", tint = Color.White)
+            }
+        }
+
+        if (controlsVisible && !locked) {
+            // 顶栏
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
+                    .align(Alignment.TopCenter)
                     .background(Brush.verticalGradient(listOf(Color(0xCC000000), Color(0x00000000))))
-                    .padding(horizontal = 4.dp, vertical = 6.dp),
+                    .padding(horizontal = 4.dp, vertical = 4.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 IconButton(onClick = onBack) {
@@ -328,77 +418,127 @@ fun VideoPlayerScreen(
                     TextButton(onClick = { sheet = PlayerSheet.SWITCHER }) { Text("线路 / 选集") }
                 }
             }
-        } else {
-            IconButton(
-                onClick = {
-                    locked = false
-                    playerViewRef?.showController()
-                },
-                modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(8.dp)
-                    .size(40.dp)
-                    .background(Color(0x66000000), CircleShape),
-            ) {
-                Icon(Icons.Default.Lock, contentDescription = "解锁", tint = Color.White)
-            }
-        }
 
-        // 锁定：左侧边缘、垂直居中（主流播放器习惯，避免误触前进度条）
-        if (!locked) {
-            IconButton(
-                onClick = {
-                    locked = true
-                    playerViewRef?.hideController()
-                },
+            // 底栏：进度条 + 控制行
+            Column(
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 4.dp)
-                    .size(40.dp)
-                    .background(Color(0x66000000), CircleShape),
+                    .fillMaxWidth()
+                    .align(Alignment.BottomCenter)
+                    .background(Brush.verticalGradient(listOf(Color(0x00000000), Color(0xCC000000))))
+                    .padding(horizontal = 12.dp, vertical = 8.dp),
             ) {
-                Icon(Icons.Default.Lock, contentDescription = "锁定", tint = Color.White)
-            }
-        }
-
-        // 右下角播放控制：清晰度（文字）+ 全屏（图标），与主流播放器一致
-        if (!locked) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(end = 8.dp, bottom = 48.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (sources.size > 1) {
-                    Box {
-                        TextButton(onClick = { menuOpen = true }) {
-                            Text(
-                                sources.getOrNull(index)?.quality?.ifEmpty { "清晰度" } ?: "清晰度",
-                                color = Color.White,
-                                style = MaterialTheme.typography.labelLarge,
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        formatDuration(if (dragging) dragPosition else positionMs),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                    Slider(
+                        value = if (durationMs > 0) {
+                            ((if (dragging) dragPosition else positionMs).toFloat() / durationMs).coerceIn(0f, 1f)
+                        } else {
+                            0f
+                        },
+                        onValueChange = { fraction ->
+                            if (durationMs > 0) {
+                                dragging = true
+                                dragPosition = (durationMs * fraction).toLong()
+                            }
+                        },
+                        onValueChangeFinished = {
+                            if (durationMs > 0) player.seekTo(dragPosition)
+                            dragging = false
+                            controlsVisible = true
+                        },
+                        thumb = {
+                            Box(
+                                Modifier
+                                    .size(12.dp)
+                                    .background(Color.White, CircleShape),
                             )
-                        }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            sources.forEachIndexed { i, source ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text((source.quality.ifEmpty { "默认" }) + if (i == index) " · 当前" else "")
-                                    },
-                                    onClick = {
-                                        menuOpen = false
-                                        if (i != index) {
-                                            resumeMs = player.currentPosition
-                                            error = null
-                                            index = i
-                                        }
-                                    },
+                        },
+                        track = { state ->
+                            val fraction = ((if (dragging) dragPosition else positionMs).toFloat() /
+                                durationMs.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
+                            Box(
+                                Modifier
+                                    .fillMaxWidth()
+                                    .height(3.dp)
+                                    .background(Color(0x66FFFFFF), RoundedCornerShape(2.dp)),
+                            ) {
+                                Box(
+                                    Modifier
+                                        .fillMaxWidth(fraction)
+                                        .height(3.dp)
+                                        .background(Color(0xFF7C4DFF), RoundedCornerShape(2.dp)),
                                 )
                             }
+                        },
+                        modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
+                    )
+                    Text(
+                        formatDuration(durationMs),
+                        color = Color.White,
+                        style = MaterialTheme.typography.labelSmall,
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (onPrevEpisode != null) {
+                            TextButton(onClick = { onPrevEpisode() }) { Text("上一集") }
+                        }
+                        IconButton(onClick = { if (playing) player.pause() else player.play() }) {
+                            if (playing) {
+                                PauseIcon(tint = Color.White)
+                            } else {
+                                Icon(Icons.Default.PlayArrow, contentDescription = "播放", tint = Color.White)
+                            }
+                        }
+                        if (onNextEpisode != null) {
+                            TextButton(onClick = { onNextEpisode() }) { Text("下一集") }
                         }
                     }
-                }
-                IconButton(onClick = { fullscreen = !fullscreen }) {
-                    FullscreenIcon(expanded = fullscreen, tint = Color.White)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (sources.size > 1) {
+                            Box {
+                                TextButton(onClick = { menuOpen = true }) {
+                                    Text(
+                                        sources.getOrNull(index)?.quality?.ifEmpty { "清晰度" } ?: "清晰度",
+                                        color = Color.White,
+                                        style = MaterialTheme.typography.labelLarge,
+                                    )
+                                }
+                                DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                                    sources.forEachIndexed { i, source ->
+                                        DropdownMenuItem(
+                                            text = {
+                                                Text(
+                                                    (source.quality.ifEmpty { "默认" }) +
+                                                        if (i == index) " · 当前" else "",
+                                                )
+                                            },
+                                            onClick = {
+                                                menuOpen = false
+                                                if (i != index) {
+                                                    resumeMs = player.currentPosition
+                                                    error = null
+                                                    index = i
+                                                }
+                                            },
+                                        )
+                                    }
+                                }
+                            }
+                        }
+                        IconButton(onClick = { fullscreen = !fullscreen }) {
+                            FullscreenIcon(expanded = fullscreen, tint = Color.White)
+                        }
+                    }
                 }
             }
         }
@@ -408,7 +548,7 @@ fun VideoPlayerScreen(
             Card(
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
-                    .padding(bottom = 96.dp, start = 16.dp, end = 16.dp),
+                    .padding(bottom = 120.dp, start = 16.dp, end = 16.dp),
                 colors = CardDefaults.cardColors(containerColor = Color(0xE6222226)),
                 shape = RoundedCornerShape(14.dp),
             ) {
@@ -425,7 +565,7 @@ fun VideoPlayerScreen(
                     TextButton(onClick = {
                         player.seekTo(pendingResume)
                         pendingResume = 0L
-                        playerViewRef?.showController()
+                        controlsVisible = true
                     }) { Text("快进") }
                     TextButton(onClick = {
                         player.seekTo(0)
@@ -462,7 +602,6 @@ fun VideoPlayerScreen(
         }
     }
 
-    // 线路 Tab → 该线路剧集（与剧集详情页同一组件）
     if (sheet != PlayerSheet.NONE && series != null) {
         ModalBottomSheet(
             onDismissRequest = { sheet = PlayerSheet.NONE },
@@ -497,14 +636,20 @@ fun VideoPlayerScreen(
     }
 }
 
-private enum class PlayerSheet { NONE, SWITCHER }
+/** 暂停图标（两条竖线），不依赖 material-icons-extended */
+@Composable
+private fun PauseIcon(tint: Color, boxSize: androidx.compose.ui.unit.Dp = 22.dp) {
+    Canvas(modifier = Modifier.size(boxSize)) {
+        val w = size.width
+        val barWidth = w * 0.22f
+        val top = w * 0.12f
+        val bottom = w * 0.88f
+        drawRect(tint, topLeft = androidx.compose.ui.geometry.Offset(w * 0.22f, top), size = androidx.compose.ui.geometry.Size(barWidth, bottom - top))
+        drawRect(tint, topLeft = androidx.compose.ui.geometry.Offset(w * 0.56f, top), size = androidx.compose.ui.geometry.Size(barWidth, bottom - top))
+    }
+}
 
-/**
- * 全屏 / 退出全屏图标：四个角括号。
- *
- * 不用 `material-icons-extended`（为两个图标引整套不划算），直接按坐标画。
- * 进入全屏时括号贴边，退出时向内收。
- */
+/** 全屏 / 退出全屏图标：四个角括号 */
 @Composable
 private fun FullscreenIcon(expanded: Boolean, tint: Color, boxSize: androidx.compose.ui.unit.Dp = 22.dp) {
     Canvas(modifier = Modifier.size(boxSize)) {
@@ -517,17 +662,15 @@ private fun FullscreenIcon(expanded: Boolean, tint: Color, boxSize: androidx.com
         val right = w - inset
         val bottom = w - inset
         fun point(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x, y)
-        // 左上
         drawLine(tint, point(left, top + arm), point(left, top), strokeWidth = stroke)
         drawLine(tint, point(left, top), point(left + arm, top), strokeWidth = stroke)
-        // 右上
         drawLine(tint, point(right - arm, top), point(right, top), strokeWidth = stroke)
         drawLine(tint, point(right, top), point(right, top + arm), strokeWidth = stroke)
-        // 左下
         drawLine(tint, point(left, bottom - arm), point(left, bottom), strokeWidth = stroke)
         drawLine(tint, point(left, bottom), point(left + arm, bottom), strokeWidth = stroke)
-        // 右下
         drawLine(tint, point(right - arm, bottom), point(right, bottom), strokeWidth = stroke)
         drawLine(tint, point(right, bottom), point(right, bottom - arm), strokeWidth = stroke)
     }
 }
+
+private enum class PlayerSheet { NONE, SWITCHER }

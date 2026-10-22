@@ -609,6 +609,34 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 referer = reader.referer,
                 resumePositionMs = reader.resumePositionMs,
                 series = reader.series,
+                onPrevEpisode = reader.series?.takeIf { ctx -> ctx.currentIndex > 0 }?.let { ctx ->
+                    {
+                        playSeriesEpisode(
+                            item = reader.item,
+                            info = reader.backToSeries,
+                            analysis = ctx.analysis,
+                            line = ctx.currentLine ?: ctx.analysis.first(),
+                            episodes = ctx.episodes,
+                            episodeIndex = ctx.currentIndex - 1,
+                            startMs = 0L,
+                            resumeMs = 0L,
+                        )
+                    }
+                },
+                onNextEpisode = reader.series?.takeIf { ctx -> ctx.currentIndex < ctx.episodes.size - 1 }?.let { ctx ->
+                    {
+                        playSeriesEpisode(
+                            item = reader.item,
+                            info = reader.backToSeries,
+                            analysis = ctx.analysis,
+                            line = ctx.currentLine ?: ctx.analysis.first(),
+                            episodes = ctx.episodes,
+                            episodeIndex = ctx.currentIndex + 1,
+                            startMs = 0L,
+                            resumeMs = 0L,
+                        )
+                    }
+                },
                 onSelectEpisode = { nextIndex ->
                     val ctx = reader.series
                     if (ctx != null) {
