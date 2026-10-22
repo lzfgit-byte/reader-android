@@ -170,6 +170,15 @@ fun VideoPlayerScreen(
     var dragging by remember(currentUrl) { mutableStateOf(false) }
     var dragPosition by remember(currentUrl) { mutableLongStateOf(0L) }
 
+    // 硬件返回键：交给播放器自己的返回逻辑，避免直接退出应用
+    androidx.activity.compose.BackHandler {
+        if (locked) {
+            locked = false
+        } else {
+            onBack()
+        }
+    }
+
     val player = remember(currentUrl) {
         // 视频 CDN 常拦截代理出口 IP（直连 200、走代理 403）：403 时直连重试一次
         val baseClient = GhsApp.instance.proxiedClient()

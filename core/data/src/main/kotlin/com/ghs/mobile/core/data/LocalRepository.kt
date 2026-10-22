@@ -134,6 +134,13 @@ class LocalRepository(private val database: GhsDatabase) {
         historyDao.trim(keep)
     }
 
+
+    /**
+     * 一次性迁移：早期版本把收藏/历史统一写在 `demo` 名下，
+     * 现在按站点隔离，把这些记录改到指定站点，避免"历史突然空了"。
+     */
+    suspend fun migrateLegacyHistory(from: String = "demo", to: String): Int =
+        historyDao.renameConfigKey(from, to)
     suspend fun clearHistory() = historyDao.clear()
 
     // ── 搜索历史 ────────────────────────────────────────────────────────────

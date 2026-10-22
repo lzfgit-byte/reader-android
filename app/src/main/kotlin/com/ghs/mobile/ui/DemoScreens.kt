@@ -228,6 +228,17 @@ fun DemoApp(
         }
     }
 
+    // 一次性把旧版本写在 demo 名下的历史迁到当前站点
+    LaunchedEffect(siteKey) {
+        if (siteKey == "demo") return@LaunchedEffect
+        val done = withContext(Dispatchers.IO) { repository.settings(SettingScope.DEVICE)["history_migrated"] }
+        if (done == "1") return@LaunchedEffect
+        withContext(Dispatchers.IO) {
+            runCatching { repository.migrateLegacyHistory(to = siteKey) }
+            repository.putSetting(SettingScope.DEVICE, "history_migrated", "1")
+        }
+        refreshLibrary()
+    }
     LaunchedEffect(Unit, siteKey) { refreshLibrary() }
 
     // 切到收藏/历史时重新读一次：数据可能在别处（阅读、收藏）被改过
@@ -1055,28 +1066,8 @@ fun DemoApp(
         }
     }
 
-    // 日志云：有日志时在顶部显示最新一条，点开看全部
+    // 日志入口在左侧抽屉里：点开看配置脚本输出的日志
     val latestLog = logEntries.lastOrNull()
-    if (latestLog != null && !logSheetOpen) {
-        Surface(
-            onClick = { logSheetOpen = true },
-            shape = RoundedCornerShape(50),
-            color = Color(0xE62A2A2E),
-            shadowElevation = 6.dp,
-            modifier = Modifier
-                .padding(top = 56.dp)
-                .widthIn(max = 320.dp),
-        ) {
-            Text(
-                latestLog,
-                color = Color(0xFFE6E6EA),
-                style = MaterialTheme.typography.labelSmall,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-            )
-        }
-    }
     if (logSheetOpen) {
         ModalBottomSheet(
             onDismissRequest = { logSheetOpen = false },
@@ -1174,6 +1165,21 @@ fun DemoApp(
             ) {
                 Column(modifier = Modifier.fillMaxSize().padding(top = 24.dp)) {
                     drawerSettings()
+                    NavigationDrawerItem(
+                        label = {
+                            Text(
+                                if (logEntries.isEmpty()) "引擎日志"
+                                else "引擎日志 · ${logEntries.size}",
+                            )
+                        },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            logSheetOpen = true
+                        },
+                        icon = { Icon(Icons.Default.List, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
                     NavigationDrawerItem(
                         label = { Text("引擎自检") },
                         selected = false,

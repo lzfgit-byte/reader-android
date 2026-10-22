@@ -78,6 +78,11 @@ interface HistoryDao {
     @Query("SELECT COUNT(*) FROM viewed_history")
     suspend fun count(): Int
 
+
+    /** 一次性迁移：把旧版本统一写在 demo 名下的记录改到当前站点 */
+    @Query("UPDATE viewed_history SET configKey = :to WHERE configKey = :from")
+    suspend fun renameConfigKey(from: String, to: String): Int
+
     @Query("DELETE FROM viewed_history")
     suspend fun clear()
 }
