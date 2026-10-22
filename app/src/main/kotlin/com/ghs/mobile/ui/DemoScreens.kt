@@ -144,6 +144,8 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
     var searchError by remember { mutableStateOf<String?>(null) }
     // 列表形态：双列卡片 / 单列行卡片（参考常见阅读客户端）
     var layoutMode by remember { mutableStateOf(ItemCardLayout.GRID) }
+    // 图片清晰度：默认原图（fullUrl），可切到展示图（url）
+    var imageQuality by remember { mutableStateOf(ImageQuality.ORIGINAL) }
     var loadingMore by remember { mutableStateOf(false) }
     var noMore by remember { mutableStateOf(false) }
     // 从标签进入的列表：标题显示标签名；null 表示首页
@@ -273,6 +275,11 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         }
         configs = loaded
         configKey = selected?.key
+        // 恢复上次选择的图片清晰度
+        imageQuality = when (repository.settings(SettingScope.PREFS)["imageQuality"]) {
+            "preview" -> ImageQuality.PREVIEW
+            else -> ImageQuality.ORIGINAL
+        }
     }
 
     // 网页端保存/新建/删除后，服务端会发通知：列表页立刻重载
@@ -417,6 +424,15 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 pages = reader.pages,
                 chapters = chapters,
                 startIndex = reader.startIndex,
+                quality = imageQuality,
+                onQualityChange = { next ->
+                    imageQuality = next
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            repository.putSetting(SettingScope.PREFS, "imageQuality", next.name.lowercase())
+                        }
+                    }
+                },
                 onProgress = { index ->
                     scope.launch {
                         repository.saveProgress(

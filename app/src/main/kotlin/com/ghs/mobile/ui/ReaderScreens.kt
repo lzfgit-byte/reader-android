@@ -66,6 +66,10 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.material3.TextButton
+
+/** 图片清晰度：原图（`fullUrl`）或展示图（`url`） */
+enum class ImageQuality { ORIGINAL, PREVIEW }
 
 /**
  * 图集阅读器：横向翻页 + 页码指示 + 目录 + 进度回写。
@@ -79,6 +83,8 @@ fun ComicReaderScreen(
     pages: List<Detail>,
     chapters: List<CContent>,
     startIndex: Int,
+    quality: ImageQuality,
+    onQualityChange: (ImageQuality) -> Unit,
     onProgress: (pageIndex: Int) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -110,6 +116,7 @@ fun ComicReaderScreen(
             ZoomablePage(
                 page = pages.getOrNull(index),
                 index = index,
+                quality = quality,
                 onTap = { chromeVisible = !chromeVisible },
             )
         }
@@ -128,6 +135,25 @@ fun ComicReaderScreen(
                     }
                 },
                 actions = {
+                    // 图片有两级地址：url（展示用）/ fullUrl（原图），可随时切换
+                    val hasBoth = pages.any { page ->
+                        page.fullUrl?.isNotBlank() == true &&
+                            page.url.isNotBlank() &&
+                            page.fullUrl != page.url
+                    }
+                    if (hasBoth) {
+                        TextButton(onClick = {
+                            onQualityChange(
+                                if (quality == ImageQuality.ORIGINAL) {
+                                    ImageQuality.PREVIEW
+                                } else {
+                                    ImageQuality.ORIGINAL
+                                },
+                            )
+                        }) {
+                            Text(if (quality == ImageQuality.ORIGINAL) "原图" else "缩略图")
+                        }
+                    }
                     IconButton(onClick = { showChapters = true }) {
                         Icon(Icons.Default.List, contentDescription = "目录")
                     }
@@ -314,14 +340,29 @@ fun TextReaderScreen(
 }
 
 /**
- * 单页图片：双指缩放 + 拖动，双击在 1x / 2.5x 之间切换。
+ * 单页图片：双指缩放 + 拖动，双击在 1x / 2x 之间切换。
  *
  * 缩放到 1x 时横向拖动交还给 Pager，保证翻页手势不被吃掉。
+ * 选原图时若加载失败，自动退回展示图（`url`），避免整页空白。
  */
 @Composable
-private fun ZoomablePage(page: Detail?, index: Int, onTap: () -> Unit) {
+private fun ZoomablePage(
+    page: Detail?,
+    index: Int,
+    quality: ImageQuality,
+    onTap: () -> Unit,
+) {
     var scale by remember(index) { mutableFloatStateOf(1f) }
     var offset by remember(index) { mutableStateOf(Offset.Zero) }
+    var fellBack by remember(index, quality) { mutableStateOf(false) }
+
+    val original = page?.fullUrl?.takeIf { it.isNotBlank() }
+    val preview = page?.url.orEmpty()
+    val model = when {
+        quality == ImageQuality.ORIGINAL && !fellBack && original != null -> original
+        preview.isNotEmpty() -> preview
+        else -> original.orEmpty()
+    }
 
     Box(
         modifier = Modifier
@@ -349,7 +390,7 @@ private fun ZoomablePage(page: Detail?, index: Int, onTap: () -> Unit) {
         contentAlignment = Alignment.Center,
     ) {
         SubcomposeAsyncImage(
-            model = page?.preferredUrl.orEmpty(),
+            model = model,
             contentDescription = "第 ${index + 1} 页",
             modifier = Modifier
                 .fillMaxSize()
@@ -361,7 +402,13 @@ private fun ZoomablePage(page: Detail?, index: Int, onTap: () -> Unit) {
                 },
             contentScale = ContentScale.Fit,
             loading = { PagePlaceholder(page, index, "加载中…") },
-            error = { PagePlaceholder(page, index, null) },
+            error = {
+                // 原图挂了就退展示图；已经退过就显示占位
+                if (quality == ImageQuality.ORIGINAL && !fellBack && original != null && preview.isNotEmpty()) {
+                    fellBack = true
+                }
+                PagePlaceholder(page, index, if (fellBack) null else "加载失败，已切到展示图")
+            },
         )
     }
 }
