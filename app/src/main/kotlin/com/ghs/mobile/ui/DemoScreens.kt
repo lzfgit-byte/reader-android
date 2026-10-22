@@ -105,6 +105,12 @@ private sealed interface Screen {
         val startIndex: Int,
         val startMs: Long,
         val referer: String? = null,
+        /** 上次看到的位置：进播放器后提示「快进」而不是直接跳 */
+        val resumePositionMs: Long = 0L,
+        /** 剧集上下文：播放器里可直接换集 / 换线路 */
+        val series: SeriesPlayback? = null,
+        /** 从剧集进入时带上详情，返回键回到剧集页而不是列表 */
+        val backToSeries: DetailInfo? = null,
     ) : Screen
     data class SearchResults(val keyword: String, val page: Page) : Screen
     data class Failed(val message: String) : Screen
@@ -417,6 +423,51 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
         }
     }
 
+    /**
+     * 解析某一集并进入播放器。
+     *
+     * 剧集的「选集」「换线路」以及首次续看都复用这里，避免三处各写一遍解析逻辑。
+     */
+    fun playSeriesEpisode(
+        item: Item,
+        info: DetailInfo?,
+        analysis: kotlin.collections.List<Analysis>,
+        line: Analysis,
+        episodes: kotlin.collections.List<AnalysisDetail>,
+        episodeIndex: Int,
+        startMs: Long,
+        resumeMs: Long,
+    ) {
+        val episode = episodes.getOrNull(episodeIndex) ?: return
+        scope.launch {
+            val video = runCatching {
+                withContext(Dispatchers.IO) { session?.episodeVideo(episode) }
+            }.getOrNull()
+            if (video != null && video.url.isNotEmpty()) {
+                screen = Screen.VideoPlayer(
+                    item = item,
+                    sources = listOf(
+                        com.ghs.mobile.core.model.Detail(
+                            url = video.url,
+                            quality = video.name.ifEmpty { episode.title },
+                            title = video.name,
+                        ),
+                    ),
+                    startIndex = 0,
+                    startMs = startMs,
+                    referer = deviceReferer(session, item),
+                    resumePositionMs = resumeMs,
+                    series = SeriesPlayback(
+                        analysis = analysis,
+                        lineUrl = line.url,
+                        episodes = episodes,
+                        currentIndex = episodeIndex,
+                    ),
+                )
+            }
+        }
+    }
+
     // 阅读器自带顶栏：直接整屏渲染，避免与外层 Scaffold 叠成双顶栏
     when (val reader = screen) {
         is Screen.ComicReader -> {
@@ -473,6 +524,34 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
             var seriesLoading by remember { mutableStateOf(false) }
             var seriesError by remember { mutableStateOf<String?>(null) }
 
+            // 上次看过：直接进那一集，并带上「上次看到 mm:ss」的续看提示
+            var restored by remember(reader.item.jumpUrl) { mutableStateOf(false) }
+            LaunchedEffect(reader.item.jumpUrl) {
+                if (restored) return@LaunchedEffect
+                restored = true
+                val saved = withContext(Dispatchers.IO) { repository.progress(reader.item.jumpUrl) }
+                if (saved == null) return@LaunchedEffect
+                if (saved.chapterUrl.isBlank()) return@LaunchedEffect
+                val line = reader.info.analysis.firstOrNull { it.url == saved.chapterUrl }
+                    ?: return@LaunchedEffect
+                val active = session ?: return@LaunchedEffect
+                seriesLoading = true
+                val list = runCatching { withContext(Dispatchers.IO) { active.episodes(line) } }
+                    .getOrDefault(emptyList())
+                seriesLoading = false
+                if (list.isEmpty()) return@LaunchedEffect
+                playSeriesEpisode(
+                    item = reader.item,
+                    info = reader.info,
+                    analysis = reader.info.analysis,
+                    line = line,
+                    episodes = list,
+                    episodeIndex = saved.chapterIndex.coerceIn(0, list.size - 1),
+                    startMs = 0L,
+                    resumeMs = saved.positionMs,
+                )
+            }
+
             // 选中分段 → 取该分段下的每一集
             LaunchedEffect(selected) {
                 val part = selected ?: return@LaunchedEffect
@@ -495,33 +574,23 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 onSelect = { selected = it },
                 onBackToAnalysis = { selected = null },
                 onPlay = { episode ->
-                    val active = session
-                    if (active == null) {
+                    val line = selected
+                    if (session == null) {
                         seriesError = "会话未就绪"
+                    } else if (line == null) {
+                        seriesError = "请先选择分段"
                     } else {
-                        scope.launch {
-                            seriesError = null
-                            val video = runCatching {
-                                withContext(Dispatchers.IO) { active.episodeVideo(episode) }
-                            }.getOrNull()
-                            if (video != null && video.url.isNotEmpty()) {
-                                screen = Screen.VideoPlayer(
-                                    item = reader.item,
-                                    sources = listOf(
-                                        com.ghs.mobile.core.model.Detail(
-                                            url = video.url,
-                                            quality = video.name.ifEmpty { episode.title },
-                                            title = video.name,
-                                        ),
-                                    ),
-                                    startIndex = 0,
-                                    startMs = 0L,
-                                    referer = deviceReferer(session, reader.item),
-                                )
-                            } else {
-                                seriesError = "该集没有解析到播放地址"
-                            }
-                        }
+                        val epIndex = episodes.indexOfFirst { it.url == episode.url }.coerceAtLeast(0)
+                        playSeriesEpisode(
+                            item = reader.item,
+                            info = reader.info,
+                            analysis = reader.info.analysis,
+                            line = line,
+                            episodes = episodes,
+                            episodeIndex = epIndex,
+                            startMs = 0L,
+                            resumeMs = 0L,
+                        )
                     }
                 },
                 onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
@@ -536,13 +605,59 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                 startIndex = reader.startIndex,
                 startPositionMs = reader.startMs,
                 referer = reader.referer,
-                onProgress = { sourceUrl, position, duration ->
+                resumePositionMs = reader.resumePositionMs,
+                series = reader.series,
+                onSelectEpisode = { nextIndex ->
+                    val ctx = reader.series
+                    if (ctx != null) {
+                        playSeriesEpisode(
+                            item = reader.item,
+                            info = reader.backToSeries,
+                            analysis = ctx.analysis,
+                            line = ctx.currentLine ?: ctx.analysis.first(),
+                            episodes = ctx.episodes,
+                            episodeIndex = nextIndex,
+                            startMs = 0L,
+                            resumeMs = 0L,
+                        )
+                    }
+                },
+                onSelectLine = { lineUrl ->
+                    val ctx = reader.series
+                    val line = ctx?.analysis?.firstOrNull { it.url == lineUrl }
+                    if (ctx != null && line != null) {
+                        scope.launch {
+                            val list = runCatching {
+                                withContext(Dispatchers.IO) { session?.episodes(line) }
+                            }.getOrNull().orEmpty()
+                            if (list.isNotEmpty()) {
+                                // 换线路尽量停在同一集
+                                val nextIndex = ctx.currentIndex.coerceIn(0, list.size - 1)
+                                playSeriesEpisode(
+                                    item = reader.item,
+                                    info = reader.backToSeries,
+                                    analysis = ctx.analysis,
+                                    line = line,
+                                    episodes = list,
+                                    episodeIndex = nextIndex,
+                                    startMs = 0L,
+                                    resumeMs = 0L,
+                                )
+                            }
+                        }
+                    }
+                },
+                onProgress = { _, position, duration ->
+                    val ctx = reader.series
                     scope.launch {
                         repository.saveProgress(
                             ReadingProgress(
                                 itemUrl = reader.item.jumpUrl,
                                 kind = ReaderKind.VIDEO,
-                                chapterUrl = sourceUrl,
+                                // 剧集：把「线路 + 第几集」也记下来，下次直接续上
+                                chapterUrl = ctx?.lineUrl ?: reader.sources.getOrNull(reader.startIndex)?.url.orEmpty(),
+                                chapterIndex = ctx?.currentIndex ?: 0,
+                                chapterCount = ctx?.episodes?.size ?: ctx?.analysis?.size ?: 0,
                                 positionMs = position,
                                 durationMs = duration,
                                 percent = if (duration > 0) position * 100.0 / duration else 0.0,
@@ -551,7 +666,14 @@ fun DemoApp(onOpenProbe: () -> Unit = {}, onOpenSettings: () -> Unit = {}) {
                         )
                     }
                 },
-                onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
+                onBack = {
+                    val back = reader.backToSeries
+                    screen = if (back != null) {
+                        Screen.Series(reader.item, back)
+                    } else {
+                        lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                    }
+                },
             )
             return
         }
@@ -852,18 +974,25 @@ private suspend fun rememberOpened(repository: LocalRepository, item: Item, info
         DetailType.MP4, DetailType.M3U8 -> ReaderKind.VIDEO
         else -> ReaderKind.IMAGE
     }
-    repository.saveProgress(
-        ReadingProgress(
-            itemUrl = item.jumpUrl,
-            kind = kind,
-            chapterUrl = info.details.firstOrNull()?.url ?: item.jumpUrl,
-            chapterIndex = 0,
-            chapterCount = info.details.size,
-            chapterOffset = 0,
-            percent = 0.0,
-            updatedAt = System.currentTimeMillis(),
-        ),
-    )
+    val existing = repository.progress(item.jumpUrl)
+    if (existing == null) {
+        repository.saveProgress(
+            ReadingProgress(
+                itemUrl = item.jumpUrl,
+                kind = kind,
+                chapterUrl = info.details.firstOrNull()?.url ?: item.jumpUrl,
+                chapterIndex = 0,
+                chapterCount = info.details.size,
+                chapterOffset = 0,
+                percent = 0.0,
+                updatedAt = System.currentTimeMillis(),
+            ),
+        )
+    } else {
+        // 已有进度（剧集的「线路 + 第几集 + 播放位置」）时只刷新访问时间：
+        // 用空白记录覆盖会把续看信息冲掉，表现为"明明看过却从头开始"
+        repository.saveProgress(existing.copy(updatedAt = System.currentTimeMillis()))
+    }
     repository.recordView(CONFIG_KEY, item.jumpUrl, ItemCodec.encode(item))
     repository.trimHistory(100)
     repository.putSetting(SettingScope.DEVICE, "last_opened", item.jumpUrl)
