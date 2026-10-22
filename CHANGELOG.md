@@ -193,6 +193,10 @@
   - 新增三段式剧集流程：详情 → 分段（`analysis`）→ 集（`getAnalysisDetail`）→ 播放（`getAnalysisVideoDetail`）
   - 引擎兼容两个方法返回**对象或数组**（配置常见 `return [res]`）
   - 新增 `SeriesScreen`：分段列表 + 5 列集网格 + 「分段」返回
+- **剧集播放打通（F30/F06）**
+  - `text()` 可读取 `<script>` 内容（DataNode 回落），剧集从 ld+json 取播放地址成功
+  - 播放器请求带 Referer 与浏览器 UA
+  - 媒体 403 自动直连重试（视频 CDN 拦截代理出口 IP）
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -329,6 +333,10 @@
   - 新增三段式剧集流程：详情 → 分段（`analysis`）→ 集（`getAnalysisDetail`）→ 播放（`getAnalysisVideoDetail`）
   - 引擎兼容两个方法返回**对象或数组**（配置常见 `return [res]`）
   - 新增 `SeriesScreen`：分段列表 + 5 列集网格 + 「分段」返回
+- **剧集播放打通（F30/F06）**
+  - `text()` 可读取 `<script>` 内容（DataNode 回落），剧集从 ld+json 取播放地址成功
+  - 播放器请求带 Referer 与浏览器 UA
+  - 媒体 403 自动直连重试（视频 CDN 拦截代理出口 IP）
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
