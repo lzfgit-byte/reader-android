@@ -64,6 +64,7 @@ import com.ghs.mobile.GhsApp
 import com.ghs.mobile.core.model.AnalysisDetail
 import com.ghs.mobile.core.model.Detail
 import kotlinx.coroutines.delay
+import androidx.compose.foundation.Canvas
 
 /** 把毫秒格式化成 `12:34` / `1:02:03` */
 internal fun formatDuration(ms: Long): String {
@@ -326,30 +327,6 @@ fun VideoPlayerScreen(
                 if (series != null) {
                     TextButton(onClick = { sheet = PlayerSheet.SWITCHER }) { Text("线路 / 选集") }
                 }
-                if (sources.size > 1) {
-                    Box {
-                        IconButton(onClick = { menuOpen = true }) {
-                            Icon(Icons.Default.List, contentDescription = "清晰度", tint = Color.White)
-                        }
-                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                            sources.forEachIndexed { i, source ->
-                                DropdownMenuItem(
-                                    text = {
-                                        Text((source.quality.ifEmpty { "默认" }) + if (i == index) " · 当前" else "")
-                                    },
-                                    onClick = {
-                                        menuOpen = false
-                                        if (i != index) {
-                                            resumeMs = player.currentPosition
-                                            error = null
-                                            index = i
-                                        }
-                                    },
-                                )
-                            }
-                        }
-                    }
-                }
             }
         } else {
             IconButton(
@@ -384,19 +361,45 @@ fun VideoPlayerScreen(
             }
         }
 
-        // 全屏：右下角（播放控制区，与清晰度同类）
+        // 右下角播放控制：清晰度（文字）+ 全屏（图标），与主流播放器一致
         if (!locked) {
-            TextButton(
-                onClick = { fullscreen = !fullscreen },
+            Row(
                 modifier = Modifier
                     .align(Alignment.BottomEnd)
-                    .padding(end = 12.dp, bottom = 56.dp),
+                    .padding(end = 8.dp, bottom = 48.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                Text(
-                    if (fullscreen) "退出全屏" else "全屏",
-                    color = Color.White,
-                    style = MaterialTheme.typography.labelLarge,
-                )
+                if (sources.size > 1) {
+                    Box {
+                        TextButton(onClick = { menuOpen = true }) {
+                            Text(
+                                sources.getOrNull(index)?.quality?.ifEmpty { "清晰度" } ?: "清晰度",
+                                color = Color.White,
+                                style = MaterialTheme.typography.labelLarge,
+                            )
+                        }
+                        DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
+                            sources.forEachIndexed { i, source ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text((source.quality.ifEmpty { "默认" }) + if (i == index) " · 当前" else "")
+                                    },
+                                    onClick = {
+                                        menuOpen = false
+                                        if (i != index) {
+                                            resumeMs = player.currentPosition
+                                            error = null
+                                            index = i
+                                        }
+                                    },
+                                )
+                            }
+                        }
+                    }
+                }
+                IconButton(onClick = { fullscreen = !fullscreen }) {
+                    FullscreenIcon(expanded = fullscreen, tint = Color.White)
+                }
             }
         }
 
@@ -495,3 +498,36 @@ fun VideoPlayerScreen(
 }
 
 private enum class PlayerSheet { NONE, SWITCHER }
+
+/**
+ * 全屏 / 退出全屏图标：四个角括号。
+ *
+ * 不用 `material-icons-extended`（为两个图标引整套不划算），直接按坐标画。
+ * 进入全屏时括号贴边，退出时向内收。
+ */
+@Composable
+private fun FullscreenIcon(expanded: Boolean, tint: Color, boxSize: androidx.compose.ui.unit.Dp = 22.dp) {
+    Canvas(modifier = Modifier.size(boxSize)) {
+        val w = size.width
+        val inset = w * if (expanded) 0.32f else 0.02f
+        val arm = w * 0.32f
+        val stroke = w * 0.12f
+        val left = inset
+        val top = inset
+        val right = w - inset
+        val bottom = w - inset
+        fun point(x: Float, y: Float) = androidx.compose.ui.geometry.Offset(x, y)
+        // 左上
+        drawLine(tint, point(left, top + arm), point(left, top), strokeWidth = stroke)
+        drawLine(tint, point(left, top), point(left + arm, top), strokeWidth = stroke)
+        // 右上
+        drawLine(tint, point(right - arm, top), point(right, top), strokeWidth = stroke)
+        drawLine(tint, point(right, top), point(right, top + arm), strokeWidth = stroke)
+        // 左下
+        drawLine(tint, point(left, bottom - arm), point(left, bottom), strokeWidth = stroke)
+        drawLine(tint, point(left, bottom), point(left + arm, bottom), strokeWidth = stroke)
+        // 右下
+        drawLine(tint, point(right - arm, bottom), point(right, bottom), strokeWidth = stroke)
+        drawLine(tint, point(right, bottom), point(right, bottom - arm), strokeWidth = stroke)
+    }
+}
