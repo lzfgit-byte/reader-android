@@ -76,6 +76,14 @@ import androidx.compose.foundation.gestures.calculateZoom
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.material3.ExtendedFloatingActionButton
+import coil.compose.AsyncImage
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.Switch
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.material3.FloatingActionButton
+import androidx.compose.material.icons.filled.ArrowForward
 
 /** 图片清晰度：原图（`fullUrl`）或展示图（`url`） */
 enum class ImageQuality { ORIGINAL, PREVIEW }
@@ -97,62 +105,69 @@ fun ComicReaderScreen(
     onQualityChange: (ImageQuality) -> Unit,
     onProgress: (pageIndex: Int) -> Unit,
     onBack: () -> Unit,
+    chapterIndex: Int = 0,
+    preloadNext: Boolean = false,
+    onPreloadNextChange: (Boolean) -> Unit = {},
+    onChapterSelected: (Int) -> Unit = {},
+    onNextChapter: (() -> Unit)? = null,
 ) {
-    val pagerState = rememberPagerState(
-        initialPage = startIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
-    ) { pages.size }
-    val current by remember { derivedStateOf { pagerState.currentPage } }
-    android.util.Log.i("GHS", "reader imageMaxWidth=$imageMaxWidth (quality=$quality)")
     val scope = rememberCoroutineScope()
+    val listState = rememberLazyListState(
+        initialFirstVisibleItemIndex = startIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
+    )
+    val current by remember { derivedStateOf { listState.firstVisibleItemIndex.coerceAtMost((pages.size - 1).coerceAtLeast(0)) } }
+    val atBottom by remember {
+        derivedStateOf {
+            val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+            last >= pages.size - 2
+        }
+    }
+    val percent = if (pages.isEmpty()) 0 else ((current + 1) * 100 / pages.size)
 
     var showChapters by remember { mutableStateOf(false) }
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    var chromeVisible by remember { mutableStateOf(true) }
 
-    LaunchedEffect(pagerState) {
-        snapshotFlow { pagerState.currentPage }.collect { index -> onProgress(index) }
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.firstVisibleItemIndex }.collect { index -> onProgress(index) }
     }
 
-    // 预取相邻页（±1 与 +2）：翻页时不用等下载，也不占太多内存
+    // 预取后续几页：连续滚动时不用等下载
     val context = LocalContext.current
     LaunchedEffect(current, quality, pages) {
         val loader = context.imageLoader
-        listOf(current - 1, current + 1, current + 2)
-            .filter { it in pages.indices && it != current }
-            .forEach { i ->
-                val page = pages[i]
-                val url = when (quality) {
-                    ImageQuality.ORIGINAL -> page.fullUrl?.takeIf { it.isNotBlank() } ?: page.url
-                    ImageQuality.PREVIEW -> page.url.ifEmpty { page.fullUrl.orEmpty() }
-                }
-                if (url.isNotEmpty()) {
-                    android.util.Log.i("GHS", "prefetch page ${i + 1} $url")
-                    loader.enqueue(
-                        ImageRequest.Builder(context)
-                            .data(url)
-                            .size(imageMaxWidth)
-                            .build(),
-                    )
-                }
+        (1..3).forEach { delta ->
+            val i = current + delta
+            val page = pages.getOrNull(i) ?: return@forEach
+            val url = page.preferQuality(quality)
+            if (url.isNotEmpty()) {
+                android.util.Log.i("GHS", "prefetch page ${i + 1} $url")
+                loader.enqueue(ImageRequest.Builder(context).data(url).size(imageMaxWidth).build())
             }
+        }
     }
 
-    // 看图时点一下隐藏顶栏/页码，再点恢复（沉浸式）
-    var chromeVisible by remember { mutableStateOf(true) }
+    // 预加载下一话：滚动到后段时提前把下一话图片拉一遍（只做一次）
+    var preloadFired by remember(chapterIndex) { mutableStateOf(false) }
+    LaunchedEffect(preloadNext, current, pages.size) {
+        if (!preloadNext || preloadFired || pages.isEmpty()) return@LaunchedEffect
+        if (current >= pages.size * 6 / 10) {
+            preloadFired = true
+            val next = chapters.getOrNull(chapterIndex + 1) ?: return@LaunchedEffect
+            android.util.Log.i("GHS", "preload next chapter: ${next.title}")
+            onChapterSelected(chapterIndex + 1)
+        }
+    }
 
     /** 长按保存当前页到相册（按当前清晰度取地址） */
     fun saveCurrentPage() {
         val page = pages.getOrNull(current) ?: return
-        val url = when (quality) {
-            ImageQuality.ORIGINAL -> page.fullUrl?.takeIf { it.isNotBlank() } ?: page.url
-            ImageQuality.PREVIEW -> page.url.ifEmpty { page.fullUrl.orEmpty() }
-        }
+        val url = page.preferQuality(quality)
         if (url.isBlank()) return
-        // 图床常校验 Referer，用图片所在站点的 origin 兜底
         val referer = runCatching {
             val uri = java.net.URI(url)
             "${uri.scheme}://${uri.host}/"
         }.getOrNull()
-
         scope.launch {
             val result = runCatching {
                 withContext(Dispatchers.IO) { ImageSaver.save(context, url, referer) }
@@ -165,23 +180,51 @@ fun ComicReaderScreen(
         }
     }
 
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF1B1B1F)),
-    ) {
-        HorizontalPager(
-            state = pagerState,
+    Box(modifier = Modifier.fillMaxSize().background(Color(0xFF151517))) {
+        // 连续滚动：所有图片上下拼接，一滚到底
+        LazyColumn(
+            state = listState,
             modifier = Modifier.fillMaxSize(),
-        ) { index ->
-            ZoomablePage(
-                page = pages.getOrNull(index),
-                index = index,
-                quality = quality,
-                imageMaxWidth = imageMaxWidth,
-                onTap = { chromeVisible = !chromeVisible },
-                onLongPress = { saveCurrentPage() },
-            )
+        ) {
+            itemsIndexed(pages) { index, page ->
+                val url = page.preferQuality(quality)
+                AsyncImage(
+                    model = ImageRequest.Builder(context)
+                        .data(url)
+                        .size(imageMaxWidth)
+                        .crossfade(true)
+                        .build(),
+                    contentDescription = "第 ${index + 1} 页",
+                    contentScale = ContentScale.FillWidth,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .combinedClickable(
+                            onClick = { chromeVisible = !chromeVisible },
+                            onLongClick = { saveCurrentPage() },
+                        ),
+                )
+            }
+            item {
+                // 到底：下一话入口
+                if (chapters.size > 1 || onNextChapter != null) {
+                    Box(
+                        modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        if (chapters.getOrNull(chapterIndex + 1) != null) {
+                            Button(onClick = { onChapterSelected(chapterIndex + 1) }) {
+                                Text("下一话")
+                            }
+                        } else {
+                            Text(
+                                "已经是最后一话",
+                                color = Color(0xFF8A8A93),
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
+                    }
+                }
+            }
         }
 
         AnimatedVisibility(
@@ -192,12 +235,19 @@ fun ComicReaderScreen(
         ) {
             TopAppBar(
                 title = {
-                    Text(
-                        title,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier.basicMarquee(),
-                    )
+                    Column {
+                        Text(
+                            chapters.getOrNull(chapterIndex)?.title?.ifEmpty { title } ?: title,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.basicMarquee(),
+                        )
+                        Text(
+                            "${current + 1}/${pages.size} · $percent%",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
                 },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
@@ -205,7 +255,6 @@ fun ComicReaderScreen(
                     }
                 },
                 actions = {
-                    // 图片有两级地址：url（展示用）/ fullUrl（原图），可随时切换
                     val hasBoth = pages.any { page ->
                         page.fullUrl?.isNotBlank() == true &&
                             page.url.isNotBlank() &&
@@ -224,64 +273,99 @@ fun ComicReaderScreen(
                             Text(if (quality == ImageQuality.ORIGINAL) "原图" else "缩略图")
                         }
                     }
-                    IconButton(onClick = { showChapters = true }) {
-                        Icon(Icons.Default.List, contentDescription = "目录")
-                    }
                 },
             )
         }
 
-        if (chromeVisible) {
-            Text(
-                "${current + 1} / ${pages.size}",
-                style = MaterialTheme.typography.titleMedium,
-                color = Color(0xFFE6E6EA),
+        // 右下角：目录（评论未实现，暂不显示）
+        Column(
+            modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 32.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            FloatingActionButton(
+                onClick = { showChapters = true },
+                containerColor = MaterialTheme.colorScheme.primaryContainer,
+            ) {
+                Icon(Icons.Default.List, contentDescription = "目录")
+            }
+        }
+
+        // 底部「下一话」：滚到最底部时出现
+        if (atBottom && chapters.getOrNull(chapterIndex + 1) != null) {
+            ExtendedFloatingActionButton(
+                onClick = { onChapterSelected(chapterIndex + 1) },
+                icon = { Icon(Icons.Default.ArrowForward, contentDescription = null) },
+                text = { Text("下一话") },
                 modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .padding(bottom = 28.dp)
-                    .background(Color(0x99000000), RoundedCornerShape(12.dp))
-                    .padding(horizontal = 14.dp, vertical = 6.dp),
+                    .align(Alignment.BottomEnd)
+                    .padding(end = 16.dp, bottom = 96.dp),
             )
         }
     }
 
     if (showChapters) {
         ModalBottomSheet(onDismissRequest = { showChapters = false }, sheetState = sheetState) {
-            Text(
-                "目录 · ${chapters.size} 项",
-                style = MaterialTheme.typography.titleMedium,
-                modifier = Modifier.padding(16.dp),
-            )
+            // 预加载下一话开关：放在目录顶部
+            Row(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text("预加载下一话", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        "当前章节滚到后段时，后台提前请求下一话",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Switch(checked = preloadNext, onCheckedChange = onPreloadNextChange)
+            }
+            HorizontalDivider()
             LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
                 itemsIndexed(chapters) { index, chapter ->
-                    val isCurrent = index == current
+                    val isCurrent = index == chapterIndex
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable {
-                                scope.launch {
-                                    pagerState.animateScrollToPage(index.coerceIn(0, (pages.size - 1).coerceAtLeast(0)))
-                                    showChapters = false
-                                }
+                                showChapters = false
+                                onChapterSelected(index)
                             }
-                            .padding(horizontal = 16.dp, vertical = 12.dp),
+                            .padding(horizontal = 16.dp, vertical = 14.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
-                            chapter.title.ifEmpty { "第 ${index + 1} 页" },
+                            "${index + 1}/${chapters.size}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Text(
+                            chapter.title.ifEmpty { "第 ${index + 1} 话" },
                             style = MaterialTheme.typography.bodyLarge,
                             color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
+                            modifier = Modifier.weight(1f).padding(start = 12.dp),
                         )
                         if (isCurrent) {
-                            Text("当前", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary)
+                            Text(
+                                "当前",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
                         }
                     }
                 }
             }
         }
     }
+}
+
+/** 按清晰度取地址：原图优先 fullUrl，缩略图优先 url */
+private fun Detail.preferQuality(quality: ImageQuality): String = when (quality) {
+    ImageQuality.ORIGINAL -> fullUrl?.takeIf { it.isNotBlank() } ?: url
+    ImageQuality.PREVIEW -> url.ifEmpty { fullUrl.orEmpty() }
 }
 
 @Composable

@@ -122,7 +122,16 @@ private sealed interface Screen {
     data object Loading : Screen
     data class List(val page: Page) : Screen
     data class Detail(val item: Item, val info: DetailInfo?) : Screen
-    data class ComicReader(val item: Item, val pages: kotlin.collections.List<com.ghs.mobile.core.model.Detail>, val startIndex: Int) : Screen
+    data class ComicReader(
+        val item: Item,
+        val pages: kotlin.collections.List<com.ghs.mobile.core.model.Detail>,
+        val startIndex: Int,
+        /** 目录（getContents）；空表示单组图 */
+        val chapters: kotlin.collections.List<CContent> = emptyList(),
+        val chapterIndex: Int = 0,
+        /** 目录里的「预加载下一话」开关 */
+        val preloadNext: Boolean = false,
+    ) : Screen
     data class Series(val item: Item, val info: DetailInfo) : Screen
     data class VideoPlayer(
         val item: Item,
@@ -530,6 +539,8 @@ fun DemoApp(
                         item = item,
                         pages = images.map { com.ghs.mobile.core.model.Detail(url = it.url) },
                         startIndex = saved?.chapterOffset ?: 0,
+                        chapters = chapters,
+                        chapterIndex = chapters.indexOfFirst { it.url == target }.coerceAtLeast(0),
                     )
                     return@launch
                 }
@@ -627,19 +638,27 @@ fun DemoApp(
     // 阅读器自带顶栏：直接整屏渲染，避免与外层 Scaffold 叠成双顶栏
     when (val reader = screen) {
         is Screen.ComicReader -> {
-            var chapters by remember(reader.item.jumpUrl) {
-                mutableStateOf<kotlin.collections.List<CContent>>(emptyList())
+            // 章节切换：取新章节的图片，保留目录与「预加载下一话」开关
+            fun openChapter(index: Int) {
+                val chapter = reader.chapters.getOrNull(index) ?: return
+                val active = session ?: return
+                scope.launch {
+                    val images = runCatching {
+                        withContext(Dispatchers.IO) { active.comicPages(chapter.url) }
+                    }.getOrDefault(emptyList())
+                    if (images.isEmpty()) return@launch
+                    screen = reader.copy(
+                        pages = images.map { com.ghs.mobile.core.model.Detail(url = it.url) },
+                        startIndex = 0,
+                        chapterIndex = index,
+                    )
+                }
             }
-            LaunchedEffect(reader.item.jumpUrl) {
-                val active = session ?: return@LaunchedEffect
-                chapters = runCatching {
-                    withContext(Dispatchers.IO) { active.contents(reader.item.jumpUrl) }
-                }.getOrDefault(emptyList())
-            }
+
             ComicReaderScreen(
                 title = reader.item.title,
                 pages = reader.pages,
-                chapters = chapters,
+                chapters = reader.chapters,
                 startIndex = reader.startIndex,
                 quality = imageQuality,
                 imageMaxWidth = session?.imageMaxWidth ?: 1080,
@@ -657,9 +676,9 @@ fun DemoApp(
                             ReadingProgress(
                                 itemUrl = reader.item.jumpUrl,
                                 kind = ReaderKind.IMAGE,
-                                chapterUrl = reader.pages.getOrNull(index)?.url.orEmpty(),
-                                chapterIndex = 0,
-                                chapterCount = reader.pages.size,
+                                chapterUrl = reader.chapters.getOrNull(reader.chapterIndex)?.url.orEmpty(),
+                                chapterIndex = reader.chapterIndex,
+                                chapterCount = reader.chapters.size.coerceAtLeast(1),
                                 chapterOffset = index,
                                 percent = ((index + 1) * 100.0 / reader.pages.size.coerceAtLeast(1)),
                                 updatedAt = System.currentTimeMillis(),
@@ -668,6 +687,11 @@ fun DemoApp(
                     }
                 },
                 onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
+                chapterIndex = reader.chapterIndex,
+                preloadNext = reader.preloadNext,
+                onPreloadNextChange = { enabled -> screen = reader.copy(preloadNext = enabled) },
+                onChapterSelected = { index -> openChapter(index) },
+                onNextChapter = { openChapter(reader.chapterIndex + 1) },
             )
             return
         }
