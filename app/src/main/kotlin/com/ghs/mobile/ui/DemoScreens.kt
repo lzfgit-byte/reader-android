@@ -447,10 +447,14 @@ fun DemoApp(
         }
 
         session = created
-        session = created
         // 调试台（F25）：把求值器挂到当前会话上
         com.ghs.mobile.web.DebugHub.evaluator = { code -> created.eval(code) }
         runCatching { withContext(Dispatchers.IO) { created.page() } }
+            .onSuccess {
+                currentListUrl = created.homeUrl
+                lastPage = it
+                screen = Screen.List(it)
+            }
             .onFailure { screen = Screen.Failed(it.message ?: it.toString()) }
     }
 
