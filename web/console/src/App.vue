@@ -426,7 +426,7 @@ onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer
         <button @click="runDebug">运行</button>
         <pre v-if="debugResult" class="debug-pre">{{ debugResult }}</pre>
         <p v-if="debugError" class="status error">{{ debugError }}</p>
-        <p class="debug-hint">可用 <code>config</code>（配置对象）与 <code>$</code>（当前文档）</p>
+        <p class="debug-hint">可用 <code>config</code>（配置对象）与 <code>$</code>（当前文档）；表达式直接给结果，多行语句需 <code>return</code></p>
       </aside>
     </main>
   </div>

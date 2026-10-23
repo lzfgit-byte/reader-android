@@ -133,8 +133,24 @@ class ReaderSession(
      * 会话已关闭时返回提示文本而不是抛异常：调试台要能显示"不可用"而不是 500。
      */
     fun eval(code: String): String {
-        return runCatching { engine.eval(code, "<debug>")?.toString() ?: "null" }
-            .getOrElse { "eval 失败：" + (it.message ?: it.toString()) }
+        val trimmed = code.trim()
+        if (trimmed.isEmpty()) return "(空)"
+        // 调试台里既会写表达式（config.key），也会写语句块（const a = 1; a + 1）。
+        // 引擎的 eval 会把内容包成 `return (...)`，语句块会语法错误，所以两种形态都试。
+        val looksLikeStatements = trimmed.endsWith(";") ||
+            Regex("(?m)^\\s*(const|let|var|if|for|while|return)\\b").containsMatchIn(trimmed)
+        val attempts = if (looksLikeStatements) {
+            listOf("(function(){ $trimmed })()", trimmed)
+        } else {
+            listOf(trimmed, "(function(){ $trimmed })()")
+        }
+        var failure: String? = null
+        attempts.forEach { script ->
+            val outcome = runCatching { engine.eval(script, "<debug>") }
+            if (outcome.isSuccess) return outcome.getOrNull()?.toString() ?: "null"
+            failure = outcome.exceptionOrNull()?.message ?: outcome.exceptionOrNull().toString()
+        }
+        return "eval 失败：$failure"
     }
 
     /** 剧集：分析项 → 集列表 */
