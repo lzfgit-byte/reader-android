@@ -533,16 +533,22 @@ fun DemoApp(
                 val chapterUrl = info.details.first().url
                 val chapters = runCatching { withContext(Dispatchers.IO) { active.comicChapters(chapterUrl) } }
                     .getOrDefault(emptyList())
+                val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+                // 续看要回到「上次那一话」：只记页码、不记话数会永远从第一话开始
+                val startChapter = (saved?.chapterIndex ?: 0)
+                    .coerceIn(0, (chapters.size - 1).coerceAtLeast(0))
                 // 18C 这类：目录返回「开始阅读」一条，url 指到真正的图页
-                val target = chapters.firstOrNull { it.url.isNotBlank() }?.url ?: chapterUrl
+                val target = chapters.getOrNull(startChapter)?.url?.takeIf { it.isNotBlank() }
+                    ?: chapters.firstOrNull { it.url.isNotBlank() }?.url
+                    ?: chapterUrl
                 val images = runCatching { withContext(Dispatchers.IO) { active.comicPages(target) } }
                     .getOrDefault(emptyList())
                 if (images.isNotEmpty()) {
-                    val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+                    val sameChapter = saved != null && saved.chapterIndex == startChapter
                     screen = Screen.ComicReader(
                         item = item,
                         pages = images.map { com.ghs.mobile.core.model.Detail(url = it.url) },
-                        startIndex = saved?.chapterOffset ?: 0,
+                        startIndex = if (sameChapter) saved?.chapterOffset ?: 0 else 0,
                         chapters = chapters,
                         chapterIndex = chapters.indexOfFirst { it.url == target }.coerceAtLeast(0),
                     )
