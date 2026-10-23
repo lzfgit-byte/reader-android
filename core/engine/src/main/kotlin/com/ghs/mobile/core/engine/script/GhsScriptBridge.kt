@@ -239,6 +239,8 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
             globalThis.helpElText = function (el) { return el && el.__h ? __text(el.__h) : ''; };
             globalThis.hashString = function (s) { return __hash(String(s)); };
             globalThis.Md5 = function (s) { return __md5(String(s)); };
+            // 解图函数约定的 Md5 是对象形态：Md5.hashStr(text)
+            globalThis.__ghsMd5HashStr = function (s) { return __md5(String(s)); };
             globalThis.LogMsgUtil = { sendLogMsg: function () { __log.apply(null, arguments); } };
             globalThis.ConsoleLogUtil = { log: function () { __log.apply(null, arguments); } };
             globalThis.MessageUtil = {

@@ -148,14 +148,33 @@ class ConfigEngine(
         val mime = if (bytes.size > 12 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF") "image/webp" else "image/jpeg"
         bridge.setGlobalValue("__ghsImgSrc", "data:$mime;base64,$base64")
         val extraExpr = extraExpression(extra)
-        // 配置里的 adapterImageCode 可能是「函数体字符串」（反引号包着 return ...），
-        // 也可能直接是函数：两种情况都先取到可调用的函数再执行。
-        val call = "(function(){ " +
-            "var f = (typeof config.adapterImageCode === 'function') " +
-            "? config.adapterImageCode " +
-            ": (new Function(String(config.adapterImageCode)))(); " +
-            "return f(__ghsImgSrc, $extraExpr, Md5, ${quote(url)}, {value: ''}, " +
-            "function(m){ __log(String(m)); }); })()"
+        // 与参考实现对齐的三处约定：
+        // - imgSrc 是对象 { value: dataURL }，配置可能异步把结果写回 value
+        // - canvas 是对象 { value: canvas 元素 }（不是字符串）
+        // - Md5 是对象 { hashStr(text) }
+        // 配置里的 adapterImageCode 可能是「函数体字符串」，先 new Function 取函数。
+        val call = "(function(){" +
+            "var src = { value: __ghsImgSrc };" +
+            "var canvas = { value: document.createElement('canvas') };" +
+            "var Md5 = { hashStr: __ghsMd5HashStr };" +
+            "var f = (typeof config.adapterImageCode === 'function')" +
+            "? config.adapterImageCode" +
+            ": (new Function(String(config.adapterImageCode)))();" +
+            "var out = '';" +
+            "try { out = f(src, $extraExpr, Md5, ${quote(url)}, canvas, function(m){ __log(String(m)); }); }" +
+            "catch (e) { __log('adapterImageCode error: ' + e); return ''; }" +
+            "return Promise.resolve(out).then(function(v){" +
+            "  if (typeof v === 'string' && v) src.value = v;" +
+            "  return new Promise(function(res){" +
+            "    var n = 0;" +
+            "    var t = setInterval(function(){" +
+            "      n++;" +
+            "      var value = src.value || '';" +
+            "      if (value.indexOf('data:') === 0 || n > 200) { clearInterval(t); res(value); }" +
+            "    }, 50);" +
+            "  });" +
+            "}).catch(function(e){ __log('adapterImageCode reject: ' + e); return ''; });" +
+            "})()"
         val result = bridge.invokeAwaitRaw(call) as? String
         val payload = result?.substringAfter("base64,", "")?.takeIf { it.isNotBlank() } ?: return null
         java.util.Base64.getDecoder().decode(payload)
