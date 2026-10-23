@@ -157,8 +157,6 @@ fun ComicReaderScreen(
                 loader.enqueue(
                     ImageRequest.Builder(context)
                         .data(url)
-                        .memoryCacheKey("ghs-decoded-$url")
-                        .diskCacheKey("ghs-decoded-$url")
                         .size(coil.size.Size.ORIGINAL)
                         .build(),
                 )
@@ -248,9 +246,6 @@ fun ComicReaderScreen(
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
                                     .data(url)
-                                    // 解码后的图与原始字节分开缓存，否则会命中旧的未解码副本
-                                    .memoryCacheKey("ghs-decoded-$url")
-                                    .diskCacheKey("ghs-decoded-$url")
                                     .size(coil.size.Size.ORIGINAL)
                                     .crossfade(true)
                                     .build(),
