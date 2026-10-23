@@ -40,6 +40,12 @@ export interface ConsoleApi {
   exportAll(): Promise<string>
   /** 导入：单份脚本原文或整包 JSON 文本 */
   importConfigs(payload: string): Promise<{ imported: number; keys: string[] }>
+  /** 实时调试台：当前运行时状态 */
+  debugState(): Promise<Record<string, unknown>>
+  /** 实时调试台：脚本日志 */
+  debugLogs(): Promise<string[]>
+  /** 实时调试台：在配置上下文里执行一段 JS（可用 `config` 与 `$`） */
+  debugRun(code: string): Promise<string>
 }
 
 const STORAGE_KEY = 'ghs.console.configs'
@@ -194,6 +200,15 @@ export function createMockApi(): ConsoleApi {
     async exportAll() {
       return JSON.stringify({ version: 1, configs: loadAll() }, null, 2)
     },
+    async debugState() {
+      return { ready: false, message: '本地预览模式没有运行时状态' }
+    },
+    async debugLogs() {
+      return []
+    },
+    async debugRun(code) {
+      return `本地预览模式无法执行：${code}`
+    },
     async importConfigs(payload) {
       const all = loadAll()
       const keys: string[] = []
@@ -337,6 +352,20 @@ export function createHttpApi(): ConsoleApi {
         method: 'POST',
         body: JSON.stringify(body),
       })
+    },
+    async debugState() {
+      return await call<Record<string, unknown>>('/state')
+    },
+    async debugLogs() {
+      const data = await call<{ logs: string[] }>('/logs')
+      return data.logs ?? []
+    },
+    async debugRun(code) {
+      const data = await call<{ result: string }>('/debug/run', {
+        method: 'POST',
+        body: JSON.stringify({ code }),
+      })
+      return data.result ?? ''
     },
   }
 }

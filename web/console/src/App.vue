@@ -28,6 +28,52 @@ let monacoApi: MonacoModule | null = null
 const current = computed(() => configs.value.find((item) => item.key === selectedKey.value) ?? null)
 const allIssues = computed<Issue[]>(() => [...issues.value.errors, ...issues.value.warnings])
 
+// ── 实时调试台（F25）──────────────────────────────────────────
+// ?debug=1 直接展开调试台，方便收藏成书签
+const debugOpen = ref(typeof window !== 'undefined' && window.location.search.includes('debug'))
+const debugState = ref<string>('')
+const debugLogs = ref<string[]>([])
+const debugCode = ref('JSON.stringify(config.key)')
+const debugResult = ref('')
+const debugError = ref('')
+let debugTimer: number | null = null
+// 默认展开（?debug=1）时立刻拉一次并开始轮询
+if (debugOpen.value) {
+  void refreshDebug()
+  debugTimer = window.setInterval(() => void refreshDebug(), 2000)
+}
+
+async function refreshDebug(): Promise<void> {
+  try {
+    debugState.value = JSON.stringify(await api.debugState(), null, 2)
+    debugLogs.value = await api.debugLogs()
+    debugError.value = ''
+  } catch (e) {
+    debugError.value = String(e)
+  }
+}
+
+function toggleDebug(): void {
+  debugOpen.value = !debugOpen.value
+  if (debugOpen.value) {
+    void refreshDebug()
+    debugTimer = window.setInterval(() => void refreshDebug(), 2000)
+  } else if (debugTimer !== null) {
+    window.clearInterval(debugTimer)
+    debugTimer = null
+  }
+}
+
+async function runDebug(): Promise<void> {
+  try {
+    debugResult.value = await api.debugRun(debugCode.value)
+    debugError.value = ''
+  } catch (e) {
+    debugResult.value = ''
+    debugError.value = String(e)
+  }
+}
+
 // ── 导入 / 导出 ────────────────────────────────────────────────
 const importInput = ref<HTMLInputElement | null>(null)
 const importing = ref(false)
@@ -261,6 +307,7 @@ onMounted(async () => {
 })
 
 onBeforeUnmount(() => editor.value?.dispose())
+onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer) })
 </script>
 
 <template>
@@ -281,6 +328,7 @@ onBeforeUnmount(() => editor.value?.dispose())
         </button>
         <button class="ghost" @click="exportCurrent" :disabled="!selectedKey">导出当前</button>
         <button class="ghost" @click="exportAll">导出全部</button>
+        <button class="ghost" :class="{ active: debugOpen }" @click="toggleDebug">调试</button>
         <button class="ghost" @click="createConfig">新建</button>
         <button class="ghost danger" @click="removeConfig">删除</button>
         <span v-if="error" class="status error">{{ error }}</span>
@@ -362,6 +410,23 @@ onBeforeUnmount(() => editor.value?.dispose())
           <p>必需方法 {{ REQUIRED_METHODS.length }} 个</p>
           <p>提示来自 <code>config-api.d.ts</code>（规范的派生物）</p>
         </div>
+      </aside>
+
+      <aside v-if="debugOpen" class="debug">
+        <div class="debug-head">
+          <strong>实时调试台</strong>
+          <button class="ghost" @click="refreshDebug">刷新</button>
+        </div>
+        <h4>状态</h4>
+        <pre class="debug-pre">{{ debugState }}</pre>
+        <h4>日志（{{ debugLogs.length }}）</h4>
+        <pre class="debug-pre logs">{{ debugLogs.join('\n') || '（暂无日志）' }}</pre>
+        <h4>执行脚本</h4>
+        <textarea v-model="debugCode" class="debug-code" spellcheck="false"></textarea>
+        <button @click="runDebug">运行</button>
+        <pre v-if="debugResult" class="debug-pre">{{ debugResult }}</pre>
+        <p v-if="debugError" class="status error">{{ debugError }}</p>
+        <p class="debug-hint">可用 <code>config</code>（配置对象）与 <code>$</code>（当前文档）</p>
       </aside>
     </main>
   </div>
@@ -479,4 +544,54 @@ button.danger { border-color: #5a3030; color: #e39a9a; }
 }
 .solid-danger { background: #b4453f; }
 
+
+/* 实时调试台（F25）：右侧固定宽度，独立滚动 */
+/* 实时调试台（F25）：右侧固定抽屉，可独立滚动 */
+.debug {
+  position: fixed;
+  top: 56px;
+  right: 0;
+  bottom: 0;
+  width: 380px;
+  z-index: 20;
+  background: #1b1b1f;
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.45);
+  padding: 14px 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.debug-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.debug-pre {
+  margin: 0;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  font-family: ui-monospace, monospace;
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow: auto;
+}
+.debug-pre.logs { max-height: 160px; }
+.debug-code {
+  width: 100%;
+  min-height: 76px;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  color: inherit;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  font-family: ui-monospace, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+.debug-hint { color: rgba(255, 255, 255, 0.45); font-size: 11px; margin: 0; }
 </style>

@@ -5,6 +5,7 @@ import fi.iki.elonen.NanoHTTPD
 import java.io.ByteArrayInputStream
 import org.json.JSONArray
 import org.json.JSONObject
+import com.ghs.mobile.core.engine.script.LogHub
 
 /**
  * 内置 Web 管理服务（F23）。
@@ -88,6 +89,9 @@ class AdminServer(
 
         return runCatching {
             when {
+                path == "/state" && method == Method.GET -> state()
+                path == "/logs" && method == Method.GET -> logs()
+                path == "/debug/run" && method == Method.POST -> debugRun(rawBody)
                 path == "/meta" && method == Method.GET -> jsonOk(
                     JSONObject()
                         .put("appVersion", appVersion)
@@ -181,6 +185,43 @@ class AdminServer(
      *
      * 这个结构可直接被 [importConfigs] 读回，用于整机备份/迁移。
      */
+    /** 当前运行时状态：App 没上报过就返回空对象 + 提示 */
+    private fun state(): Response {
+        val snapshot = DebugHub.snapshot
+        if (snapshot.isBlank()) {
+            return jsonOk(
+                JSONObject()
+                    .put("ready", false)
+                    .put("message", "App 尚未加载配置"),
+            )
+        }
+        return jsonOk(runCatching { JSONObject(snapshot) }.getOrElse { JSONObject().put("raw", snapshot) })
+            .apply { /* 保持 200：调试台需要看到原文 */ }
+    }
+
+    /** 脚本日志（LogHub 内存环形缓冲，最新在后） */
+    private fun logs(): Response {
+        val array = JSONArray()
+        LogHub.recent().forEach { array.put(it) }
+        return jsonOk(JSONObject().put("logs", array))
+    }
+
+    /**
+     * 在配置脚本上下文里执行一段 JS。
+     *
+     * 这是调试台的核心能力：可以 `getData().getItems($)` 这类方式直接验证选择器。
+     * 没有活动会话时返回 409，前端据此提示"先在 App 里打开一个站点"。
+     */
+    private fun debugRun(rawBody: String): Response {
+        val runner = DebugHub.evaluator
+            ?: return json(Response.Status.CONFLICT, error("E-DBG-001", "没有活动会话：先在 App 中打开站点"))
+        val code = parseJson(rawBody).optString("code")
+        if (code.isBlank()) {
+            return json(Response.Status.BAD_REQUEST, error("E-DBG-002", "缺少 code"))
+        }
+        return jsonOk(JSONObject().put("result", runner(code)))
+    }
+
     private fun exportConfigs(): Response {
         val array = JSONArray()
         store.list().forEach { config ->

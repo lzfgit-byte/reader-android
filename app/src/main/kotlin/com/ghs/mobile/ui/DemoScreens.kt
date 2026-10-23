@@ -447,12 +447,10 @@ fun DemoApp(
         }
 
         session = created
+        session = created
+        // 调试台（F25）：把求值器挂到当前会话上
+        com.ghs.mobile.web.DebugHub.evaluator = { code -> created.eval(code) }
         runCatching { withContext(Dispatchers.IO) { created.page() } }
-            .onSuccess {
-                currentListUrl = created.homeUrl
-                lastPage = it
-                screen = Screen.List(it)
-            }
             .onFailure { screen = Screen.Failed(it.message ?: it.toString()) }
     }
 
@@ -858,6 +856,34 @@ fun DemoApp(
         }
 
         else -> Unit
+    }
+
+    // 调试台（F25）：把当前状态上报给内置 Web 服务
+    LaunchedEffect(screen, tab, configKey) {
+        val list = (screen as? Screen.List)?.page
+        val stateName = when (screen) {
+            is Screen.Loading -> "Loading"
+            is Screen.List -> "List"
+            is Screen.Detail -> "Detail"
+            is Screen.ComicReader -> "ComicReader"
+            is Screen.VideoPlayer -> "VideoPlayer"
+            is Screen.Series -> "Series"
+            is Screen.SearchResults -> "SearchResults"
+            is Screen.Failed -> "Failed"
+        }
+        val json = org.json.JSONObject()
+            .put("ready", true)
+            .put("configKey", configKey ?: CONFIG_KEY)
+            .put("tab", tab.name)
+            .put("screen", stateName)
+            .put("url", currentListUrl ?: session?.homeUrl ?: "")
+            .put("items", list?.items?.size ?: 0)
+            .put("tags", list?.tags?.size ?: 0)
+            .put("filterGroups", list?.urlReplace?.size ?: 0)
+            .put("detailError", detailError ?: "")
+            .put("logCount", logEntries.size)
+            .put("updatedAt", System.currentTimeMillis())
+        com.ghs.mobile.web.DebugHub.publish(json.toString())
     }
 
     Scaffold(

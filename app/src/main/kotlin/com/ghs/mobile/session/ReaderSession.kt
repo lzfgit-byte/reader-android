@@ -127,6 +127,16 @@ class ReaderSession(
     /** 筛选/排序后的最终地址（配置的 adapterLoadUrl） */
     fun loadUrl(url: String, replaces: List<UrlReplace>): String = configEngine.loadUrl(url, replaces)
 
+    /**
+     * 在配置脚本上下文里执行一段 JS（调试台用）。
+     *
+     * 会话已关闭时返回提示文本而不是抛异常：调试台要能显示"不可用"而不是 500。
+     */
+    fun eval(code: String): String {
+        return runCatching { engine.eval(code, "<debug>")?.toString() ?: "null" }
+            .getOrElse { "eval 失败：" + (it.message ?: it.toString()) }
+    }
+
     /** 剧集：分析项 → 集列表 */
     fun episodes(analysis: Analysis): List<AnalysisDetail> = configEngine.analysisDetail(analysis)
 
