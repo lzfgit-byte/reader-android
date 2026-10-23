@@ -16,6 +16,7 @@ import com.ghs.mobile.core.model.Analysis
 import com.ghs.mobile.core.model.AnalysisDetail
 import com.ghs.mobile.core.model.AnalysisVideoDetail
 import com.ghs.mobile.core.model.UrlReplace
+import com.ghs.mobile.core.model.CComic
 
 /**
  * 阅读宿主：演示域名走内置样例页面，其它域名走真实网络。
@@ -166,6 +167,12 @@ class ReaderSession(
     }
 
     /** 剧集：分析项 → 集列表 */
+    /** 图集目录：`getContents(url, cheerio)`；返回空表示退化为单组图 */
+    fun comicChapters(url: String): List<CContent> = configEngine.contents(url)
+
+    /** 图集图片：`getComicImages(url, cheerio)` */
+    fun comicPages(url: String): List<CComic> = configEngine.comicImages(url)
+
     fun episodes(analysis: Analysis): List<AnalysisDetail> = configEngine.analysisDetail(analysis)
 
     /** 剧集：单集 → 播放信息 */

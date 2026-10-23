@@ -515,6 +515,25 @@ fun DemoApp(
                 )
                 return@launch
             }
+            // 图集（有目录）：先取目录，再按章节取图片；单章时直接进阅读器
+            if (info != null && info.detailType == DetailType.COMIC && info.details.isNotEmpty()) {
+                val chapterUrl = info.details.first().url
+                val chapters = runCatching { withContext(Dispatchers.IO) { active.comicChapters(chapterUrl) } }
+                    .getOrDefault(emptyList())
+                // 18C 这类：目录返回「开始阅读」一条，url 指到真正的图页
+                val target = chapters.firstOrNull { it.url.isNotBlank() }?.url ?: chapterUrl
+                val images = runCatching { withContext(Dispatchers.IO) { active.comicPages(target) } }
+                    .getOrDefault(emptyList())
+                if (images.isNotEmpty()) {
+                    val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+                    screen = Screen.ComicReader(
+                        item = item,
+                        pages = images.map { com.ghs.mobile.core.model.Detail(url = it.url) },
+                        startIndex = saved?.chapterOffset ?: 0,
+                    )
+                    return@launch
+                }
+            }
             if (info?.detailType == DetailType.TEXT) {
                 textUrl = info.details.firstOrNull()?.url ?: item.jumpUrl
             }
