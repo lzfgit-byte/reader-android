@@ -30,11 +30,14 @@ class ProxyRulesTest {
     }
 
     @Test
-    fun `白名单精确匹配`() {
+    fun `白名单精确匹配并覆盖子域`() {
         assertFalse(rules.shouldProxy("example.com", 80))
         assertFalse(rules.shouldProxy("EXAMPLE.COM", 443))
-        // 子域不在精确匹配内
-        assertTrue(rules.shouldProxy("sub.example.com", 80))
+        // 裸域名同样覆盖子域：图片/静态资源常在不同子域上
+        assertFalse(rules.shouldProxy("sub.example.com", 80))
+        assertFalse(rules.shouldProxy("cdn-msp3.example.com", 443))
+        // 相似但不同域名的不能误伤
+        assertTrue(rules.shouldProxy("notexample.com", 80))
     }
 
     @Test

@@ -237,7 +237,7 @@ private fun ProxyForm(
             value = whitelist,
             onValueChange = { whitelist = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("白名单（逗号分隔，.example.com 匹配子域）") },
+            label = { Text("白名单（逗号分隔；example.com 同时覆盖其子域，如 cdn.example.com）") },
         )
 
         Text(

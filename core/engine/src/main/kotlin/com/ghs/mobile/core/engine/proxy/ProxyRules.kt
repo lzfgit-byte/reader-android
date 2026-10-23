@@ -56,7 +56,9 @@ data class ProxyRules(
         val bare = entryHost.removePrefix("*.").removePrefix(".").lowercase()
         if (bare.isEmpty()) return false
 
-        return if (suffixMatch) host == bare || host.endsWith(".$bare") else host == bare
+        // 裸域名同时覆盖其子域：用户写 example.com 时，cdn.example.com 也应直连
+        // （图片/静态资源常在子域上，否则图片仍走代理被挡）
+        return host == bare || host.endsWith(".$bare")
     }
 
     companion object {
