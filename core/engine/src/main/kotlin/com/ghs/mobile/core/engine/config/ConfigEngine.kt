@@ -21,6 +21,8 @@ import com.ghs.mobile.core.model.TextBlock
 import com.ghs.mobile.core.model.TextContent
 import com.ghs.mobile.core.model.AnalysisDetail
 import com.ghs.mobile.core.model.AnalysisVideoDetail
+import com.ghs.mobile.core.model.UrlAppend
+import com.ghs.mobile.core.model.UrlReplace
 
 /**
  * 配置执行引擎：把「配置脚本 + 页面 HTML」变成领域模型。
@@ -96,7 +98,52 @@ class ConfigEngine(
         items = items(),
         pagination = pagination(),
         tags = tags(),
+        urlReplace = urlReplace(),
     )
+
+    /** `getUrlReplace($)` → 排序 / 筛选分组（配置没写就返回空） */
+    fun urlReplace(): List<UrlReplace> =
+        asList(bridge.invoke("getUrlReplace", "$"))
+            .mapNotNull { row ->
+                val schema = text(row["schema"])
+                val appends = asList(row["urlAppend"]).mapNotNull { entry ->
+                    val value = text(entry["value"])
+                    val title = text(entry["title"])
+                    if (value.isEmpty() && title.isEmpty()) {
+                        null
+                    } else {
+                        UrlAppend(
+                            value = value,
+                            param = text(entry["param"]),
+                            title = title,
+                            current = boolean(entry["current"]),
+                        )
+                    }
+                }
+                if (schema.isEmpty() && appends.isEmpty()) {
+                    null
+                } else {
+                    UrlReplace(schema = schema, urlAppend = appends)
+                }
+            }
+
+    /**
+     * `adapterLoadUrl(url, urlReplaces)` → 最终请求地址。
+     *
+     * 配置没实现、或返回空串时回落原地址，保证筛选面板不会把列表打空。
+     */
+    fun loadUrl(url: String, replaces: List<UrlReplace>): String {
+        if (!bridge.hasMethod("adapterLoadUrl")) return url
+        val array = replaces.joinToString(", ") { group ->
+            val appends = group.urlAppend.joinToString(", ") { entry ->
+                "{ value: ${quote(entry.value)}, param: ${quote(entry.param)}, " +
+                    "title: ${quote(entry.title)}, current: ${entry.current} }"
+            }
+            "{ schema: ${quote(group.schema)}, urlAppend: [$appends] }"
+        }
+        val result = bridge.invoke("adapterLoadUrl", "${quote(url)}, [$array]") as? String
+        return result?.trim()?.takeIf { it.isNotEmpty() } ?: url
+    }
 
     // ── 详情链路 ─────────────────────────────────────────────────────────────
 

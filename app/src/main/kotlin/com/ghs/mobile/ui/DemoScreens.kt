@@ -109,6 +109,8 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material3.FilterChip
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -145,7 +147,7 @@ enum class DemoTab(val label: String) { HOME("首页"), FAVORITES("收藏"), HIS
 /** 演示配置的 key（收藏/历史按配置分组的键） */
 private const val CONFIG_KEY = "demo"
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun DemoApp(
     onOpenProbe: () -> Unit = {},
@@ -183,6 +185,9 @@ fun DemoApp(
     }
     var logSheetOpen by remember { mutableStateOf(false) }
     var showPageSheet by remember { mutableStateOf(false) }
+    // 筛选/排序面板：配置返回的 urlReplace 分组
+    var showFilterSheet by remember { mutableStateOf(false) }
+    var filterLoading by remember { mutableStateOf(false) }
     // 首页刷新中：FAB 转圈 + 列表上加遮罩
     var refreshing by remember { mutableStateOf(false) }
     // 详情解析失败的原因：info == null 既可能是"还在解析"，也可能是"失败了"
@@ -324,6 +329,40 @@ fun DemoApp(
                 screen = Screen.List(page)
             }
             refreshing = false
+        }
+    }
+    /**
+     * 应用筛选/排序：把新选择交给配置的 `adapterLoadUrl` 得到最终地址，再重新取页。
+     *
+     * 只替换被点的那一组，其余组保持原样（配置自己看 current 标记）。
+     */
+    fun applyFilter(schema: String, value: String) {
+        val active = session ?: return
+        val currentPage = (screen as? Screen.List)?.page ?: return
+        val updated = currentPage.urlReplace.map { group ->
+            if (group.schema != schema) {
+                group
+            } else {
+                group.copy(
+                    urlAppend = group.urlAppend.map { entry ->
+                        entry.copy(current = entry.value == value)
+                    },
+                )
+            }
+        }
+        val baseUrl = currentListUrl ?: active.homeUrl
+        filterLoading = true
+        scope.launch {
+            val target = withContext(Dispatchers.IO) { active.loadUrl(baseUrl, updated) }
+            val page = runCatching { withContext(Dispatchers.IO) { active.pageFrom(target) } }.getOrNull()
+            if (page != null) {
+                noMore = false
+                currentListUrl = target
+                lastPage = page
+                screen = Screen.List(page)
+            }
+            filterLoading = false
+            showFilterSheet = false
         }
     }
 
@@ -855,6 +894,13 @@ fun DemoApp(
                         }
                     }
 
+                    // 筛选：仅当配置返回了 urlReplace 分组时出现
+                    val filterGroups = (screen as? Screen.List)?.page?.urlReplace.orEmpty()
+                    if (filterGroups.isNotEmpty()) {
+                        TextButton(onClick = { showFilterSheet = true }) {
+                            Text(if (filterLoading) "筛选中…" else "筛选")
+                        }
+                    }
                     // 页码：右上角，点开抽屉选页
                     if (tab == DemoTab.HOME && screen is Screen.List) {
                         val pages = (screen as? Screen.List)?.page?.pagination.orEmpty()
@@ -1248,6 +1294,38 @@ fun DemoApp(
                         icon = { Icon(Icons.Default.Delete, contentDescription = null) },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
+                }
+            }
+        }
+    }
+
+    // 筛选/排序面板：每个 schema 一组，点一项即重新取页
+    if (showFilterSheet) {
+        val groups = (screen as? Screen.List)?.page?.urlReplace.orEmpty()
+        ModalBottomSheet(
+            onDismissRequest = { showFilterSheet = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(modifier = Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 24.dp)) {
+                Text("筛选与排序", style = MaterialTheme.typography.titleSmall)
+                groups.forEach { group ->
+                    if (group.schema.isNotBlank()) {
+                        Text(
+                            group.schema,
+                            style = MaterialTheme.typography.labelMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 12.dp, bottom = 6.dp),
+                        )
+                    }
+                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        group.urlAppend.forEach { entry ->
+                            FilterChip(
+                                selected = entry.current,
+                                onClick = { applyFilter(group.schema, entry.value) },
+                                label = { Text(entry.title.ifEmpty { entry.value }) },
+                            )
+                        }
+                    }
                 }
             }
         }

@@ -15,6 +15,7 @@ import com.ghs.mobile.core.script.WebViewScriptEngine
 import com.ghs.mobile.core.model.Analysis
 import com.ghs.mobile.core.model.AnalysisDetail
 import com.ghs.mobile.core.model.AnalysisVideoDetail
+import com.ghs.mobile.core.model.UrlReplace
 
 /**
  * 阅读宿主：演示域名走内置样例页面，其它域名走真实网络。
@@ -115,8 +116,16 @@ class ReaderSession(
         val html = configEngine.adapterGetHtml(url) ?: host.fetchHtml(url)
         android.util.Log.i("GHS", "page html=${html.length} hasOwl=${html.contains("owl-stage-outer")} hasWell=${html.contains("div class=\"well")} head=${html.take(200).replace("\n"," ")}")
         configEngine.withHtml(html)
-        return configEngine.page()
+        val page = configEngine.page()
+        android.util.Log.i(
+            "GHS",
+            "page items=${page.items.size} tags=${page.tags.size} urlReplace=${page.urlReplace.size}",
+        )
+        return page
     }
+
+    /** 筛选/排序后的最终地址（配置的 adapterLoadUrl） */
+    fun loadUrl(url: String, replaces: List<UrlReplace>): String = configEngine.loadUrl(url, replaces)
 
     /** 剧集：分析项 → 集列表 */
     fun episodes(analysis: Analysis): List<AnalysisDetail> = configEngine.analysisDetail(analysis)
