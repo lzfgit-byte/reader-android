@@ -3,6 +3,7 @@ package com.ghs.mobile
 import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import com.ghs.mobile.ui.withWebViewFallback
 import com.ghs.mobile.core.data.GhsDatabase
 import com.ghs.mobile.core.data.LocalRepository
 import com.ghs.mobile.core.engine.proxy.RulesProxySelector
@@ -47,6 +48,8 @@ class GhsApp : Application(), ImageLoaderFactory {
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient { proxiedClient() }
+        // OkHttp 取图失败时改用 WebView 渲染（防盗链 / 连接被断 / 403）
+        .withWebViewFallback(this)
         .build()
 
     override fun onCreate() {

@@ -94,6 +94,11 @@ class HttpScriptHost(
                     }
                 }
             }
+            // 连接层失败（connection closed / reset / timeout）也交给 WebView：
+            // WebView 是浏览器握手，抗干扰能力比 OkHttp 强，且能执行页面脚本。
+            android.util.Log.w("GHS", "fetchHtml 连接失败(${lastError?.message}) → webview fallback $url")
+            val viaWebView = fetchWithWebView(url)
+            if (viaWebView.isNotBlank()) return viaWebView
             throw lastError ?: IllegalStateException("取页失败：$url")
         } finally {
             logDone(url, started)
@@ -223,6 +228,8 @@ class HttpScriptHost(
             @SuppressLint("SetJavaScriptEnabled")
             val view = WebView(context.applicationContext)
             view.settings.javaScriptEnabled = true
+            // 兜底用桌面 UA：不少站点对移动 UA 直接返回精简页或挑战页
+            view.settings.userAgentString = DESKTOP_UA
             view.settings.domStorageEnabled = true
             view.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, finishedUrl: String) {
@@ -317,8 +324,10 @@ class HttpScriptHost(
     companion object {
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+        /** WebView 兜底统一用桌面 UA（加载电脑端页面） */
+        private const val DESKTOP_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
         private const val PAGE_TIMEOUT_MS = 180_000L
-        /** 脚本侧请求的尝试次数（每次失败退避 250ms 递增） */
         private const val REQUEST_ATTEMPTS = 3
         private const val EVAL_TIMEOUT_MS = 180_000L
         /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
