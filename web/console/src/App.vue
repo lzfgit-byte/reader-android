@@ -28,6 +28,70 @@ let monacoApi: MonacoModule | null = null
 const current = computed(() => configs.value.find((item) => item.key === selectedKey.value) ?? null)
 const allIssues = computed<Issue[]>(() => [...issues.value.errors, ...issues.value.warnings])
 
+// ── 导入 / 导出 ────────────────────────────────────────────────
+const importInput = ref<HTMLInputElement | null>(null)
+const importing = ref(false)
+
+function pickImportFile(): void {
+  importInput.value?.click()
+}
+
+async function onImportFile(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  importing.value = true
+  try {
+    const text = await file.text()
+    const result = await api.importConfigs(text)
+    status.value = `已导入 ${result.imported} 份配置：${result.keys.join(', ')}`
+    error.value = ''
+    await refresh()
+    if (result.keys[0]) await openConfig(result.keys[0])
+  } catch (e) {
+    error.value = `导入失败：${String(e)}`
+  } finally {
+    importing.value = false
+  }
+}
+
+function downloadText(filename: string, text: string): void {
+  const blob = new Blob([text], { type: 'application/json;charset=utf-8' })
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = filename
+  anchor.click()
+  URL.revokeObjectURL(url)
+}
+
+async function exportAll(): Promise<void> {
+  try {
+    const text = await api.exportAll()
+    const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
+    downloadText(`ghs-configs-${stamp}.json`, text)
+    status.value = '已导出全部配置'
+    error.value = ''
+  } catch (e) {
+    error.value = `导出失败：${String(e)}`
+  }
+}
+
+async function exportCurrent(): Promise<void> {
+  if (!selectedKey.value) return
+  try {
+    const response = await fetch(`/api/configs/${encodeURIComponent(selectedKey.value)}/raw`)
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    const text = await response.text()
+    downloadText(`${selectedKey.value}.js`, text)
+    status.value = `已导出 ${selectedKey.value}`
+    error.value = ''
+  } catch (e) {
+    error.value = `导出失败：${String(e)}`
+  }
+}
+
 async function refresh(): Promise<void> {
   try {
     configs.value = await api.list()
@@ -212,12 +276,18 @@ onBeforeUnmount(() => editor.value?.dispose())
           <span>启用</span>
         </label>
         <button :disabled="saving" @click="save">{{ saving ? '保存中…' : '保存' }}</button>
+        <button class="ghost" :disabled="importing" @click="pickImportFile">
+          {{ importing ? '导入中…' : '导入' }}
+        </button>
+        <button class="ghost" @click="exportCurrent" :disabled="!selectedKey">导出当前</button>
+        <button class="ghost" @click="exportAll">导出全部</button>
         <button class="ghost" @click="createConfig">新建</button>
         <button class="ghost danger" @click="removeConfig">删除</button>
         <span v-if="error" class="status error">{{ error }}</span>
         <span v-else class="status">{{ status }}</span>
       </div>
     </header>
+    <input ref="importInput" type="file" accept=".js,.json,.txt" hidden @change="onImportFile" />
 
     <p v-if="narrow" class="readonly-tip">当前窗口过窄，源码为只读预览；请用桌面浏览器（≥900px）编辑。</p>
 

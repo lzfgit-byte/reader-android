@@ -36,6 +36,10 @@ export interface ConsoleApi {
   save(key: string, source: string, enabled: boolean): Promise<void>
   remove(key: string): Promise<void>
   validate(source: string): Promise<ValidateResult>
+  /** 导出全部配置（JSON 文本，可直接回灌 importConfigs） */
+  exportAll(): Promise<string>
+  /** 导入：单份脚本原文或整包 JSON 文本 */
+  importConfigs(payload: string): Promise<{ imported: number; keys: string[] }>
 }
 
 const STORAGE_KEY = 'ghs.console.configs'
@@ -187,6 +191,36 @@ export function createMockApi(): ConsoleApi {
     async validate(source) {
       return validateLocally(source)
     },
+    async exportAll() {
+      return JSON.stringify({ version: 1, configs: loadAll() }, null, 2)
+    },
+    async importConfigs(payload) {
+      const all = loadAll()
+      const keys: string[] = []
+      const parsed = tryParseJson(payload)
+      if (parsed && Array.isArray(parsed.configs)) {
+        for (const item of parsed.configs) {
+          if (!item?.source) continue
+          const key = item.key || pickKeyFromSource(item.source)
+          if (!key) continue
+          const index = all.findIndex((c) => c.key === key)
+          const record = { key, name: item.name || key, enabled: item.enabled !== false, format: item.source.includes("/* break */") ? "inline" as const : "manifest" as const, updatedAt: Date.now(), source: item.source }
+          if (index >= 0) all[index] = record
+          else all.push(record)
+          keys.push(key)
+        }
+      } else {
+        const key = pickKeyFromSource(payload)
+        if (!key) throw new Error("脚本里没有可用的 key")
+        const index = all.findIndex((c) => c.key === key)
+        const record = { key, name: key, enabled: true, format: payload.includes("/* break */") ? "inline" as const : "manifest" as const, updatedAt: Date.now(), source: payload }
+        if (index >= 0) all[index] = record
+        else all.push(record)
+        keys.push(key)
+      }
+      saveAll(all)
+      return { imported: keys.length, keys }
+    },
   }
 }
 
@@ -284,6 +318,43 @@ export function createHttpApi(): ConsoleApi {
         body: JSON.stringify({ config: source, format: 'inline' }),
       })
     },
+
+    async exportAll() {
+      const response = await fetch('/api/configs/export', { credentials: 'same-origin' })
+      if (!response.ok) {
+        throw new ApiError(response.status, `HTTP_${response.status}`, '导出失败')
+      }
+      return await response.text()
+    },
+
+    async importConfigs(payload) {
+      const parsed = tryParseJson(payload)
+      const body =
+        parsed && Array.isArray(parsed.configs)
+          ? { configs: parsed.configs }
+          : { config: payload }
+      return await call<{ imported: number; keys: string[] }>('/configs/import', {
+        method: 'POST',
+        body: JSON.stringify(body),
+      })
+    },
+  }
+}
+
+/** 从脚本原文里取 `key:`；取不到返回空串 */
+function pickKeyFromSource(source: string): string {
+  const match = /\bkey\s*:\s*['"]([^'"]+)['"]/.exec(source)
+  return match ? match[1].trim() : ''
+}
+
+/** 宽松解析 JSON：不是以 `{` 开头或解析失败时返回 null（导入可能是裸脚本文本） */
+function tryParseJson(text: string): any | null {
+  const trimmed = text.trim()
+  if (!trimmed.startsWith('{')) return null
+  try {
+    return JSON.parse(trimmed)
+  } catch {
+    return null
   }
 }
 

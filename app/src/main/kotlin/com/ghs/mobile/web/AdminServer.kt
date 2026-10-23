@@ -100,6 +100,8 @@ class AdminServer(
                 path == "/configs" && method == Method.GET -> jsonOk(configList())
                 path == "/configs" && method == Method.POST -> createConfig(rawBody)
                 path == "/configs/order" && method == Method.POST -> reorder(rawBody)
+                path == "/configs/export" && method == Method.GET -> exportConfigs()
+                path == "/configs/import" && method == Method.POST -> importConfigs(rawBody)
                 path == "/validate" && method == Method.POST -> validate(rawBody)
 
                 path.startsWith("/configs/") -> {
@@ -111,6 +113,7 @@ class AdminServer(
                         rest.size == 1 && method == Method.PATCH -> patchConfig(key, rawBody)
                         rest.size == 1 && method == Method.DELETE -> deleteConfig(key)
                         rest.size == 2 && rest[1] == "script" && method == Method.GET -> script(key)
+                        rest.size == 2 && rest[1] == "raw" && method == Method.GET -> rawConfig(key)
                         else -> json(Response.Status.NOT_FOUND, error("E-API-001", "未知路径：$path"))
                     }
                 }
@@ -171,6 +174,99 @@ class AdminServer(
             "text/plain; charset=utf-8",
             config.source,
         )
+    }
+
+    /**
+     * 导出全部配置：`{ configs: [{key,name,enabled,sort,source}] }`。
+     *
+     * 这个结构可直接被 [importConfigs] 读回，用于整机备份/迁移。
+     */
+    private fun exportConfigs(): Response {
+        val array = JSONArray()
+        store.list().forEach { config ->
+            array.put(
+                JSONObject()
+                    .put("key", config.key)
+                    .put("name", pickName(config.source))
+                    .put("enabled", config.enabled)
+                    .put("sort", config.sort)
+                    .put("source", config.source),
+            )
+        }
+        return jsonOk(
+            JSONObject()
+                .put("version", 1)
+                .put("exportedAt", System.currentTimeMillis())
+                .put("configs", array),
+        )
+    }
+
+    /** 单份配置原文：给浏览器下载用（不带 JSON 包装） */
+    private fun rawConfig(key: String): Response {
+        val config = store.get(key)
+            ?: return json(Response.Status.NOT_FOUND, error("E-CFG-404", "配置不存在：$key"))
+        val response = text(config.source)
+        response.addHeader("Content-Disposition", "attachment; filename=\"$key.js\"")
+        return response
+    }
+
+    /**
+     * 导入配置。
+     *
+     * 两种输入：
+     * - `{ config: "<脚本原文>" }`：单份导入，key 取自脚本内 `key:`，已存在则覆盖
+     * - `{ configs: [ ... ] }`：整包导入（[exportConfigs] 的产物）
+     *
+     * 返回 `{ imported: n, keys: [...] }`，前端据此提示。
+     */
+    private fun importConfigs(rawBody: String): Response {
+        val body = parseJson(rawBody)
+        val keys = mutableListOf<String>()
+
+        val single = body.optString("config")
+        if (single.isNotBlank()) {
+            val key = body.optString("key").ifBlank { pickKey(single) }
+            if (!ConfigStore.isValidKey(key)) {
+                return json(Response.Status.BAD_REQUEST, error("E-CFG-003", "key 不合法：$key"))
+            }
+            val existing = store.get(key)
+            store.save(
+                key = key,
+                source = single,
+                enabled = body.optBoolean("enabled", existing?.enabled ?: true),
+                sort = existing?.sort ?: body.optInt("sort", 0),
+            )
+            keys += key
+        }
+
+        val many = body.optJSONArray("configs")
+        if (many != null) {
+            for (i in 0 until many.length()) {
+                val item = many.optJSONObject(i) ?: continue
+                val source = item.optString("source")
+                if (source.isBlank()) continue
+                val key = item.optString("key").ifBlank { pickKey(source) }
+                if (!ConfigStore.isValidKey(key)) continue
+                val existing = store.get(key)
+                store.save(
+                    key = key,
+                    source = source,
+                    enabled = item.optBoolean("enabled", existing?.enabled ?: true),
+                    sort = item.optInt("sort", existing?.sort ?: 0),
+                )
+                keys += key
+            }
+        }
+
+        if (keys.isEmpty()) {
+            return json(
+                Response.Status.BAD_REQUEST,
+                error("E-CFG-002", "没有可导入的内容（缺少 config 或 configs）"),
+            )
+        }
+
+        notifyChanged()
+        return jsonOk(JSONObject().put("imported", keys.size).put("keys", JSONArray(keys)))
     }
 
     private fun createConfig(rawBody: String): Response {
