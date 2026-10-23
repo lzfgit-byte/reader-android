@@ -46,8 +46,14 @@ class WebViewImageFallbackInterceptor(private val context: Context) : Intercepto
         return result
     }
 
-    private fun fallback(request: coil.request.ImageRequest, url: String): ImageResult? {
-        val bitmap = WebViewImageLoader.load(context, url) ?: return null
+    private suspend fun fallback(
+        request: coil.request.ImageRequest,
+        url: String,
+    ): ImageResult? {
+        // 必须切到 IO：WebView 渲染是阻塞等待，放主线程会直接 ANR
+        val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            WebViewImageLoader.load(context, url)
+        } ?: return null
         return SuccessResult(
             drawable = BitmapDrawable(context.resources, bitmap),
             request = request,
@@ -59,7 +65,9 @@ class WebViewImageFallbackInterceptor(private val context: Context) : Intercepto
 /** 用隐藏 WebView（桌面 UA）把图片渲染成位图；失败返回 null */
 object WebViewImageLoader {
 
-    private const val TIMEOUT_MS = 12_000L
+    private const val TIMEOUT_MS = 8_000L
+    /** 同时只允许一个兜底 WebView：抢不到就放弃，避免滚动时堆一堆 WebView */
+    private val gate = java.util.concurrent.Semaphore(1)
     private const val MAX_SIDE = 2048
     private const val DESKTOP_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
