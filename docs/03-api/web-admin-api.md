@@ -119,12 +119,12 @@ POST /api/validate
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| POST | `/api/configs/import` | body：`{ text }` 或 multipart 文件；支持单配置与 bundle |
-| GET | `/api/configs/{key}/export?format=manifest\|inline\|bundle` | 下载 `.ghscfg.json` 或 `.bundle.json` |
-| GET | `/api/configs/export-all` | 全部配置打包下载 |
-| POST | `/api/configs/import-bundle` | 批量导入，逐条返回结果 |
+| GET | `/api/configs/export` | 整包导出：`{version, exportedAt, configs:[{key,name,enabled,sort,source}]}`，可直接回灌导入 |
+| GET | `/api/configs/{key}/raw` | 单份脚本原文（`text/plain` + `Content-Disposition`，供浏览器直接下载） |
+| POST | `/api/configs/import` | `{config}` 单份（key 取自脚本内 `key:`，已存在则覆盖）或 `{configs:[...]}` 整包；返回 `{imported, keys}` |
 
-文件格式定义见 [config-spec](config-spec.md) §2.4。
+> 覆盖导入保留原有的 `enabled` / `sort`。导入与其他 `/api` 一样不校验令牌（内网信任模型）。
+> 尚未实现：按 `format=manifest|inline` 指定导出格式、`import-bundle` 的逐条结果——当前统一按脚本原文处理。
 
 ### 4.4 运行时控制
 
