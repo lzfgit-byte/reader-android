@@ -206,6 +206,8 @@ fun DemoApp(
     var detailElapsedSec by remember { mutableStateOf(0) }
     // 正在解析的条目：不切页面，首页原地转圈
     var parseTarget by remember { mutableStateOf<Item?>(null) }
+    // 打开条目的整体等待态：解析 + 目录 + 图片全流程都显示 loading
+    var opening by remember { mutableStateOf(false) }
     // 网页端改过配置后由服务端通知：在列表页立即重载，阅读中则等回到列表
     var reloadRequest by remember { mutableStateOf(0) }
     // 当前列表地址：刷新按钮用它重新取数据
@@ -482,14 +484,19 @@ fun DemoApp(
         }
     }
 
-    // 打开详情：解析 + 记录进度
-    // 打开详情：不切页面，首页原地转圈解析（可取消）
+    // 打开详情：不切页面，首页原地转圈（可取消）
     LaunchedEffect(parseTarget) {
         val item = parseTarget ?: return@LaunchedEffect
         detailJob?.cancel()
         detailElapsedSec = 0
+        opening = true
         detailJob = scope.launch {
-            val active = session ?: run { parseTarget = null; return@launch }
+            // 任何出口都先收起 loading：解析、目录、图片取完才真正跳转
+            fun finish() {
+                opening = false
+                parseTarget = null
+            }
+            val active = session ?: run { finish(); return@launch }
             detailError = null
             text = null
             textUrl = null
@@ -499,8 +506,6 @@ fun DemoApp(
             if (info != null) {
                 withContext(Dispatchers.IO) { rememberOpened(repository, siteKey, item, info) }
             }
-            // 解析结束，收起转圈
-            parseTarget = null
 
             // 视频：解析出地址后直接播放
             if (info != null && (info.detailType == DetailType.MP4 || info.detailType == DetailType.M3U8)) {
@@ -511,11 +516,13 @@ fun DemoApp(
                     startIndex = 0,
                     startMs = saved?.positionMs ?: 0L,
                 )
+                finish()
                 return@launch
             }
             // 剧集：线路 Tab → 集 → 播放
             if (info != null && info.detailType == DetailType.SERIES) {
                 screen = Screen.Series(item, info)
+                finish()
                 return@launch
             }
             // 图片：直接进阅读器，从上次的页续看
@@ -526,6 +533,7 @@ fun DemoApp(
                     pages = info.details,
                     startIndex = saved?.chapterOffset ?: 0,
                 )
+                finish()
                 return@launch
             }
             // 图集（有目录）：先取目录，再按章节取图片；单章时直接进阅读器
@@ -552,6 +560,7 @@ fun DemoApp(
                         chapters = chapters,
                         chapterIndex = chapters.indexOfFirst { it.url == target }.coerceAtLeast(0),
                     )
+                    finish()
                     return@launch
                 }
             }
@@ -560,6 +569,7 @@ fun DemoApp(
             }
             // 其它情况（文本 / 解析失败）落到详情页展示
             screen = Screen.Detail(item, info)
+            finish()
         }
     }
 
@@ -1269,7 +1279,7 @@ fun DemoApp(
     }
 
     // 解析详情弹窗：显示已用时间，可手动取消
-    val parsingDetail = parseTarget != null
+    val parsingDetail = opening
     if (parsingDetail) {
         Dialog(onDismissRequest = { /* 只能通过按钮关闭，避免误触中断 */ }) {
             Surface(
