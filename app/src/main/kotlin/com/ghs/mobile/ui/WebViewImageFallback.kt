@@ -77,20 +77,24 @@ object WebViewImageLoader {
     private const val DESKTOP_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    /** 同时只允许一个兜底 WebView：抢不到就放弃，避免滚动时堆一堆 */
-    private val gate = java.util.concurrent.Semaphore(1)
+    /** 兜底 WebView 并发：2，兼顾速度与内存 */
+    private val gate = java.util.concurrent.Semaphore(2)
 
-    /** 兜底失败的 host 冷却表：5 分钟内不再逐张重试 */
-    private const val COOLDOWN_MS = 5 * 60 * 1000L
-    private val failedHosts = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    /**
+     * 冷却策略：偶发失败（连接被断）不该让整个 host 停摆。
+     * 连续失败 3 次才冷却 60s；任一成功即清零。
+     */
+    private const val COOLDOWN_MS = 60 * 1000L
+    private const val FAILURES_BEFORE_COOLDOWN = 3
+    private val failureCounts = java.util.concurrent.ConcurrentHashMap<String, Int>()
+    private val cooldownUntil = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
     private val main = Handler(Looper.getMainLooper())
 
     @SuppressLint("SetJavaScriptEnabled")
     fun load(context: Context, url: String): Bitmap? {
         val host = runCatching { java.net.URI(url).host.orEmpty() }.getOrDefault("")
-        val lastFailure = failedHosts[host]
-        if (lastFailure != null && System.currentTimeMillis() - lastFailure < COOLDOWN_MS) return null
+        if (System.currentTimeMillis() < (cooldownUntil[host] ?: 0L)) return null
         if (!gate.tryAcquire(2, TimeUnit.SECONDS)) {
             android.util.Log.w("GHS", "image webview skip (busy) $url")
             return null
@@ -98,16 +102,31 @@ object WebViewImageLoader {
         try {
             val bytes = fetchBytes(context, url)
             if (bytes == null) {
-                if (host.isNotEmpty()) failedHosts[host] = System.currentTimeMillis()
+                recordFailure(host)
                 return null
             }
-            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            val bitmap = BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+            if (bitmap != null) failureCounts.remove(host)
+            return bitmap
         } catch (error: Throwable) {
             android.util.Log.w("GHS", "image webview failed(${error.message}) $url")
-            if (host.isNotEmpty()) failedHosts[host] = System.currentTimeMillis()
+            recordFailure(host)
             return null
         } finally {
             gate.release()
+        }
+    }
+
+    /** 连续失败到阈值才进冷却，避免一次抖动就让整个图床停摆 */
+    private fun recordFailure(host: String) {
+        if (host.isEmpty()) return
+        val count = (failureCounts[host] ?: 0) + 1
+        if (count >= FAILURES_BEFORE_COOLDOWN) {
+            failureCounts[host] = 0
+            cooldownUntil[host] = System.currentTimeMillis() + COOLDOWN_MS
+            android.util.Log.w("GHS", "image webview cooldown 60s: $host")
+        } else {
+            failureCounts[host] = count
         }
     }
 
