@@ -257,6 +257,9 @@
 - **筛选/排序面板（F03）**
   - 引擎解码 `getUrlReplace`，`adapterLoadUrl` 参与最终地址生成
   - 顶栏「筛选」按 schema 分组单选，切换后重新取页
+- **实时调试台（F25）**
+  - `/api/state`、`/api/logs`、`/api/debug/run` 三个接口
+  - 控制台右侧抽屉：状态轮询、日志列表、脚本执行
 ### Fixed
 
 - **真机验证抓到两个 bug（JVM 侧测不出来）**
@@ -457,6 +460,9 @@
 - **筛选/排序面板（F03）**
   - 引擎解码 `getUrlReplace`，`adapterLoadUrl` 参与最终地址生成
   - 顶栏「筛选」按 schema 分组单选，切换后重新取页
+- **实时调试台（F25）**
+  - `/api/state`、`/api/logs`、`/api/debug/run` 三个接口
+  - 控制台右侧抽屉：状态轮询、日志列表、脚本执行
 ### Fixed
 
 - **`config-spec` 的 `key` 正则过严**：原 `^[a-z0-9][a-z0-9_-]{1,31}$` 只允许小写，导致 3/5 份真实配置（`EHentai`、`91P`、`hentaiWord`）被判非法。已放宽为 `^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，并在 `config-spec` §9.2 记为第 32 条核对记录。这是"实现回流文档"发现的**第一处规范缺陷**
