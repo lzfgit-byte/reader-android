@@ -239,6 +239,29 @@ class HttpScriptHost(
 
             view.loadUrl(url)
 
+            // 桌面页资源多、广告脚本常卡住 onPageFinished（实测 25s 都不来）。
+            // 这里并行轮询 DOM 就绪：正文出现就取，不再干等"页面彻底加载完"。
+            Thread {
+                repeat(DOM_POLL_ATTEMPTS) {
+                    Thread.sleep(DOM_POLL_INTERVAL_MS)
+                    if (loaded.count == 0L) return@Thread
+                    val probe = CountDownLatch(1)
+                    var ready = false
+                    onMain {
+                        view.evaluateJavascript(READY_JS) { raw ->
+                            ready = raw?.trim() == "true"
+                            probe.countDown()
+                        }
+                    }
+                    probe.await(2, TimeUnit.SECONDS)
+                    if (ready) {
+                        android.util.Log.i("GHS", "webview DOM ready: $url")
+                        loaded.countDown()
+                        return@Thread
+                    }
+                }
+            }
+
             Thread {
                 try {
                     if (!loaded.await(PAGE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
@@ -331,7 +354,15 @@ class HttpScriptHost(
         private const val REQUEST_ATTEMPTS = 3
         private const val EVAL_TIMEOUT_MS = 180_000L
         /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
-        private const val FALLBACK_TIMEOUT_MS = 25_000L
+        private const val FALLBACK_TIMEOUT_MS = 40_000L
+        /** DOM 就绪轮询：每 500ms 探一次，最多 80 次（约 40s） */
+        private const val DOM_POLL_INTERVAL_MS = 500L
+        private const val DOM_POLL_ATTEMPTS = 80
+
+        /** 正文出现即视为可解析，不要求图片 / 广告脚本全部加载完 */
+        private const val READY_JS =
+            "(document.readyState==='interactive'||document.readyState==='complete')" +
+                "&&!!document.body&&document.body.innerHTML.length>200"
 
         /** 这些状态码说明直连被挡（Cloudflare / 校验页），值得用无头 WebView 再试一次 */
         private val WEBVIEW_FALLBACK_CODES = setOf(403, 429, 503)
