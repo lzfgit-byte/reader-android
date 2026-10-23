@@ -3,11 +3,11 @@ package com.ghs.mobile.ui
 import android.content.Context
 import coil.ImageLoader
 import coil.decode.DataSource
-import coil.decode.ImageSource
 import coil.fetch.FetchResult
 import coil.fetch.Fetcher
 import coil.fetch.SourceResult
 import coil.request.Options
+import okhttp3.Request
 import okio.buffer
 import okio.source
 import java.util.concurrent.ConcurrentHashMap
@@ -15,12 +15,10 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * 图片解码桥（F05 · `adapterImageCode`）。
  *
- * 有些站点把整图切片打散，需要配置里的 `adapterImageCode` 还原。
- * 这里保存两样东西：
  * - `extras`：图片 URL → `CComic.info`（解图参数，如 aid / scrambleId）
- * - `decoder`：把「原始字节」还原成「可直接解码的字节」，由当前会话注入
+ * - `decoder`：原始字节 → 还原后的字节，由当前会话注入
  *
- * 只有登记过 extra 的 URL 才会走这条链路，其它图片完全不受影响。
+ * 只有登记过 extra 的 URL 才会走这条链路。
  */
 object ImageDecodeBridge {
 
@@ -45,9 +43,7 @@ object ImageDecodeBridge {
 }
 
 /**
- * Coil Fetcher：对登记过解图参数的 URL，先取原始字节 → 交给配置还原 → 再交给 Coil 解码。
- *
- * 还原失败时退回原始字节（"先显示原图"），只记日志，不阻塞阅读。
+ * Coil Fetcher：对登记过解图参数的 URL，先取原始字节（带缓存）→ 交给配置还原 → 再解码。
  */
 class DecodedImageFetcher(
     private val url: String,
@@ -58,7 +54,7 @@ class DecodedImageFetcher(
         val decoder = ImageDecodeBridge.decoder ?: return null
         val extra = ImageDecodeBridge.extraOf(url) ?: return null
 
-        val raw = runCatching { fetchBytes(url) }.getOrNull() ?: return null
+        val raw = runCatching { fetchBytesCached(url) }.getOrNull() ?: return null
         val attempt = runCatching { decoder(url, raw, extra) }
         val decoded = attempt.getOrNull()
         val bytes = decoded ?: raw
@@ -75,12 +71,20 @@ class DecodedImageFetcher(
             source = coil.decode.ImageSource(bytes.inputStream().source().buffer(), options.context),
             mimeType = null,
             dataSource = DataSource.NETWORK,
-        ).let { it as FetchResult }
+        )
+    }
+
+    private fun fetchBytesCached(url: String): ByteArray {
+        // 解码前字节缓存：滚动回看不必重新下载
+        ImageCache.rawBytes(url)?.let { return it }
+        val bytes = fetchBytes(url)
+        ImageCache.putRawBytes(url, bytes)
+        return bytes
     }
 
     private fun fetchBytes(url: String): ByteArray {
         val client = com.ghs.mobile.GhsApp.instance.imageClient()
-        val request = okhttp3.Request.Builder()
+        val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
             .header("Referer", originOf(url))
