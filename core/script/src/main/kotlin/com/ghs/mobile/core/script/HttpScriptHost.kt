@@ -35,6 +35,16 @@ class HttpScriptHost(
     // 暴露它会让使用方的编译类路径被迫携带 okhttp。
     private val client: OkHttpClient = defaultClient(proxyRules)
 
+
+    /**
+     * 人机校验回调（F29）。
+     *
+     * 取页被挡时调用；返回 true 表示用户已在顶层窗口完成校验、
+     * 且凭证已写进 WebView Cookie，可以重试原请求。
+     */
+    @Volatile
+    var challengeHandler: ((String) -> Boolean)? = null
+
     override fun fetchHtml(url: String): String {
         val started = System.currentTimeMillis()
         android.util.Log.i("GHS", "fetchHtml start $url")
@@ -47,11 +57,26 @@ class HttpScriptHost(
         try {
             // 代理偶尔在响应收尾时断开（"connection closed"），重试一次通常就好
             var lastError: Exception? = null
+            var challengeTried = false
             repeat(2) { attempt ->
                 try {
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
-                            // 站点用 403/429/503 或 JS 校验挡住直连时，退到无头 WebView 取渲染后的 HTML
+                            // 先走人机校验（F29）：挑战必须在有界面的窗口里完成，
+                            // 无头 WebView 只会撞到同一个挑战然后超时。
+                            if (response.code in WEBVIEW_FALLBACK_CODES && !challengeTried) {
+                                challengeTried = true
+                                val handler = challengeHandler
+                                if (handler != null) {
+                                    android.util.Log.w("GHS", "fetchHtml ${response.code} → 请求人机校验 $url")
+                                    if (handler(url)) {
+                                        android.util.Log.i("GHS", "人机校验完成，重试 $url")
+                                        val retried = retryOnce(request)
+                                        if (retried != null) return retried
+                                    }
+                                }
+                            }
+                            // 校验未启用或没通过时，退回无头 WebView 取渲染后的 HTML
                             if (response.code in WEBVIEW_FALLBACK_CODES) {
                                 android.util.Log.w("GHS", "fetchHtml ${response.code} → webview fallback $url")
                                 val html = fetchWithWebView(url)
@@ -74,6 +99,14 @@ class HttpScriptHost(
             logDone(url, started)
         }
     }
+
+    /** 校验完成后重放一次原请求；仍失败则返回 null 交给上层兜底 */
+    private fun retryOnce(request: Request): String? = runCatching {
+        client.newCall(request).execute().use { response ->
+            if (response.isSuccessful) response.body?.string() else null
+        }
+    }.getOrNull()
+
 
     private fun logDone(url: String, started: Long) {
         android.util.Log.i("GHS", "fetchHtml done ${System.currentTimeMillis() - started}ms $url")
@@ -286,6 +319,8 @@ class HttpScriptHost(
             .callTimeout(180, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .followRedirects(true)
+            // 与 WebView 共用 Cookie：人机校验拿到的凭证后续请求要带上（F29）
+            .cookieJar(WebViewCookieJar())
             .proxySelector(RulesProxySelector(rules))
             .proxyAuthenticator { _, response ->
                 val endpoint = rules().endpoint

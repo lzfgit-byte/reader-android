@@ -30,6 +30,13 @@ class ReaderHost(
 
     private val http = HttpScriptHost(context) { proxyRules }
 
+    /** 人机校验回调透传：取页被挡时由 App 弹出校验窗口（F29） */
+    var challengeHandler: ((String) -> Boolean)?
+        get() = http.challengeHandler
+        set(value) {
+            http.challengeHandler = value
+        }
+
     override fun fetchHtml(url: String): String =
         if (isDemo(url)) assetHtml(url) else http.fetchHtml(url)
 
@@ -108,6 +115,11 @@ class ReaderSession(
     private val host = ReaderHost(context, proxyRules)
     private val engine = WebViewScriptEngine(context, proxyRules)
     private val configEngine = ConfigEngine(engine, host).load(source)
+
+    init {
+        // 取页被挡时弹出人机校验窗口（F29）；完成后 fetchHtml 自动重试
+        host.challengeHandler = { url -> com.ghs.mobile.ui.ChallengeGate.await(url) }
+    }
 
     fun page(): Page = pageFrom(homeUrl)
 

@@ -21,7 +21,14 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-        </activity>
+'        </activity>
+
+        <!-- 人机校验窗口（F29）：独立任务栈，不进最近任务 -->
+        <activity
+            android:name=".ui.ChallengeActivity"
+            android:exported="false"
+            android:excludeFromRecents="true"
+            android:theme="@android:style/Theme.Material.Light.NoActionBar" />'
 
     </application>
 
