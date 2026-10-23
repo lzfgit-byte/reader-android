@@ -41,9 +41,15 @@ class WebAdminController(
          * 全部列出来由用户挑；一个都没有时回落 127.0.0.1。
          */
         val consoleUrls: List<String>
-            get() = localIpAddresses()
-                .ifEmpty { listOf("127.0.0.1") }
-                .map { "http://$it:$port/console/" }
+            get() = if (bindAll) {
+                // 允许局域网访问时才对外暴露局域网地址
+                localIpAddresses()
+                    .ifEmpty { listOf("127.0.0.1") }
+                    .map { "http://$it:$port/console/" }
+            } else {
+                // 仅本机监听：局域网地址根本连不上，只给回环地址
+                listOf("http://127.0.0.1:$port/console/")
+            }
 
         /** 兼容旧调用：取第一个地址 */
         val consoleUrl: String get() = consoleUrls.first()
