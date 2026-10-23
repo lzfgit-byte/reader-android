@@ -44,6 +44,11 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.runtime.getValue
+import androidx.compose.material3.TextButton
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.setValue
+import coil.request.ImageRequest
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * 条目卡片。
@@ -196,21 +201,38 @@ private fun ListCard(
     }
 }
 
-/** 封面：有地址就真实加载，失败/为空退回字母占位 */
+/** 封面：有地址就真实加载，失败时给出「重新加载」 */
 @Composable
 private fun Cover(item: Item, modifier: Modifier) {
     val cover = item.coverImg
-    if (cover.isNotEmpty()) {
+    if (cover.isEmpty()) {
+        CoverPlaceholder(item.title, modifier = modifier)
+        return
+    }
+    // 重试计数作为 key：重建组件才会重新发起请求（同一 model 不会自动重试）
+    var retryCount by remember(cover) { mutableIntStateOf(0) }
+    androidx.compose.runtime.key(retryCount) {
         SubcomposeAsyncImage(
-            model = cover,
+            model = ImageRequest.Builder(LocalContext.current)
+                .data(cover)
+                .setParameter("retry", retryCount, null)
+                .build(),
             contentDescription = item.title,
             modifier = modifier,
             contentScale = ContentScale.Crop,
             loading = { Box(modifier) { CoverPlaceholder(item.title, modifier = Modifier.fillMaxSize()) } },
-            error = { Box(modifier) { CoverPlaceholder(item.title, modifier = Modifier.fillMaxSize()) } },
+            error = {
+                Box(modifier) {
+                    CoverPlaceholder(item.title, modifier = Modifier.fillMaxSize())
+                    TextButton(
+                        onClick = { retryCount += 1 },
+                        modifier = Modifier.align(Alignment.Center),
+                    ) {
+                        Text("重新加载", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            },
         )
-    } else {
-        CoverPlaceholder(item.title, modifier = modifier)
     }
 }
 

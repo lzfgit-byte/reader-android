@@ -52,9 +52,9 @@ class GhsApp : Application(), ImageLoaderFactory {
      */
     fun imageClient(): OkHttpClient = proxiedClient().newBuilder()
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(40, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
         .writeTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
-        .callTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
