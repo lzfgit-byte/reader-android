@@ -182,6 +182,8 @@ fun DemoApp(
     }
     var logSheetOpen by remember { mutableStateOf(false) }
     var showPageSheet by remember { mutableStateOf(false) }
+    // 首页刷新中：FAB 转圈 + 列表上加遮罩
+    var refreshing by remember { mutableStateOf(false) }
     // 详情解析失败的原因：info == null 既可能是"还在解析"，也可能是"失败了"
     var detailError by remember { mutableStateOf<String?>(null) }
     // 详情解析任务：允许手动取消，并统计已用时间
@@ -303,6 +305,24 @@ fun DemoApp(
                 screen = Screen.List(page)
                 tab = DemoTab.HOME
             }
+        }
+    }
+
+    /** 首页刷新：用当前列表地址重新取数据，期间显示 loading */
+    fun refreshCurrent() {
+        if (refreshing) return
+        val active = session ?: return
+        val url = currentListUrl ?: active.homeUrl
+        refreshing = true
+        scope.launch {
+            val page = runCatching { withContext(Dispatchers.IO) { active.pageFrom(url) } }.getOrNull()
+            if (page != null) {
+                noMore = false
+                currentListUrl = url
+                lastPage = page
+                screen = Screen.List(page)
+            }
+            refreshing = false
         }
     }
 
@@ -806,7 +826,7 @@ fun DemoApp(
                 title = {
                     Text(
                         when (tab) {
-                            DemoTab.HOME -> activeTagTitle ?: titleFor(screen, null)
+                            DemoTab.HOME -> ""
                             DemoTab.FAVORITES -> "收藏"
                             DemoTab.HISTORY -> "历史"
                             DemoTab.TAGS -> "标签"
@@ -871,6 +891,24 @@ fun DemoApp(
                     }
                 },
             )
+        },
+        // 首页刷新按钮放在 Scaffold 槽里，保证在内容之上可点
+        floatingActionButton = {
+            if (tab == DemoTab.HOME && screen is Screen.List) {
+                FloatingActionButton(
+                    onClick = { refreshCurrent() },
+                    containerColor = MaterialTheme.colorScheme.primaryContainer,
+                ) {
+                    if (refreshing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(20.dp),
+                            strokeWidth = 2.dp,
+                        )
+                    } else {
+                        Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                    }
+                }
+            }
         },
         bottomBar = {
             NavigationBar {
@@ -1049,22 +1087,28 @@ fun DemoApp(
                 is Screen.Series -> Unit
             }
         }
-    }
 
-    // 首页悬浮刷新：用当前列表地址重新取数据
-    if (tab == DemoTab.HOME && screen is Screen.List) {
-        Box(modifier = Modifier.fillMaxSize().padding(bottom = 72.dp)) {
-            FloatingActionButton(
-                onClick = { openFromUrl(currentListUrl ?: session?.homeUrl ?: return@FloatingActionButton, activeTagTitle) },
+        // 刷新中：内容上方盖一层半透明遮罩 + 转圈，明确"正在刷新"
+        if (refreshing) {
+            Box(
                 modifier = Modifier
-                    .align(Alignment.BottomEnd)
-                    .padding(16.dp),
-                containerColor = MaterialTheme.colorScheme.primaryContainer,
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.6f)),
+                contentAlignment = Alignment.Center,
             ) {
-                Icon(Icons.Default.Refresh, contentDescription = "刷新")
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    CircularProgressIndicator()
+                    Text(
+                        "正在刷新…",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 12.dp),
+                    )
+                }
             }
         }
     }
+
 
     // 日志入口在左侧抽屉里：点开看配置脚本输出的日志
     val latestLog = logEntries.lastOrNull()
