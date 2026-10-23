@@ -102,7 +102,7 @@ fun ComicReaderScreen(
     chapters: List<CContent>,
     startIndex: Int,
     quality: ImageQuality,
-    imageMaxWidth: Int,
+
     onQualityChange: (ImageQuality) -> Unit,
     onProgress: (pageIndex: Int) -> Unit,
     onBack: () -> Unit,
@@ -146,7 +146,7 @@ fun ComicReaderScreen(
             val url = page.preferQuality(quality)
             if (url.isNotEmpty()) {
                 android.util.Log.i("GHS", "prefetch page ${i + 1} $url")
-                loader.enqueue(ImageRequest.Builder(context).data(url).size(imageMaxWidth).build())
+                loader.enqueue(ImageRequest.Builder(context).data(url).size(coil.size.Size.ORIGINAL).build())
             }
         }
     }
@@ -195,7 +195,7 @@ fun ComicReaderScreen(
                 AsyncImage(
                     model = ImageRequest.Builder(context)
                         .data(url)
-                        .size(decodeSize(quality, imageMaxWidth))
+                        .size(coil.size.Size.ORIGINAL)
                         .crossfade(true)
                         .build(),
                     contentDescription = "第 ${index + 1} 页",
@@ -353,19 +353,6 @@ private fun Detail.preferQuality(quality: ImageQuality): String = when (quality)
     ImageQuality.PREVIEW -> url.ifEmpty { fullUrl.orEmpty() }
 }
 
-/**
- * 解码尺寸策略。
- *
- * 原图用 Size.ORIGINAL：否则会被 comicImgMaxWidth（例如 80vw ≈ 864px）
- * 压到比屏幕(1080)还小，再被 FillWidth 放大回来，看起来就发糊。
- * 缩略图仍按上限解码，省内存。
- */
-private fun decodeSize(quality: ImageQuality, imageMaxWidth: Int): coil.size.Size =
-    if (quality == ImageQuality.ORIGINAL) {
-        coil.size.Size.ORIGINAL
-    } else {
-        coil.size.Size(imageMaxWidth, imageMaxWidth)
-    }
 
 @Composable
 private fun PagePlaceholder(page: Detail?, index: Int, hint: String?) {
@@ -503,7 +490,7 @@ private fun ZoomablePage(
     page: Detail?,
     index: Int,
     quality: ImageQuality,
-    imageMaxWidth: Int,
+
     onTap: () -> Unit,
     onLongPress: () -> Unit,
 ) {
@@ -556,7 +543,7 @@ private fun ZoomablePage(
         contentAlignment = Alignment.Center,
     ) {
         SubcomposeAsyncImage(
-            model = ImageRequest.Builder(LocalContext.current).data(model).size(imageMaxWidth).build(),
+            model = ImageRequest.Builder(LocalContext.current).data(model).size(coil.size.Size.ORIGINAL).build(),
             contentDescription = "第 ${index + 1} 页",
             modifier = Modifier
                 .fillMaxSize()

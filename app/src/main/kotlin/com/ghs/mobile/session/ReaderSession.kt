@@ -108,10 +108,6 @@ class ReaderSession(
      * 默认 `1080px`；支持 `px` / `dp` / `vw` / `%` / 纯数字（按 dp）。
      * 作用是把超长图按屏宽解码，避免一次解码整张导致内存暴涨。
      */
-    val imageMaxWidth: Int = resolveImageMaxWidth(
-        context,
-        InlineConfigScanner.scan(source).comicImgMaxWidth,
-    )
 
     private val host = ReaderHost(context, proxyRules)
     private val engine = WebViewScriptEngine(context, proxyRules)
@@ -210,25 +206,4 @@ class ReaderSession(
         runCatching { configEngine.close() }
         host.close()
     }
-}
-
-/**
- * 把配置里的宽度写法换算成像素。
- *
- * 支持 `px`、`dp`、`vw`（视口宽百分比）、`%`、纯数字（按 dp）；非法值退回 1080。
- */
-private fun resolveImageMaxWidth(context: Context, raw: String?): Int {
-    val metrics = context.resources.displayMetrics
-    val screenWidth = metrics.widthPixels
-    val text = raw?.trim()?.lowercase().orEmpty()
-    // 规范默认值就是 1080px（不是 dp）；字段缺失时不要乘密度
-    if (text.isEmpty()) return 1080
-    val value: Float = when {
-        text.endsWith("vw") -> (text.removeSuffix("vw").toFloatOrNull() ?: 100f) * screenWidth / 100f
-        text.endsWith("%") -> (text.removeSuffix("%").toFloatOrNull() ?: 100f) * screenWidth / 100f
-        text.endsWith("px") -> text.removeSuffix("px").toFloatOrNull() ?: 1080f
-        text.endsWith("dp") -> (text.removeSuffix("dp").toFloatOrNull() ?: 1080f) * metrics.density
-        else -> (text.toFloatOrNull() ?: 1080f) * metrics.density
-    }
-    return value.toInt().coerceIn(240, screenWidth * 3)
 }
