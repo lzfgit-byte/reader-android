@@ -310,9 +310,10 @@ fun DemoApp(
      */
     fun openFromUrl(url: String, title: String?) {
         val active = session ?: return
-        // 标签 / 页码跳转也要有等待反馈，否则点击后画面僵住很生硬
         if (refreshing) return
         refreshing = true
+        // 先切回首页再看 loading：遮罩盖在旧列表上，视觉上比"停在标签页等"更连贯
+        tab = DemoTab.HOME
         scope.launch {
             val page = runCatching { withContext(Dispatchers.IO) { active.pageFrom(url) } }.getOrNull()
             if (page != null) {
@@ -321,7 +322,6 @@ fun DemoApp(
                 activeTagTitle = title
                 lastPage = page
                 screen = Screen.List(page)
-                tab = DemoTab.HOME
             }
             refreshing = false
         }
