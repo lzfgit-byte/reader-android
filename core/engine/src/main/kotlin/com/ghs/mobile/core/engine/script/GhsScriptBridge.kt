@@ -75,6 +75,9 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
      * 只有带事件循环的引擎（WebView）能真正等到；QuickJS 封装没有
      * `JS_ExecutePendingJob`，微任务永不前进，此处会退化为 [invoke]。
      */
+    /** 直接执行一段表达式并等待 Promise（用于非常规签名的方法，如 adapterImageCode） */
+    fun invokeAwaitRaw(expression: String): Any? = engine.evalAwait(expression, "invokeAwaitRaw")
+
     fun invokeAwait(method: String, argumentExpression: String = "$"): Any? =
         engine.evalAwait("config.$method($argumentExpression)", "invokeAwait:$method")
 

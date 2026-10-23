@@ -92,11 +92,16 @@ class DecodedImageFetcher(
         "${uri.scheme}://${uri.host}/"
     }.getOrDefault("")
 
-    class Factory(private val context: Context) : Fetcher.Factory<String> {
-        override fun create(data: String, options: Options, imageLoader: ImageLoader): Fetcher? {
-            if (!data.startsWith("http")) return null
-            if (!ImageDecodeBridge.hasExtra(data)) return null
-            return DecodedImageFetcher(data, options)
+    /**
+     * 泛型必须是 Uri：Coil 会先用 StringMapper 把字符串转成 Uri，
+     * 注册成 Factory<String> 永远不会被调用。
+     */
+    class Factory(private val context: Context) : Fetcher.Factory<android.net.Uri> {
+        override fun create(data: android.net.Uri, options: Options, imageLoader: ImageLoader): Fetcher? {
+            val url = data.toString()
+            if (!url.startsWith("http")) return null
+            if (!ImageDecodeBridge.hasExtra(url)) return null
+            return DecodedImageFetcher(url, options)
         }
     }
 

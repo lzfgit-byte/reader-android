@@ -148,10 +148,15 @@ class ConfigEngine(
         val mime = if (bytes.size > 12 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF") "image/webp" else "image/jpeg"
         bridge.setGlobalValue("__ghsImgSrc", "data:$mime;base64,$base64")
         val extraExpr = extraExpression(extra)
-        val result = bridge.invokeAwait(
-            "adapterImageCode",
-            "__ghsImgSrc, $extraExpr, Md5, ${quote(url)}, {value:'}, function(m){ __log(String(m)); }",
-        ) as? String
+        // 配置里的 adapterImageCode 可能是「函数体字符串」（反引号包着 return ...），
+        // 也可能直接是函数：两种情况都先取到可调用的函数再执行。
+        val call = "(function(){ " +
+            "var f = (typeof config.adapterImageCode === 'function') " +
+            "? config.adapterImageCode " +
+            ": (new Function(String(config.adapterImageCode)))(); " +
+            "return f(__ghsImgSrc, $extraExpr, Md5, ${quote(url)}, {value: ''}, " +
+            "function(m){ __log(String(m)); }); })()"
+        val result = bridge.invokeAwaitRaw(call) as? String
         val payload = result?.substringAfter("base64,", "")?.takeIf { it.isNotBlank() } ?: return null
         java.util.Base64.getDecoder().decode(payload)
     }.getOrNull()
