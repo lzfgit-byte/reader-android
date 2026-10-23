@@ -46,8 +46,19 @@ class GhsApp : Application(), ImageLoaderFactory {
         .proxySelector(RulesProxySelector { proxy.rules.value })
         .build()
 
+    /**
+     * 图片专用客户端：图集是原始尺寸 webp，单张常常几 MB，
+     * OkHttp 默认 10s 读超时会把它误判成失败（浏览器能开、App 打不开）。
+     */
+    fun imageClient(): OkHttpClient = proxiedClient().newBuilder()
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(40, java.util.concurrent.TimeUnit.SECONDS)
+        .writeTimeout(20, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(60, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
-        .okHttpClient { proxiedClient() }
+        .okHttpClient { imageClient() }
         // OkHttp 取图失败时改用 WebView 渲染（防盗链 / 连接被断 / 403）
         .withWebViewFallback(this)
         .build()
