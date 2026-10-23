@@ -84,6 +84,7 @@ import androidx.compose.material3.Switch
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material.icons.filled.ArrowForward
+import androidx.compose.foundation.layout.heightIn
 
 /** 图片清晰度：原图（`fullUrl`）或展示图（`url`） */
 enum class ImageQuality { ORIGINAL, PREVIEW }
@@ -198,32 +199,13 @@ fun ComicReaderScreen(
                     contentScale = ContentScale.FillWidth,
                     modifier = Modifier
                         .fillMaxWidth()
+                        // 加载中先占位，避免 70 张图还没到高度为 0 时列表塌陷
+                        .heightIn(min = 320.dp)
                         .combinedClickable(
                             onClick = { chromeVisible = !chromeVisible },
                             onLongClick = { saveCurrentPage() },
                         ),
                 )
-            }
-            item {
-                // 到底：下一话入口
-                if (chapters.size > 1 || onNextChapter != null) {
-                    Box(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 48.dp),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        if (chapters.getOrNull(chapterIndex + 1) != null) {
-                            Button(onClick = { onChapterSelected(chapterIndex + 1) }) {
-                                Text("下一话")
-                            }
-                        } else {
-                            Text(
-                                "已经是最后一话",
-                                color = Color(0xFF8A8A93),
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
-                }
             }
         }
 
