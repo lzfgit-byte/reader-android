@@ -154,7 +154,14 @@ fun ComicReaderScreen(
             val url = page.preferQuality(quality)
             if (url.isNotEmpty()) {
                 android.util.Log.i("GHS", "prefetch page ${i + 1} $url")
-                loader.enqueue(ImageRequest.Builder(context).data(url).size(coil.size.Size.ORIGINAL).build())
+                loader.enqueue(
+                    ImageRequest.Builder(context)
+                        .data(url)
+                        .memoryCacheKey("ghs-decoded-$url")
+                        .diskCacheKey("ghs-decoded-$url")
+                        .size(coil.size.Size.ORIGINAL)
+                        .build(),
+                )
             }
         }
     }
@@ -199,6 +206,8 @@ fun ComicReaderScreen(
         androidx.compose.runtime.mutableStateMapOf<Int, coil.compose.AsyncImagePainter.State>()
     }
     val retries = remember(pages) { androidx.compose.runtime.mutableStateMapOf<Int, Int>() }
+    // 已经成功渲染过的页：即使后续状态再变 Error，也不再盖错误提示
+    val loadedPages = remember(pages) { androidx.compose.runtime.mutableStateMapOf<Int, Boolean>() }
     var frontier by remember(pages) { androidx.compose.runtime.mutableIntStateOf(0) }
 
     fun advance(index: Int) {
@@ -239,6 +248,9 @@ fun ComicReaderScreen(
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
                                     .data(url)
+                                    // 解码后的图与原始字节分开缓存，否则会命中旧的未解码副本
+                                    .memoryCacheKey("ghs-decoded-$url")
+                                    .diskCacheKey("ghs-decoded-$url")
                                     .size(coil.size.Size.ORIGINAL)
                                     .crossfade(true)
                                     .build(),

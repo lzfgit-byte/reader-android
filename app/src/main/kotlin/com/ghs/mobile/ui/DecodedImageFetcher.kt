@@ -59,10 +59,14 @@ class DecodedImageFetcher(
         val extra = ImageDecodeBridge.extraOf(url) ?: return null
 
         val raw = runCatching { fetchBytes(url) }.getOrNull() ?: return null
-        val decoded = runCatching { decoder(url, raw, extra) }.getOrNull()
+        val attempt = runCatching { decoder(url, raw, extra) }
+        val decoded = attempt.getOrNull()
         val bytes = decoded ?: raw
         if (decoded == null) {
-            android.util.Log.w("GHS", "image decode failed, fallback raw: $url")
+            android.util.Log.w(
+                "GHS",
+                "image decode failed(${attempt.exceptionOrNull()?.message}) raw=${raw.size}B extra=$extra url=$url",
+            )
         } else {
             android.util.Log.i("GHS", "image decoded: $url ${raw.size} → ${decoded.size} bytes")
         }
