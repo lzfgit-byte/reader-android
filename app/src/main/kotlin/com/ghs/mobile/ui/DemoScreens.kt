@@ -1064,7 +1064,7 @@ fun DemoApp(
                     progress = progressByUrl,
                     collected = collected,
                     layout = layoutMode,
-                    onOpen = { item -> tab = DemoTab.HOME; parseTarget = item },
+                    onOpen = { item -> parseTarget = item },
                     onToggleCollect = { item -> toggleCollect(item) },
                 )
                 return@Surface
@@ -1073,7 +1073,7 @@ fun DemoApp(
                 HistoryScreen(
                     entries = historyEntries,
                     layout = layoutMode,
-                    onOpen = { item -> tab = DemoTab.HOME; parseTarget = item },
+                    onOpen = { item -> parseTarget = item },
                 )
                 return@Surface
             }
