@@ -126,8 +126,8 @@ fun ComicReaderScreen(
             firstVisibleItemIndex = startIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
         )
     }
-    val current by remember { derivedStateOf { listState.firstVisibleItemIndex.coerceAtMost((pages.size - 1).coerceAtLeast(0)) } }
-    val atBottom by remember {
+    val current by remember(listState, pages) { derivedStateOf { listState.firstVisibleItemIndex.coerceAtMost((pages.size - 1).coerceAtLeast(0)) } }
+    val atBottom by remember(listState, pages) {
         derivedStateOf {
             val last = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
             last >= pages.size - 2
