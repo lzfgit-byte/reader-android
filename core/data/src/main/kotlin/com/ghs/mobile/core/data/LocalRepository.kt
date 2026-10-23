@@ -143,6 +143,9 @@ class LocalRepository(private val database: GhsDatabase) {
         historyDao.renameConfigKey(from, to)
     suspend fun clearHistory() = historyDao.clear()
 
+    /** 只清当前站点的历史 */
+    suspend fun clearHistory(configKey: String) = historyDao.clearByConfig(configKey)
+
     // ── 搜索历史 ────────────────────────────────────────────────────────────
 
     suspend fun recordSearch(configKey: String, keyword: String, now: Long = System.currentTimeMillis()) {

@@ -108,6 +108,7 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
+import androidx.compose.material.icons.filled.Delete
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -1234,6 +1235,19 @@ fun DemoApp(
                         icon = { Icon(Icons.Default.Info, contentDescription = null) },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
+                    NavigationDrawerItem(
+                        label = { Text("清空本站历史") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            scope.launch {
+                                withContext(Dispatchers.IO) { repository.clearHistory(siteKey) }
+                                refreshLibrary()
+                            }
+                        },
+                        icon = { Icon(Icons.Default.Delete, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
                 }
             }
         }
@@ -1303,7 +1317,7 @@ private suspend fun rememberOpened(
         // 用空白记录覆盖会把续看信息冲掉，表现为"明明看过却从头开始"
         repository.saveProgress(existing.copy(updatedAt = System.currentTimeMillis()))
     }
-    repository.recordView(CONFIG_KEY, item.jumpUrl, ItemCodec.encode(item))
+    repository.recordView(configKey, item.jumpUrl, ItemCodec.encode(item))
     repository.trimHistory(100)
     repository.putSetting(SettingScope.DEVICE, "last_opened", item.jumpUrl)
 }

@@ -85,6 +85,9 @@ interface HistoryDao {
 
     @Query("DELETE FROM viewed_history")
     suspend fun clear()
+
+    @Query("DELETE FROM viewed_history WHERE configKey = :configKey")
+    suspend fun clearByConfig(configKey: String)
 }
 
 @Dao
