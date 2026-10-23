@@ -85,6 +85,10 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material.icons.filled.ArrowForward
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.CircularProgressIndicator
 
 /** 图片清晰度：原图（`fullUrl`）或展示图（`url`） */
 enum class ImageQuality { ORIGINAL, PREVIEW }
@@ -94,6 +98,9 @@ enum class ImageQuality { ORIGINAL, PREVIEW }
  *
  * 图片用 Coil 真实加载；演示数据的地址没有真实文件，失败时退回页号与地址占位。
  */
+/** 顺序加载：同时最多两张在飞 */
+private const val LOAD_CONCURRENCY = 2
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ComicReaderScreen(
@@ -184,6 +191,28 @@ fun ComicReaderScreen(
         }
     }
 
+    // ── 逐张顺序加载 ────────────────────────────────────────────────
+    // frontier：已允许发请求的最大下标；每张图完成（成功或失败）才放行下一张，
+    // 并发最多 CONCURRENCY 张，避免一次性把 70 张图全塞进队列。
+    val imageStates = remember(pages) {
+        androidx.compose.runtime.mutableStateMapOf<Int, coil.compose.AsyncImagePainter.State>()
+    }
+    val retries = remember(pages) { androidx.compose.runtime.mutableStateMapOf<Int, Int>() }
+    var frontier by remember(pages) { androidx.compose.runtime.mutableIntStateOf(0) }
+
+    fun advance(index: Int) {
+        if (index >= frontier) frontier = (index + 1).coerceAtMost(pages.size - 1)
+    }
+
+    fun retry(index: Int) {
+        imageStates.remove(index)
+        retries[index] = (retries[index] ?: 0) + 1
+        frontier = index
+    }
+
+    val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
+    val allowUpTo = (maxOf(frontier + LOAD_CONCURRENCY - 1, lastVisible + 1)).coerceAtMost(pages.size - 1)
+
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF151517))) {
         // 连续滚动：所有图片上下拼接，一滚到底
         LazyColumn(
@@ -192,23 +221,77 @@ fun ComicReaderScreen(
         ) {
             itemsIndexed(pages) { index, page ->
                 val url = page.preferQuality(quality)
-                AsyncImage(
-                    model = ImageRequest.Builder(context)
-                        .data(url)
-                        .size(coil.size.Size.ORIGINAL)
-                        .crossfade(true)
-                        .build(),
-                    contentDescription = "第 ${index + 1} 页",
-                    contentScale = ContentScale.FillWidth,
+                val state = imageStates[index]
+                val retryCount = retries[index] ?: 0
+                Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        // 加载中先占位，避免 70 张图还没到高度为 0 时列表塌陷
-                        .heightIn(min = 320.dp)
                         .combinedClickable(
                             onClick = { chromeVisible = !chromeVisible },
                             onLongClick = { saveCurrentPage() },
                         ),
-                )
+                ) {
+                    if (index <= allowUpTo) {
+                        AsyncImage(
+                            model = ImageRequest.Builder(context)
+                                .data(url)
+                                .size(coil.size.Size.ORIGINAL)
+                                .crossfade(true)
+                                .build(),
+                            contentDescription = "第 ${index + 1} 页",
+                            contentScale = ContentScale.FillWidth,
+                            onState = { next ->
+                                imageStates[index] = next
+                                if (next is coil.compose.AsyncImagePainter.State.Success ||
+                                    next is coil.compose.AsyncImagePainter.State.Error
+                                ) {
+                                    advance(index)
+                                }
+                            },
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                // 未加载出高度前占位，避免列表塌陷
+                                .heightIn(min = if (state is coil.compose.AsyncImagePainter.State.Success) 0.dp else 320.dp),
+                        )
+                    } else {
+                        // 还没轮到它：占位，不占用网络
+                        Box(modifier = Modifier.fillMaxWidth().height(320.dp))
+                    }
+
+                    when (state) {
+                        is coil.compose.AsyncImagePainter.State.Error -> Column(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            Text(
+                                "第 ${index + 1} 页加载失败",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = Color(0xFFE6E6EA),
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Button(onClick = { retry(index) }) { Text("重新加载") }
+                        }
+
+                        is coil.compose.AsyncImagePainter.State.Loading -> Column(
+                            modifier = Modifier.align(Alignment.Center),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(28.dp),
+                                strokeWidth = 2.dp,
+                                color = Color(0xFFB9A7FF),
+                            )
+                            Spacer(Modifier.height(8.dp))
+                            Text(
+                                "${index + 1}/${pages.size} 加载中…",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Color(0xFF9A9AA5),
+                            )
+                        }
+
+                        else -> Unit
+                    }
+                }
             }
         }
 
