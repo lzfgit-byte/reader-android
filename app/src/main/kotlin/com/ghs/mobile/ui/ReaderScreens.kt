@@ -89,6 +89,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.OutlinedButton
 
 /** 图片清晰度：原图（`fullUrl`）或展示图（`url`） */
 enum class ImageQuality { ORIGINAL, PREVIEW }
@@ -205,6 +206,8 @@ fun ComicReaderScreen(
     }
 
     fun retry(index: Int) {
+        // 清掉错误态并递增重试计数：AsyncImage 以该计数为 key 重建，
+        // 否则相同 model 不会再次发起请求（点了按钮只会消失）
         imageStates.remove(index)
         retries[index] = (retries[index] ?: 0) + 1
         frontier = index
@@ -232,12 +235,13 @@ fun ComicReaderScreen(
                         ),
                 ) {
                     if (index <= allowUpTo) {
-                        AsyncImage(
-                            model = ImageRequest.Builder(context)
-                                .data(url)
-                                .size(coil.size.Size.ORIGINAL)
-                                .crossfade(true)
-                                .build(),
+                        androidx.compose.runtime.key(retryCount) {
+                            AsyncImage(
+                                model = ImageRequest.Builder(context)
+                                    .data(url)
+                                    .size(coil.size.Size.ORIGINAL)
+                                    .crossfade(true)
+                                    .build(),
                             contentDescription = "第 ${index + 1} 页",
                             contentScale = ContentScale.FillWidth,
                             onState = { next ->
@@ -253,6 +257,7 @@ fun ComicReaderScreen(
                                 // 未加载出高度前占位，避免列表塌陷
                                 .heightIn(min = if (state is coil.compose.AsyncImagePainter.State.Success) 0.dp else 320.dp),
                         )
+                        }
                     } else {
                         // 还没轮到它：占位，不占用网络
                         Box(modifier = Modifier.fillMaxWidth().height(320.dp))
@@ -269,7 +274,12 @@ fun ComicReaderScreen(
                                 color = Color(0xFFE6E6EA),
                             )
                             Spacer(Modifier.height(8.dp))
-                            Button(onClick = { retry(index) }) { Text("重新加载") }
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Button(onClick = { retry(index) }) { Text("重新加载") }
+                                OutlinedButton(onClick = { copyAddress(context, url) }) {
+                                    Text("复制地址")
+                                }
+                            }
                         }
 
                         is coil.compose.AsyncImagePainter.State.Loading -> Column(
@@ -427,6 +437,16 @@ fun ComicReaderScreen(
                 }
             }
         }
+    }
+}
+
+/** 复制图片地址到剪贴板（排查问题 / 外部打开） */
+private fun copyAddress(context: android.content.Context, url: String) {
+    runCatching {
+        val manager = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
+            as android.content.ClipboardManager
+        manager.setPrimaryClip(android.content.ClipData.newPlainText("image-url", url))
+        android.widget.Toast.makeText(context, "已复制图片地址", android.widget.Toast.LENGTH_SHORT).show()
     }
 }
 
