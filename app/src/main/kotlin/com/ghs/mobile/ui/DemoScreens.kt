@@ -310,6 +310,9 @@ fun DemoApp(
      */
     fun openFromUrl(url: String, title: String?) {
         val active = session ?: return
+        // 标签 / 页码跳转也要有等待反馈，否则点击后画面僵住很生硬
+        if (refreshing) return
+        refreshing = true
         scope.launch {
             val page = runCatching { withContext(Dispatchers.IO) { active.pageFrom(url) } }.getOrNull()
             if (page != null) {
@@ -320,6 +323,7 @@ fun DemoApp(
                 screen = Screen.List(page)
                 tab = DemoTab.HOME
             }
+            refreshing = false
         }
     }
 
@@ -1208,7 +1212,7 @@ fun DemoApp(
             }
         }
 
-        // 刷新中：内容上方盖一层半透明遮罩 + 转圈，明确"正在刷新"
+        // 加载中（刷新 / 标签跳转 / 页码跳转）：内容上方盖遮罩 + 转圈
         if (refreshing) {
             Box(
                 modifier = Modifier
@@ -1219,7 +1223,7 @@ fun DemoApp(
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
                     CircularProgressIndicator()
                     Text(
-                        "正在刷新…",
+                        "正在加载…",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(top = 12.dp),
