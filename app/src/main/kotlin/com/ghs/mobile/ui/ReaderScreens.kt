@@ -246,6 +246,13 @@ fun ComicReaderScreen(
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
                                     .data(url)
+                                    // 需要解图的页禁用缓存：缓存里是未解码原图，命中就绕过了 Fetcher
+                                    .apply {
+                                        if (ImageDecodeBridge.hasExtra(url)) {
+                                            memoryCachePolicy(coil.request.CachePolicy.DISABLED)
+                                            diskCachePolicy(coil.request.CachePolicy.DISABLED)
+                                        }
+                                    }
                                     .size(coil.size.Size.ORIGINAL)
                                     .crossfade(true)
                                     .build(),
