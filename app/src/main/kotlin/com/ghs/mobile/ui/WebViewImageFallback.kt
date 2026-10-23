@@ -3,7 +3,7 @@ package com.ghs.mobile.ui
 import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Color
+import android.graphics.BitmapFactory
 import android.graphics.drawable.BitmapDrawable
 import android.os.Handler
 import android.os.Looper
@@ -18,11 +18,17 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
- * 图片兜底：OkHttp 取图失败（连接被断 / 403 防盗链）时改用 WebView 加载（桌面 UA）。
+ * 图片兜底：OkHttp 取图失败时，用 WebView 把图片**字节**取回来再交给 Coil 解码。
  *
- * 注意两点：
- * - 403 在 Coil 里表现为 `ErrorResult` 而不是异常，必须分别判断；
- * - 滚动导致的取消（CancellationException）绝不能触发兜底，否则每张图白等十几秒。
+ * 为什么取字节而不是截屏：截屏只有视口分辨率，长条图会糊、会截断；
+ * base64 是原始字节，画质与直接下载一致。
+ *
+ * 取字节的做法：WebView 直接打开图片地址（此时文档就是该图片，同源），
+ * 再在页面里 `fetch(location.href)` → FileReader → base64。
+ * 同源 fetch 不受 CORS 限制，不需要图床配合。
+ *
+ * 如果打开的是挑战页（contentType 不是图片类型），
+ * 交给 [ChallengeGate] 让用户手动完成校验。
  */
 class WebViewImageFallbackInterceptor(private val context: Context) : Interceptor {
 
@@ -39,6 +45,7 @@ class WebViewImageFallbackInterceptor(private val context: Context) : Intercepto
             return fallback(request, url) ?: throw error
         }
 
+        // 403/404 在 Coil 里是 ErrorResult 而不是异常，同样要兜底
         if (result is coil.request.ErrorResult) {
             android.util.Log.w("GHS", "image http error(${result.throwable.message}) → webview $url")
             return fallback(request, url) ?: result
@@ -50,7 +57,7 @@ class WebViewImageFallbackInterceptor(private val context: Context) : Intercepto
         request: coil.request.ImageRequest,
         url: String,
     ): ImageResult? {
-        // 必须切到 IO：WebView 渲染是阻塞等待，放主线程会直接 ANR
+        // 阻塞等待必须离开主线程，否则滚动时直接 ANR
         val bitmap = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
             WebViewImageLoader.load(context, url)
         } ?: return null
@@ -62,20 +69,18 @@ class WebViewImageFallbackInterceptor(private val context: Context) : Intercepto
     }
 }
 
-/** 用隐藏 WebView（桌面 UA）把图片渲染成位图；失败返回 null */
+/** 用隐藏 WebView 取图片字节；失败返回 null */
 object WebViewImageLoader {
 
-    private const val TIMEOUT_MS = 8_000L
-    /** 同时只允许一个兜底 WebView：抢不到就放弃，避免滚动时堆一堆 WebView */
-    private val gate = java.util.concurrent.Semaphore(1)
-    private const val MAX_SIDE = 2048
+    private const val TIMEOUT_MS = 15_000L
+    private const val POLL_MS = 250L
     private const val DESKTOP_UA =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-    /**
-     * 兜底失败的 host 冷却表：某图床 WebView 也打不开时，5 分钟内不再逐张重试，
-     * 否则一屏 10 张图会各等 12 秒，界面像卡死。
-     */
+    /** 同时只允许一个兜底 WebView：抢不到就放弃，避免滚动时堆一堆 */
+    private val gate = java.util.concurrent.Semaphore(1)
+
+    /** 兜底失败的 host 冷却表：5 分钟内不再逐张重试 */
     private const val COOLDOWN_MS = 5 * 60 * 1000L
     private val failedHosts = java.util.concurrent.ConcurrentHashMap<String, Long>()
 
@@ -85,59 +90,95 @@ object WebViewImageLoader {
     fun load(context: Context, url: String): Bitmap? {
         val host = runCatching { java.net.URI(url).host.orEmpty() }.getOrDefault("")
         val lastFailure = failedHosts[host]
-        if (lastFailure != null && System.currentTimeMillis() - lastFailure < COOLDOWN_MS) {
+        if (lastFailure != null && System.currentTimeMillis() - lastFailure < COOLDOWN_MS) return null
+        if (!gate.tryAcquire(2, TimeUnit.SECONDS)) {
+            android.util.Log.w("GHS", "image webview skip (busy) $url")
             return null
         }
+        try {
+            val bytes = fetchBytes(context, url)
+            if (bytes == null) {
+                if (host.isNotEmpty()) failedHosts[host] = System.currentTimeMillis()
+                return null
+            }
+            return BitmapFactory.decodeByteArray(bytes, 0, bytes.size)
+        } catch (error: Throwable) {
+            android.util.Log.w("GHS", "image webview failed(${error.message}) $url")
+            if (host.isNotEmpty()) failedHosts[host] = System.currentTimeMillis()
+            return null
+        } finally {
+            gate.release()
+        }
+    }
 
+    /** WebView 打开图片 → 同源 fetch 取字节 → base64 → 解码 */
+    private fun fetchBytes(context: Context, url: String): ByteArray? {
         val latch = CountDownLatch(1)
-        var bitmap: Bitmap? = null
-        var destroyed = false
+        var output: ByteArray? = null
+        var challenge = false
 
         main.post {
             val view = WebView(context.applicationContext)
             view.settings.javaScriptEnabled = true
             view.settings.domStorageEnabled = true
             view.settings.userAgentString = DESKTOP_UA
-            view.setBackgroundColor(Color.WHITE)
             view.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, finishedUrl: String) {
                     view.evaluateJavascript(
-                        "(function(){var i=document.querySelector('img');" +
-                            "if(!i)return '0x0';return i.naturalWidth+'x'+i.naturalHeight;})()",
+                        "(function(){return document.contentType||'';})()",
                     ) { raw ->
-                        val text = raw?.trim()?.removeSurrounding("\"")
-                        val parts = text?.split('x') ?: emptyList()
-                        val naturalW = parts.getOrNull(0)?.toIntOrNull() ?: 0
-                        val naturalH = parts.getOrNull(1)?.toIntOrNull() ?: 0
-                        val width = if (naturalW in 1..MAX_SIDE) naturalW else 1080
-                        val height = if (naturalH in 1..MAX_SIDE) naturalH else 1440
-
-                        view.measure(
-                            android.view.View.MeasureSpec.makeMeasureSpec(width, android.view.View.MeasureSpec.EXACTLY),
-                            android.view.View.MeasureSpec.makeMeasureSpec(height, android.view.View.MeasureSpec.EXACTLY),
-                        )
-                        view.layout(0, 0, width, height)
-                        bitmap = runCatching {
-                            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { bmp ->
-                                view.draw(android.graphics.Canvas(bmp))
-                            }
-                        }.getOrNull()
-                        if (!destroyed) {
-                            destroyed = true
-                            view.destroy()
+                        val type = raw?.trim()?.removeSurrounding("\"") ?: ""
+                        if (!type.startsWith("image/")) {
+                            challenge = true
+                            android.util.Log.w("GHS", "image webview got '$type' (可能是挑战页) $url")
+                            runCatching { view.destroy() }
                             latch.countDown()
+                            return@evaluateJavascript
                         }
+                        view.evaluateJavascript(
+                            "fetch(location.href).then(function(r){return r.blob();})" +
+                                ".then(function(b){var fr=new FileReader();" +
+                                "fr.onload=function(){window.__ghsB64=fr.result.split(',')[1]||'';};" +
+                                "fr.readAsDataURL(b);}).catch(function(e){window.__ghsB64='';});0",
+                        ) { }
                     }
                 }
             }
             view.loadUrl(url)
+
+            Thread {
+                val deadline = System.currentTimeMillis() + TIMEOUT_MS
+                while (System.currentTimeMillis() < deadline && output == null && !challenge) {
+                    Thread.sleep(POLL_MS)
+                    if (challenge) break
+                    val probe = CountDownLatch(1)
+                    var b64 = ""
+                    main.post {
+                        view.evaluateJavascript("window.__ghsB64||''") { raw ->
+                            b64 = raw?.trim()?.removeSurrounding("\"") ?: ""
+                            probe.countDown()
+                        }
+                    }
+                    probe.await(1, TimeUnit.SECONDS)
+                    if (b64.length > 100) {
+                        output = runCatching {
+                            android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                        }.getOrNull()
+                        break
+                    }
+                }
+                android.util.Log.i("GHS", "image webview done bytes=${output?.size ?: 0} challenge=$challenge $url")
+                main.post { runCatching { view.destroy() } }
+                latch.countDown()
+            }
         }
 
-        latch.await(TIMEOUT_MS, TimeUnit.MILLISECONDS)
-        if (bitmap == null && host.isNotEmpty()) {
-            failedHosts[host] = System.currentTimeMillis()
+        latch.await(TIMEOUT_MS + 3_000L, TimeUnit.MILLISECONDS)
+        if (challenge) {
+            // 挑战页：弹人机校验窗口，用户完成后 Cookie 生效，下次请求即可命中
+            runCatching { ChallengeGate.await(url) }
         }
-        return bitmap
+        return output
     }
 }
 

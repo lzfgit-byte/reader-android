@@ -113,9 +113,12 @@ fun ComicReaderScreen(
     onNextChapter: (() -> Unit)? = null,
 ) {
     val scope = rememberCoroutineScope()
-    val listState = rememberLazyListState(
-        initialFirstVisibleItemIndex = startIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
-    )
+    // 切话时整块状态重建：不这样会沿用上一话的滚动位置
+    val listState = remember(chapterIndex, pages) {
+        androidx.compose.foundation.lazy.LazyListState(
+            firstVisibleItemIndex = startIndex.coerceIn(0, (pages.size - 1).coerceAtLeast(0)),
+        )
+    }
     val current by remember { derivedStateOf { listState.firstVisibleItemIndex.coerceAtMost((pages.size - 1).coerceAtLeast(0)) } }
     val atBottom by remember {
         derivedStateOf {
