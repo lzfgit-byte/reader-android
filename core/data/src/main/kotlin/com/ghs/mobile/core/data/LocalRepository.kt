@@ -122,6 +122,8 @@ class LocalRepository(private val database: GhsDatabase) {
         payload: String,
         now: Long = System.currentTimeMillis(),
     ) {
+        // 同一 url 只保留最新一条：避免历史里同一条目重复出现
+        historyDao.deleteByUrl(configKey, url)
         historyDao.insert(ViewedEntity(configKey = configKey, url = url, payload = payload, createTime = now))
     }
 

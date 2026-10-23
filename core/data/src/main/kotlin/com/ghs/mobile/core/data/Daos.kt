@@ -69,6 +69,10 @@ interface HistoryDao {
     @Query("SELECT * FROM viewed_history WHERE configKey = :configKey ORDER BY createTime DESC LIMIT :limit")
     suspend fun list(configKey: String, limit: Int): List<ViewedEntity>
 
+    /** 同一站点同一地址只保留一条历史：写入前先清掉旧的 */
+    @Query("DELETE FROM viewed_history WHERE configKey = :configKey AND url = :url")
+    suspend fun deleteByUrl(configKey: String, url: String)
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: ViewedEntity): Long
 

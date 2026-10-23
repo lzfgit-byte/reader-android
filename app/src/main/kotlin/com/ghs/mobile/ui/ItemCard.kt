@@ -39,6 +39,11 @@ import com.ghs.mobile.core.model.ReaderKind
 import com.ghs.mobile.core.model.ReadingProgress
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.material3.CardDefaults
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.runtime.getValue
 
 /**
  * 条目卡片。
@@ -211,11 +216,35 @@ private fun Cover(item: Item, modifier: Modifier) {
 
 @Composable
 private fun StarToggle(collected: Boolean, onToggle: () -> Unit) {
-    IconButton(onClick = onToggle, modifier = Modifier.padding(2.dp)) {
+    // 点一下弹一下：收藏放大回弹，取消缩小回弹
+    val bounce = remember { androidx.compose.animation.core.Animatable(1f) }
+    LaunchedEffect(collected) {
+        if (collected) {
+            bounce.animateTo(1.3f, androidx.compose.animation.core.tween(120))
+            bounce.animateTo(1f, androidx.compose.animation.core.tween(180))
+        } else {
+            bounce.animateTo(0.8f, androidx.compose.animation.core.tween(90))
+            bounce.animateTo(1f, androidx.compose.animation.core.tween(140))
+        }
+    }
+    val tint by androidx.compose.animation.animateColorAsState(
+        targetValue = if (collected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+        animationSpec = androidx.compose.animation.core.tween(180),
+        label = "starTint",
+    )
+    IconButton(
+        onClick = onToggle,
+        modifier = Modifier
+            .padding(2.dp)
+            .graphicsLayer {
+                scaleX = bounce.value
+                scaleY = bounce.value
+            },
+    ) {
         Icon(
             imageVector = Icons.Default.Star,
             contentDescription = if (collected) "取消收藏" else "收藏",
-            tint = if (collected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outline,
+            tint = tint,
         )
     }
 }
