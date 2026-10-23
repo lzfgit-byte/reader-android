@@ -178,17 +178,31 @@ class HttpScriptHost(
             else -> builder.get().build()
         }
 
-        client.newCall(request).execute().use { response ->
-            val headerMap = LinkedHashMap<String, String>()
-            for (name in response.headers.names()) {
-                headerMap[name] = response.header(name).orEmpty()
+        // 脚本侧取页（配置的 getHtml/net.request）同样会撞上"connection closed"，
+        // 过去这里一次性失败直接把整段配置逻辑抛成脚本错误；按同样的策略重试。
+        var lastError: java.io.IOException? = null
+        repeat(REQUEST_ATTEMPTS) { attempt ->
+            try {
+                client.newCall(request).execute().use { response ->
+                    val headerMap = LinkedHashMap<String, String>()
+                    for (name in response.headers.names()) {
+                        headerMap[name] = response.header(name).orEmpty()
+                    }
+                    return ScriptHostTransport.HostResponse(
+                        status = response.code,
+                        headers = headerMap,
+                        body = response.body?.string().orEmpty(),
+                    )
+                }
+            } catch (error: java.io.IOException) {
+                lastError = error
+                if (attempt < REQUEST_ATTEMPTS - 1) {
+                    android.util.Log.w("GHS", "request retry after ${error.message} ($url)")
+                    Thread.sleep(250L * (attempt + 1))
+                }
             }
-            return ScriptHostTransport.HostResponse(
-                status = response.code,
-                headers = headerMap,
-                body = response.body?.string().orEmpty(),
-            )
         }
+        throw lastError ?: IllegalStateException("请求失败：$url")
     }
 
     /**
@@ -304,6 +318,8 @@ class HttpScriptHost(
         private const val USER_AGENT =
             "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
         private const val PAGE_TIMEOUT_MS = 180_000L
+        /** 脚本侧请求的尝试次数（每次失败退避 250ms 递增） */
+        private const val REQUEST_ATTEMPTS = 3
         private const val EVAL_TIMEOUT_MS = 180_000L
         /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
         private const val FALLBACK_TIMEOUT_MS = 25_000L
