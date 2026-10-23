@@ -57,6 +57,11 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
         return body
     }
 
+    /** 写入一个 JS 全局字符串（图片字节等大文本走这里，避免拼进表达式） */
+    fun setGlobalValue(name: String, value: String) {
+        engine.setGlobal(name, value)
+    }
+
     fun hasMethod(method: String): Boolean =
         engine.eval("typeof config.$method === 'function'", "probe") == true
 
@@ -95,6 +100,10 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
     private fun bindHostFunctions(transport: ScriptHostTransport) {
         engine.setFunction("__select") { args -> register(select(textOf(args.getOrNull(0)))) }
         engine.setFunction("__len") { args -> selection(args.getOrNull(0)).length }
+        engine.setFunction("__md5") { args ->
+            val digest = java.security.MessageDigest.getInstance("MD5")
+            digest.digest(textOf(args.getOrNull(0)).toByteArray()).joinToString("") { "%02x".format(it) }
+        }
         engine.setFunction("__at") { args -> register(selection(args.getOrNull(0)).eq(intOf(args.getOrNull(1)))) }
         engine.setFunction("__eq") { args -> register(selection(args.getOrNull(0)).eq(intOf(args.getOrNull(1)))) }
         engine.setFunction("__find") { args ->
@@ -226,6 +235,7 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
             globalThis.helpElAttr = function (el, name) { return el && el.__h ? __attr(el.__h, name) : ''; };
             globalThis.helpElText = function (el) { return el && el.__h ? __text(el.__h) : ''; };
             globalThis.hashString = function (s) { return __hash(String(s)); };
+            globalThis.Md5 = function (s) { return __md5(String(s)); };
             globalThis.LogMsgUtil = { sendLogMsg: function () { __log.apply(null, arguments); } };
             globalThis.ConsoleLogUtil = { log: function () { __log.apply(null, arguments); } };
             globalThis.MessageUtil = {

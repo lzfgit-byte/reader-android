@@ -166,8 +166,17 @@ class ReaderSession(
     /** 图集目录：`getContents(url, cheerio)`；返回空表示退化为单组图 */
     fun comicChapters(url: String): List<CContent> = configEngine.contents(url)
 
-    /** 图集图片：`getComicImages(url, cheerio)` */
-    fun comicPages(url: String): List<CComic> = configEngine.comicImages(url)
+    /** 图集图片：`getComicImages(url, cheerio)`；顺带登记解图参数供 Coil Fetcher 识别 */
+    fun comicPages(url: String): List<CComic> {
+        val list = configEngine.comicImages(url)
+        list.forEach { comic -> com.ghs.mobile.ui.ImageDecodeBridge.putExtra(comic.url, comic.info) }
+        android.util.Log.i("GHS", "comic pages=${list.size} 有解图参数=${list.count { !it.info.isNullOrEmpty() }}")
+        return list
+    }
+
+    /** 用配置的 adapterImageCode 还原打散图；无配置或失败返回 null */
+    fun decodeImage(url: String, bytes: ByteArray, extra: Map<String, Any?>?): ByteArray? =
+        configEngine.decodeImage(url, bytes, extra)
 
     fun episodes(analysis: Analysis): List<AnalysisDetail> = configEngine.analysisDetail(analysis)
 

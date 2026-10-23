@@ -132,6 +132,43 @@ class ConfigEngine(
      *
      * 配置没实现、或返回空串时回落原地址，保证筛选面板不会把列表打空。
      */
+    /** 配置是否实现了 `adapterImageCode`（图集解图） */
+    val supportsImageCode: Boolean get() = bridge.hasMethod("adapterImageCode")
+
+    /**
+     * 用配置的 `adapterImageCode` 还原打散的图片。
+     *
+     * 返回 Promise（resolve 一个 `data:image/...;base64,...` 字符串），
+     * 也兼容把结果写到 `canvas.value` 的写法。失败返回 null，调用方显示原图。
+     */
+    fun decodeImage(url: String, bytes: ByteArray, extra: Map<String, Any?>?): ByteArray? = runCatching {
+        if (!supportsImageCode || bytes.isEmpty()) return null
+        val base64 = java.util.Base64.getEncoder().encodeToString(bytes)
+        // webp 头是 RIFF....WEBP；其它按 jpeg 交给配置，配置内部只关心像素
+        val mime = if (bytes.size > 12 && String(bytes, 0, 4, Charsets.US_ASCII) == "RIFF") "image/webp" else "image/jpeg"
+        bridge.setGlobalValue("__ghsImgSrc", "data:$mime;base64,$base64")
+        val extraExpr = extraExpression(extra)
+        val result = bridge.invokeAwait(
+            "adapterImageCode",
+            "__ghsImgSrc, $extraExpr, Md5, ${quote(url)}, {value:'}, function(m){ __log(String(m)); }",
+        ) as? String
+        val payload = result?.substringAfter("base64,", "")?.takeIf { it.isNotBlank() } ?: return null
+        java.util.Base64.getDecoder().decode(payload)
+    }.getOrNull()
+
+    /** 把解图参数转成 JS 对象字面量 */
+    private fun extraExpression(extra: Map<String, Any?>?): String {
+        if (extra.isNullOrEmpty()) return "{}"
+        val body = extra.entries.joinToString(", ") { (key, value) ->
+            when (value) {
+                null -> "${quote(key)}: null"
+                is Number, is Boolean -> "${quote(key)}: $value"
+                else -> "${quote(key)}: ${quote(value.toString())}"
+            }
+        }
+        return "{ $body }"
+    }
+
     fun loadUrl(url: String, replaces: List<UrlReplace>): String {
         if (!bridge.hasMethod("adapterLoadUrl")) return url
         val array = replaces.joinToString(", ") { group ->

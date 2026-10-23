@@ -464,6 +464,10 @@ fun DemoApp(
         session = created
         // 调试台（F25）：把求值器挂到当前会话上
         com.ghs.mobile.web.DebugHub.evaluator = { code -> created.eval(code) }
+        // 图片解码（F05）：图集打散图交给当前配置的 adapterImageCode 还原
+        com.ghs.mobile.ui.ImageDecodeBridge.decoder = { url, bytes, extra ->
+            created.decodeImage(url, bytes, extra)
+        }
         runCatching { withContext(Dispatchers.IO) { created.page() } }
             .onSuccess {
                 currentListUrl = created.homeUrl
