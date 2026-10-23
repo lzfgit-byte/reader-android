@@ -132,8 +132,14 @@ class ConfigEngine(
      *
      * 配置没实现、或返回空串时回落原地址，保证筛选面板不会把列表打空。
      */
-    /** 配置是否实现了 `adapterImageCode`（图集解图） */
-    val supportsImageCode: Boolean get() = bridge.hasMethod("adapterImageCode")
+    /** 配置是否提供了 `adapterImageCode`（可能是函数，也可能是函数体字符串） */
+    val supportsImageCode: Boolean
+        get() = bridge.invokeAwaitRaw(SUPPORTS_IMAGE_CODE) == true
+
+    private companion object {
+        const val SUPPORTS_IMAGE_CODE =
+            "typeof config.adapterImageCode === 'function' || typeof config.adapterImageCode === 'string'"
+    }
 
     /**
      * 用配置的 `adapterImageCode` 还原打散的图片。
