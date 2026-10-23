@@ -41,21 +41,51 @@ object ImageCache {
 
     // ── 图片字节 ────────────────────────────────────────────────
     fun rawBytes(url: String): ByteArray? = raw.get(hashOf(url))
-    fun putRawBytes(url: String, bytes: ByteArray) {
-        raw.put(hashOf(url), bytes)
+
+    /**
+     * 只缓存「能正常解码成图片」的字节。
+     *
+     * 用 BitmapFactory 的只读边界解析判断：失败说明不是图片
+     * （错误页 / 挑战页 / 空响应），缓存它只会让用户反复看到错误内容。
+     */
+    fun putRawBytes(url: String, bytes: ByteArray): Boolean {
+        if (bytes.isEmpty()) return false
+        val options = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, options)
+        val valid = options.outWidth > 0 && options.outHeight > 0
+        if (valid) raw.put(hashOf(url), bytes)
+        return valid
     }
 
     // ── 位图 ───────────────────────────────────────────────────
     fun bitmap(url: String): Bitmap? = bitmaps.get(hashOf(url))
-    fun putBitmap(url: String, bitmap: Bitmap) {
+
+    /** 只缓存成功解码出的位图（回收过的位图不缓存） */
+    fun putBitmap(url: String, bitmap: Bitmap): Boolean {
+        if (bitmap.isRecycled || bitmap.width <= 0 || bitmap.height <= 0) return false
         bitmaps.put(hashOf(url), bitmap)
+        return true
     }
 
     // ── HTML ───────────────────────────────────────────────────
     fun html(url: String): String? = html.get(hashOf(url))
-    fun putHtml(url: String, text: String) {
-        if (text.isBlank()) return
+
+    /**
+     * 只缓存「正常页面」的 HTML。
+     *
+     * 过短、空白、含挑战/拦截特征的内容都不缓存，避免把失败页当成有效结果。
+     */
+    fun putHtml(url: String, text: String): Boolean {
+        if (text.length < 512) return false
+        val probe = text.take(4000).lowercase()
+        val blocked = listOf(
+            "just a moment", "attention required", "checking your browser",
+            "verify you are human", "cf-challenge", "challenge-platform",
+            "安全验证", "人机验证", "访问被拒绝", "403 forbidden",
+        )
+        if (blocked.any { probe.contains(it) }) return false
         html.put(hashOf(url), text)
+        return true
     }
 
     /** 手动刷新 / 切换站点时调用：只清 HTML，图片缓存保留 */
