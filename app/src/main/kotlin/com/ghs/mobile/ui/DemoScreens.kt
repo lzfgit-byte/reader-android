@@ -1113,8 +1113,11 @@ fun DemoApp(
             if (tab == DemoTab.HISTORY) {
                 HistoryScreen(
                     entries = historyEntries,
+                    collected = collected,
+                    progress = progressByUrl,
                     layout = layoutMode,
                     onOpen = { item -> parseTarget = item },
+                    onToggleCollect = { item -> toggleCollect(item) },
                 )
                 return@Surface
             }

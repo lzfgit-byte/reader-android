@@ -70,8 +70,12 @@ fun FavoritesScreen(
 @Composable
 fun HistoryScreen(
     entries: List<HistoryEntry>,
+    /** 历史页也能收藏：与收藏页共用同一套星标逻辑 */
+    collected: Set<String>,
+    progress: Map<String, ReadingProgress>,
     layout: ItemCardLayout,
     onOpen: (Item) -> Unit,
+    onToggleCollect: (Item) -> Unit,
 ) {
     if (entries.isEmpty()) {
         EmptyHint("还没有浏览记录 · 打开任意条目后会记录在这里")
@@ -90,11 +94,11 @@ fun HistoryScreen(
         items(entries, key = { it.item.jumpUrl }) { entry ->
             ItemCard(
                 item = entry.item,
-                progress = null,
-                collected = false,
+                progress = progress[entry.item.jumpUrl],
+                collected = entry.item.jumpUrl in collected,
                 layout = layout,
                 onClick = { onOpen(entry.item) },
-                onToggleCollect = {},
+                onToggleCollect = { onToggleCollect(entry.item) },
                 subtitleOverride = "${readableType(entry.item)} · ${formatter.format(Date(entry.createTime))}",
             )
         }

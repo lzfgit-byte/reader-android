@@ -163,6 +163,8 @@ fun VideoPlayerScreen(
         mutableLongStateOf(resumePositionMs.takeIf { it > 5_000 } ?: 0L)
     }
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
+    // 本次是否已经播到结尾：是则进度归零，不再把结尾位置写回历史
+    var reachedEnd by remember(currentUrl) { mutableStateOf(false) }
     // 长按倍速是否生效中
     var boostActive by remember(currentUrl) { mutableStateOf(false) }
     // 评论面板：显示当前视频源自带的评论
@@ -229,7 +231,7 @@ fun VideoPlayerScreen(
         ExoPlayer.Builder(context).build().apply {
             setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(MediaItem.fromUri(currentUrl)))
             prepare()
-            if (resumeMs > 0 && pendingResume == 0L) seekTo(resumeMs)
+            // 默认从 0 开始；有历史进度时由「继续观看」按钮决定是否跳转
             playWhenReady = true
         }
     }
@@ -263,7 +265,12 @@ fun VideoPlayerScreen(
             durationMs = player.duration.coerceAtLeast(0)
             playing = player.isPlaying
             buffering = player.playbackState == Player.STATE_BUFFERING
-            if (tick % 10 == 0 && pendingResume == 0L) {
+            // 播到结尾附近即视为看完：进度写 0，下次进来从头播
+            if (!reachedEnd && durationMs > 0 && positionMs >= durationMs - 1_000) {
+                reachedEnd = true
+                onProgress(currentUrl, 0L, durationMs)
+            }
+            if (tick % 10 == 0 && pendingResume == 0L && !reachedEnd) {
                 onProgress(currentUrl, player.currentPosition, player.duration.coerceAtLeast(0))
             }
         }
@@ -277,11 +284,11 @@ fun VideoPlayerScreen(
         }
     }
 
+    // 续看提示只停留 2 秒：默认从头播，想续看要在这 2 秒内点
     LaunchedEffect(pendingResume) {
         if (pendingResume > 0) {
-            delay(12_000)
+            delay(2_000)
             pendingResume = 0L
-            controlsVisible = false
         }
     }
 
