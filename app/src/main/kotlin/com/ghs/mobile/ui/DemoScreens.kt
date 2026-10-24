@@ -1061,6 +1061,8 @@ fun DemoApp(
                     }
                 },
             )
+            // 整屏播放器必须 return：否则外层 Scaffold 会把列表画在视频上（只剩声音）
+            return
         }
         is Screen.Detail -> if (reader.info?.detailType == DetailType.TEXT) {
             TextReaderScreen(

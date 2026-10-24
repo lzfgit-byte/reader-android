@@ -48,6 +48,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -247,7 +248,9 @@ fun VideoPlayerScreen(
                 // mp4 直链在应用内解不了时交给系统播放器，避免只剩一张错误页
                 val path = currentUrl.substringBefore("?").lowercase()
                 if (path.endsWith(".mp4")) openExternally()
+                if (path.endsWith(".mp4")) openExternally()
             }
+
         }
         player.addListener(listener)
         onDispose {
@@ -337,7 +340,7 @@ fun VideoPlayerScreen(
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color.Black),
+            .background(Color.Black)
     ) {
         AndroidView(
             factory = { ctx ->
@@ -350,6 +353,7 @@ fun VideoPlayerScreen(
                 }
             },
             update = { view ->
+
                 view.player = player
                 playerViewRef = view
             },
