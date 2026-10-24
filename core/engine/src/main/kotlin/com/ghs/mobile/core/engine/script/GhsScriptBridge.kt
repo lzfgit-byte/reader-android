@@ -295,6 +295,26 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
               sendNotifyMsg: function () { },
               close: function () { }
             };
+            /** 进度类工具的调用也进调试日志 */
+            globalThis.ProgressUtil = {
+              start: function (msg) { __log(String(msg || 'progress start')); },
+              update: function (msg) { __log(String(msg)); },
+              finish: function (msg) { __log(String(msg || 'progress finish')); },
+              error: function (msg) { __log('ERROR: ' + String(msg)); },
+              sendProgress: function (msg) { __log(String(msg)); }
+            };
+            globalThis.LogUtil = {
+              log: function (msg) { __log(String(msg)); },
+              info: function (msg) { __log(String(msg)); },
+              warn: function (msg) { __log(String(msg)); },
+              error: function (msg) { __log('ERROR: ' + String(msg)); }
+            };
+            globalThis.console = {
+              log: function () { __log(Array.prototype.join.call(arguments, ' ')); },
+              info: function () { __log(Array.prototype.join.call(arguments, ' ')); },
+              warn: function () { __log(Array.prototype.join.call(arguments, ' ')); },
+              error: function () { __log(Array.prototype.join.call(arguments, ' ')); }
+            };
             globalThis.net = {
               request: function (options) {
                 var opts = options || {};
