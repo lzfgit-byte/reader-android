@@ -21,6 +21,8 @@ import com.ghs.mobile.core.engine.script.LogHub
 class AdminServer(
     private val context: Context,
     private val store: ConfigStore,
+    /** 收藏读写：供 Web 管理做导入导出 */
+    private val repository: com.ghs.mobile.core.data.LocalRepository,
     private val port: Int,
     private val bindHost: String,
     private val appVersion: String,
@@ -106,6 +108,8 @@ class AdminServer(
                 path == "/configs/order" && method == Method.POST -> reorder(rawBody)
                 path == "/configs/export" && method == Method.GET -> exportConfigs()
                 path == "/configs/import" && method == Method.POST -> importConfigs(rawBody)
+                path == "/favorites/export" && method == Method.GET -> exportFavorites()
+                path == "/favorites/import" && method == Method.POST -> importFavorites(rawBody)
                 path == "/validate" && method == Method.POST -> validate(rawBody)
 
                 path.startsWith("/configs/") -> {
@@ -308,6 +312,50 @@ class AdminServer(
 
         notifyChanged()
         return jsonOk(JSONObject().put("imported", keys.size).put("keys", JSONArray(keys)))
+    }
+
+    /** 收藏导出：所有站点的收藏，含 payload（原 JSON），可直接回灌 */
+    /** 收藏导出：所有站点的收藏（含 payload），可直接回灌 */
+    private fun exportFavorites(): Response {
+        val array = org.json.JSONArray()
+        val keys = store.list().map { it.key }
+        val rows = kotlinx.coroutines.runBlocking {
+            keys.flatMap { key -> runCatching { repository.collects(key) }.getOrDefault(emptyList()) }
+        }
+        rows.forEach { item ->
+            array.put(
+                org.json.JSONObject()
+                    .put("configKey", item.configKey)
+                    .put("url", item.url)
+                    .put("payload", item.payload)
+                    .put("count", item.count)
+                    .put("createTime", item.createTime),
+            )
+        }
+        val payload = org.json.JSONObject()
+            .put("version", 1)
+            .put("exportedAt", System.currentTimeMillis())
+            .put("items", array)
+        return jsonOk(payload)
+    }
+
+    /** 收藏导入：同一 (configKey,url) 覆盖，不产生重复 */
+    private fun importFavorites(rawBody: String): Response {
+        val body = parseJson(rawBody)
+        val items = body.optJSONArray("items") ?: body.optJSONArray("favorites")
+            ?: return json(Response.Status.BAD_REQUEST, error("E-FAV-001", "缺少 items"))
+        var imported = 0
+        for (i in 0 until items.length()) {
+            val row = items.optJSONObject(i) ?: continue
+            val key = row.optString("configKey").ifBlank { "unknown" }
+            val url = row.optString("url")
+            if (url.isBlank()) continue
+            val payload = row.optString("payload").ifBlank { "{}" }
+            runCatching {
+                kotlinx.coroutines.runBlocking { repository.collect(key, url, payload) }
+            }.onSuccess { imported += 1 }
+        }
+        return jsonOk(org.json.JSONObject().put("imported", imported))
     }
 
     private fun createConfig(rawBody: String): Response {

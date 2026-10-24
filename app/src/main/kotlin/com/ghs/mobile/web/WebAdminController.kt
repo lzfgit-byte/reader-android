@@ -110,9 +110,9 @@ class WebAdminController(
             val instance = AdminServer(
                 context = context,
                 store = configStore,
+                repository = repository,
                 port = candidate,
                 bindHost = settings.bindHost,
-    
                 appVersion = appVersion,
                 onConfigsChanged = { _reloadSignal.value = _reloadSignal.value + 1 },
             )

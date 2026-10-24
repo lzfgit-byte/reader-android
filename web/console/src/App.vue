@@ -112,6 +112,49 @@ function downloadText(filename: string, text: string): void {
   URL.revokeObjectURL(url)
 }
 
+// ── 收藏导入 / 导出 ───────────────────────────────────────────
+const favInput = ref<HTMLInputElement | null>(null)
+
+/** 收藏导出：下载 JSON */
+async function exportFavorites(): Promise<void> {
+  try {
+    const res = await fetch('/api/favorites/export')
+    const data = await res.json()
+    const stamp = new Date().toISOString().slice(0, 10)
+    downloadText(`ghs-favorites-${stamp}.json`, JSON.stringify(data, null, 2))
+    status.value = `已导出收藏 ${data.items?.length ?? 0} 条`
+    error.value = ''
+  } catch (e) {
+    error.value = `导出收藏失败：${String(e)}`
+  }
+}
+
+function pickFavImport(): void {
+  favInput.value?.click()
+}
+
+/** 收藏导入：读 JSON 后 POST /api/favorites/import */
+async function onFavFile(ev: Event): Promise<void> {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+  try {
+    const text = await file.text()
+    const res = await fetch('/api/favorites/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: text,
+    })
+    const data = await res.json()
+    status.value = `已导入收藏 ${data.imported ?? 0} 条`
+    error.value = ''
+  } catch (e) {
+    error.value = `导入收藏失败：${String(e)}`
+  } finally {
+    input.value = ''
+  }
+}
+
 async function exportAll(): Promise<void> {
   try {
     const text = await api.exportAll()
@@ -336,6 +379,8 @@ onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer
         </button>
         <button class="ghost" @click="exportCurrent" :disabled="!selectedKey">导出当前</button>
         <button class="ghost" @click="exportAll">导出全部</button>
+        <button class="ghost" @click="exportFavorites">导出收藏</button>
+        <button class="ghost" @click="pickFavImport">导入收藏</button>
         <button class="ghost" :class="{ active: debugOpen }" @click="toggleDebug">调试</button>
         <button class="ghost" @click="createConfig">新建</button>
         <button class="ghost danger" @click="removeConfig">删除</button>
@@ -344,6 +389,7 @@ onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer
       </div>
     </header>
     <input ref="importInput" type="file" accept=".js,.json,.txt" hidden @change="onImportFile" />
+    <input ref="favInput" type="file" accept=".json" hidden @change="onFavFile" />
 
     <p v-if="narrow" class="readonly-tip">当前窗口过窄，源码为只读预览；请用桌面浏览器（≥900px）编辑。</p>
 
