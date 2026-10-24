@@ -20,6 +20,11 @@
 
 ### Added
 
+- **收藏导入 / 导出（F07）**
+  - Web 管理界面新增「导出收藏」「导入收藏」：导出下载含 `configKey/url/payload/count/createTime` 的 JSON，导入按 `configKey+url` 覆盖写入
+  - 新增接口 `GET /api/favorites/export`、`POST /api/favorites/import`（见 `docs/03-api/web-admin-api.md`）
+  - 用于换机与多设备迁移；设计见 `docs/01-product/design.md` §5.7
+
 - **QuickJS 运行时接入（真机主通道）**
   - `:core:engine` 新增 `ScriptEngine` 接口 + `GhsScriptBridge` + `ConfigSource`：句柄表、方法派发、JS prelude、18 个宿主函数、`break` 标记切分，**纯 JVM 可单测**（新增 15 个测试）
   - `:core:script`（Android library）：`QuickJsScriptEngine` 把 `io.github.taoweiji.quickjs:quickjs-android:1.4.6` 适配到 `ScriptEngine`；`ScriptProbe` 提供真机自检（启动耗时 / ES2020 探测 / 选择器取值 / 配置求值与 `this` 绑定）

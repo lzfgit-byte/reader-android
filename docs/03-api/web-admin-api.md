@@ -126,6 +126,16 @@ POST /api/validate
 > 覆盖导入保留原有的 `enabled` / `sort`。导入与其他 `/api` 一样不校验令牌（内网信任模型）。
 > 尚未实现：按 `format=manifest|inline` 指定导出格式、`import-bundle` 的逐条结果——当前统一按脚本原文处理。
 
+#### 收藏导入导出（F07）
+
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/favorites/export` | 导出全部站点的收藏：`{version, exportedAt, items:[{configKey,url,payload,count,createTime}]}`；`url` 为相对地址，`payload` 为条目原 JSON |
+| POST | `/api/favorites/import` | 请求体同上（也接受 `favorites` 或裸数组）；按 `configKey+url` **覆盖**写入，返回 `{imported}` |
+
+> 写成幂等覆盖而非追加：同一收藏重复导入不会产生重复行，便于多设备互相同步。
+
+
 ### 4.4 运行时控制
 
 | 方法 | 路径 | 说明 |
