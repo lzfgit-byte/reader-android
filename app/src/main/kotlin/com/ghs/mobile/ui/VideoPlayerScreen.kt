@@ -317,6 +317,14 @@ fun VideoPlayerScreen(
             controller.show(WindowInsetsCompat.Type.systemBars())
         }
     }
+    // 播放期间不要息屏：长视频/切后台时系统会锁屏，声音还在但画面停
+    // 播放期间不要息屏：否则长视频/切后台时系统会锁屏，声音还在但画面停
+    DisposableEffect(activity) {
+        activity?.window?.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        onDispose {
+            activity?.window?.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        }
+    }
     DisposableEffect(Unit) {
         onDispose {
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -470,7 +478,8 @@ fun VideoPlayerScreen(
         }
 
         // 锁按钮：左侧边缘垂直居中
-        if (!locked) {
+        // 锁按钮：只随控制层一起出现（控制层隐藏后不该留着一个图标）
+        if (!locked && controlsVisible) {
             IconButton(
                 onClick = { locked = true; controlsVisible = false },
                 modifier = Modifier

@@ -229,7 +229,14 @@ private fun ProxyForm(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text("启用代理", style = MaterialTheme.typography.bodyMedium)
-            Switch(checked = enabled, onCheckedChange = { enabled = it })
+            Switch(
+                checked = enabled,
+                onCheckedChange = { next ->
+                    // 开关本身就是"启用/不启用"，立即落库，不需要再点应用
+                    enabled = next
+                    onApply(next, whitelist, forceProxy)
+                },
+            )
         }
 
         Text("代理列表（同时只有一条生效）", style = MaterialTheme.typography.labelMedium)

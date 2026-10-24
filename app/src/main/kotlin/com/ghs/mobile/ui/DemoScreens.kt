@@ -1,6 +1,8 @@
 package com.ghs.mobile.ui
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1572,11 +1574,14 @@ fun DemoApp(
                 color = MaterialTheme.colorScheme.surface,
                 shadowElevation = 12.dp,
             ) {
-                Column(modifier = Modifier.fillMaxSize().padding(top = 24.dp)) {
-                    // 设置内容占满剩余高度（内部自己滚动），菜单固定钉在底部可见
-                    Box(modifier = Modifier.weight(1f)) {
-                        drawerSettings()
-                    }
+                Column(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .padding(top = 24.dp)
+                        // 整块一起滚动：引擎日志 / 自检 / 清缓存也跟随滚动，不再钉在底部
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    drawerSettings()
                     NavigationDrawerItem(
                         label = {
                             Text(
