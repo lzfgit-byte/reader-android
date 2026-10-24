@@ -45,8 +45,19 @@ class HttpScriptHost(
     @Volatile
     var challengeHandler: ((String) -> Boolean)? = null
 
+    /**
+     * 页面 HTML 缓存（按 URL 的 MD5）。由 App 侧注入：手动刷新、切换站点时清空。
+     * 缓存不过期，只按容量淘汰；失败页不会被写入（由实现方判断）。
+     */
+    @Volatile
+    var htmlCache: HtmlCache? = null
+
     override fun fetchHtml(url: String): String {
         val started = System.currentTimeMillis()
+        htmlCache?.get(url)?.let { cached ->
+            android.util.Log.i("GHS", "fetchHtml cache hit $url (${cached.length} 字符)")
+            return cached
+        }
         android.util.Log.i("GHS", "fetchHtml start $url")
         val request = Request.Builder()
             .url(url)
@@ -84,7 +95,10 @@ class HttpScriptHost(
                             }
                             throw IllegalStateException("取页失败：HTTP ${response.code} $url")
                         }
-                        return response.body?.string() ?: throw IllegalStateException("取页为空：$url")
+                        val body = response.body?.string()
+                            ?: throw IllegalStateException("取页为空：$url")
+                        htmlCache?.put(url, body)
+                        return body
                     }
                 } catch (error: java.io.IOException) {
                     lastError = error
@@ -390,4 +404,10 @@ class HttpScriptHost(
             }
             .build()
     }
+}
+
+/** 页面 HTML 缓存的最小契约（App 侧用 LruCache 实现） */
+interface HtmlCache {
+    fun get(url: String): String?
+    fun put(url: String, html: String)
 }

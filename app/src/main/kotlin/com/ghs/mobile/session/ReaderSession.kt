@@ -31,6 +31,13 @@ class ReaderHost(
 
     private val http = HttpScriptHost(context) { proxyRules }
 
+    /** HTML 缓存透传：同一页不重复取；刷新 / 切换站点时清空 */
+    var htmlCache: com.ghs.mobile.core.script.HtmlCache?
+        get() = http.htmlCache
+        set(value) {
+            http.htmlCache = value
+        }
+
     /** 人机校验回调透传：取页被挡时由 App 弹出校验窗口（F29） */
     var challengeHandler: ((String) -> Boolean)?
         get() = http.challengeHandler
@@ -116,6 +123,8 @@ class ReaderSession(
     init {
         // 取页被挡时弹出人机校验窗口（F29）；完成后 fetchHtml 自动重试
         host.challengeHandler = { url -> com.ghs.mobile.ui.ChallengeGate.await(url) }
+        // HTML 缓存：同一页不重复取；刷新/切站点时由 UI 调 ImageCache.clearHtml()
+        host.htmlCache = com.ghs.mobile.ui.AppHtmlCache
     }
 
     fun page(): Page = pageFrom(homeUrl)

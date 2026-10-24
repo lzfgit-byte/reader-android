@@ -90,6 +90,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.graphics.asImageBitmap
 
 /** 图片清晰度：原图（`fullUrl`）或展示图（`url`） */
 enum class ImageQuality { ORIGINAL, PREVIEW }
@@ -241,7 +242,16 @@ fun ComicReaderScreen(
                             onLongClick = { saveCurrentPage() },
                         ),
                 ) {
-                    if (index <= allowUpTo) {
+                    // 已解码过的图直接从位图缓存出图：滚回不重新下载、不重新解码
+                    val cachedBitmap = ImageCache.bitmap(url)
+                    if (cachedBitmap != null) {
+                        androidx.compose.foundation.Image(
+                            bitmap = cachedBitmap.asImageBitmap(),
+                            contentDescription = "第 ${index + 1} 页",
+                            contentScale = ContentScale.FillWidth,
+                            modifier = Modifier.fillMaxWidth(),
+                        )
+                    } else if (index <= allowUpTo) {
                         androidx.compose.runtime.key(retryCount) {
                             AsyncImage(
                                 model = ImageRequest.Builder(context)
@@ -260,6 +270,13 @@ fun ComicReaderScreen(
                             contentScale = ContentScale.FillWidth,
                             onState = { next ->
                                 imageStates[index] = next
+                                if (next is coil.compose.AsyncImagePainter.State.Success) {
+                                    // 记下解码结果：下次滚动回来直接用位图
+                                    val drawable = next.result.drawable
+                                    if (drawable is android.graphics.drawable.BitmapDrawable) {
+                                        drawable.bitmap?.let { ImageCache.putBitmap(url, it) }
+                                    }
+                                }
                                 if (next is coil.compose.AsyncImagePainter.State.Success ||
                                     next is coil.compose.AsyncImagePainter.State.Error
                                 ) {

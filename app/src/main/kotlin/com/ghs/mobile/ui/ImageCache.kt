@@ -113,3 +113,11 @@ object ImageCache {
         else -> "$bytes B"
     }
 }
+
+/** 把 ImageCache 的 HTML 部分适配成 core:script 需要的接口 */
+object AppHtmlCache : com.ghs.mobile.core.script.HtmlCache {
+    override fun get(url: String): String? = ImageCache.html(url)
+    override fun put(url: String, html: String) {
+        ImageCache.putHtml(url, html)
+    }
+}

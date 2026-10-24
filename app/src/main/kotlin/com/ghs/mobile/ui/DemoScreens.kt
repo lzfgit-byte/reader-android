@@ -111,6 +111,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.FilterChip
+import coil.imageLoader
 
 /**
  * 演示界面：列表 → 详情（图集 / 文本 / 视频）。
@@ -193,6 +194,8 @@ fun DemoApp(
         onDispose { com.ghs.mobile.core.engine.script.LogHub.removeListener(listener) }
     }
     var logSheetOpen by remember { mutableStateOf(false) }
+    // 清除缓存确认框
+    var showClearCache by remember { mutableStateOf(false) }
     var showPageSheet by remember { mutableStateOf(false) }
     // 筛选/排序面板：配置返回的 urlReplace 分组
     var showFilterSheet by remember { mutableStateOf(false) }
@@ -335,6 +338,8 @@ fun DemoApp(
         val active = session ?: return
         val url = currentListUrl ?: active.homeUrl
         refreshing = true
+        // 手动刷新：作废 HTML 缓存（图片缓存保留）
+        ImageCache.clearHtml()
         scope.launch {
             val page = runCatching { withContext(Dispatchers.IO) { active.pageFrom(url) } }.getOrNull()
             if (page != null) {
@@ -447,6 +452,8 @@ fun DemoApp(
     LaunchedEffect(configKey, reloadRequest) {
         val key = configKey ?: return@LaunchedEffect
         screen = Screen.Loading
+        // 切换站点 / 配置重载：作废 HTML 缓存，避免看到上一个站点的页面
+        ImageCache.clearHtml()
         session?.close()
         session = null
 
@@ -1256,6 +1263,35 @@ fun DemoApp(
 
     // 日志入口在左侧抽屉里：点开看配置脚本输出的日志
     val latestLog = logEntries.lastOrNull()
+    // 清除缓存：确认框里展示分项占用
+    if (showClearCache) {
+        androidx.compose.material3.AlertDialog(
+            onDismissRequest = { showClearCache = false },
+            title = { Text("清除缓存") },
+            text = {
+                Text(
+                    "当前占用 " + ImageCache.format(ImageCache.sizeBytes()) +
+                        "\n图片字节 " + ImageCache.format(ImageCache.rawSizeBytes()) +
+                        "\n解码后图片 " + ImageCache.format(ImageCache.bitmapSizeBytes()) +
+                        "\n网页 HTML " + ImageCache.format(ImageCache.htmlSizeBytes()),
+                )
+            },
+            confirmButton = {
+                androidx.compose.material3.TextButton(
+                    onClick = {
+                        ImageCache.clearAll()
+                        app.imageLoader.memoryCache?.clear()
+                        app.imageLoader.diskCache?.clear()
+                        showClearCache = false
+                    },
+                ) { Text("清除") }
+            },
+            dismissButton = {
+                androidx.compose.material3.TextButton(onClick = { showClearCache = false }) { Text("取消") }
+            },
+        )
+    }
+
     if (logSheetOpen) {
         ModalBottomSheet(
             onDismissRequest = { logSheetOpen = false },
@@ -1376,6 +1412,16 @@ fun DemoApp(
                             onOpenProbe()
                         },
                         icon = { Icon(Icons.Default.Info, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("清除缓存 · ${ImageCache.format(ImageCache.sizeBytes())}") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            showClearCache = true
+                        },
+                        icon = { Icon(Icons.Default.Delete, contentDescription = null) },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                     NavigationDrawerItem(
