@@ -33,7 +33,7 @@ import com.ghs.mobile.GhsApp
 class ChallengeActivity : Activity() {
 
     private var webView: WebView? = null
-    private var statusView: TextView? = null
+    
     private var host: String = ""
     private var finished = false
     private var pollToken = 0
@@ -65,16 +65,6 @@ class ChallengeActivity : Activity() {
         }
         root.addView(hint, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
-        // 状态条：显示 HTTP 错误 / 网络错误，避免"白屏不知道为什么"
-        val status = TextView(this).apply {
-            textSize = 12f
-            setTextColor(Color.parseColor("#B3261E"))
-            setPadding(32, 8, 32, 8)
-            visibility = TextView.GONE
-        }
-        statusView = status
-        root.addView(status, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
-
         val view = WebView(this)
         webView = view
         view.settings.javaScriptEnabled = true
@@ -99,7 +89,6 @@ class ChallengeActivity : Activity() {
                 if (!request.isForMainFrame) return
                 val message = "网络错误：${error.description}（${error.errorCode}）"
                 android.util.Log.w("GHS", "challenge error $message ${request.url}")
-                showStatus(message)
                 scheduleDetection(POLL_INTERVAL_MS)
             }
 
@@ -111,7 +100,6 @@ class ChallengeActivity : Activity() {
                 if (!request.isForMainFrame) return
                 val code = errorResponse.statusCode
                 android.util.Log.w("GHS", "challenge http $code ${request.url}")
-                showStatus("站点返回 HTTP $code，可能拒绝了当前网络出口（代理 IP 被挡）")
                 scheduleDetection(POLL_INTERVAL_MS)
             }
         }
@@ -153,13 +141,6 @@ class ChallengeActivity : Activity() {
         webView = null
         if (!finished) ChallengeGate.resolve(host, false)
         super.onDestroy()
-    }
-
-    private fun showStatus(text: String) {
-        statusView?.apply {
-            this.text = text
-            visibility = TextView.VISIBLE
-        }
     }
 
     /** 轮询页面是否还处于挑战态；不再命中即视为完成 */
