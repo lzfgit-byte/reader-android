@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Star
+import androidx.compose.material.icons.outlined.StarBorder
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -267,10 +268,11 @@ private fun StarToggle(collected: Boolean, onToggle: () -> Unit) {
             },
     ) {
         Icon(
-            imageVector = Icons.Default.Star,
+            // 实心 / 空心两套图标：收藏=实心主色星，未收藏=空心灰星
+            imageVector = if (collected) Icons.Filled.Star else Icons.Outlined.StarBorder,
             contentDescription = if (collected) "取消收藏" else "收藏",
             tint = tint,
-            modifier = Modifier.size(17.dp),
+            modifier = Modifier.size(18.dp),
         )
     }
 }
