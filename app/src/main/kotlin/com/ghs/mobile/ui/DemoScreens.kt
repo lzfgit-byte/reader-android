@@ -1374,6 +1374,8 @@ fun DemoApp(
                     )
                     Button(
                         onClick = {
+                            // 先让阻塞中的取页/求值退出，再取消协程
+                            session?.cancelPending()
                             detailJob?.cancel()
                             detailJob = null
                             detailError = null

@@ -52,6 +52,14 @@ class HttpScriptHost(
     @Volatile
     var htmlCache: HtmlCache? = null
 
+    /** 用户点了「取消」：置位后正在等待的取页/求值尽快退出 */
+    private val cancelFlag = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /** 取消当前所有等待；下一次取页会自动复位 */
+    fun cancelPending() {
+        cancelFlag.set(true)
+    }
+
     override fun fetchHtml(url: String): String {
         val started = System.currentTimeMillis()
         htmlCache?.get(url)?.let { cached ->
@@ -327,9 +335,13 @@ class HttpScriptHost(
 
             Thread {
                 try {
-                    if (!loaded.await(PAGE_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                        failure = "页面加载超时：$url"
-                        return@Thread
+                    // 不设超时：由用户点「取消」决定放弃
+                    while (!loaded.await(200, TimeUnit.MILLISECONDS)) {
+                        if (cancelFlag.get()) {
+                            failure = "已取消"
+                            result.countDown()
+                            return@Thread
+                        }
                     }
                     onMain {
                         view.evaluateJavascript(
@@ -363,16 +375,20 @@ class HttpScriptHost(
             }.start()
 
             // 等待结果；超时则记失败
+            // 等待结果：不设超时，只响应取消
             Thread {
-                if (!result.await(EVAL_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                    failure = "页面脚本超时（页面可能要求登录或验证）：$url"
-                    result.countDown()
+                while (!result.await(200, TimeUnit.MILLISECONDS)) {
+                    if (cancelFlag.get()) {
+                        failure = "已取消"
+                        result.countDown()
+                        break
+                    }
                 }
             }.start()
 
             // 结果到齐后再销毁 WebView（必须在主线程）
             Thread {
-                runCatching { result.await(EVAL_TIMEOUT_MS + 1_000, TimeUnit.MILLISECONDS) }
+                runCatching { result.await() }
                 onMain {
                     runCatching {
                         view.stopLoading()
@@ -382,7 +398,7 @@ class HttpScriptHost(
             }.start()
         }
 
-        result.await(EVAL_TIMEOUT_MS + 5_000, TimeUnit.MILLISECONDS)
+        result.await()
         failure?.let { throw IllegalStateException(it) }
         return output
     }

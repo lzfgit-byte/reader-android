@@ -45,6 +45,11 @@ class ReaderHost(
             http.challengeHandler = value
         }
 
+    /** 用户取消解析：让正在等待的取页尽快退出 */
+    fun cancelPending() {
+        http.cancelPending()
+    }
+
     override fun fetchHtmlProcessed(url: String): String =
         if (isDemo(url)) assetHtml(url) else http.fetchHtmlProcessed(url)
 
@@ -128,6 +133,11 @@ class ReaderSession(
         host.challengeHandler = { url -> com.ghs.mobile.ui.ChallengeGate.await(url) }
         // HTML 缓存：同一页不重复取；刷新/切站点时由 UI 调 ImageCache.clearHtml()
         host.htmlCache = com.ghs.mobile.ui.AppHtmlCache
+    }
+
+    /** 用户取消解析：让阻塞中的取页尽快退出 */
+    fun cancelPending() {
+        host.cancelPending()
     }
 
     fun page(): Page = pageFrom(homeUrl)
