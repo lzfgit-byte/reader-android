@@ -146,8 +146,9 @@ class HttpScriptHost(
      */
     private fun isChallengePage(html: String): Boolean {
         if (html.length < 512) return true
-        val probe = html.take(4000).lowercase()
-        return CHALLENGE_MARKERS.any { probe.contains(it) }
+        // 与 checkBoot 一致：看 <title> 是否命中挑战标题
+        val title = TITLE_REGEX.find(html)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+        return CHALLENGE_TITLES.any { title.contains(it, ignoreCase = true) }
     }
 
     /** 校验完成后重放一次原请求；仍失败则返回 null 交给上层兜底 */
@@ -399,10 +400,10 @@ class HttpScriptHost(
         private const val REQUEST_ATTEMPTS = 3
         private const val EVAL_TIMEOUT_MS = 180_000L
         /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
-        private const val FALLBACK_TIMEOUT_MS = 40_000L
+        private const val FALLBACK_TIMEOUT_MS = 12_000L
         /** DOM 就绪轮询：每 500ms 探一次，最多 80 次（约 40s） */
         private const val DOM_POLL_INTERVAL_MS = 500L
-        private const val DOM_POLL_ATTEMPTS = 80
+        private const val DOM_POLL_ATTEMPTS = 24
 
         /** 正文出现即视为可解析，不要求图片 / 广告脚本全部加载完 */
         private const val READY_JS =
@@ -412,12 +413,14 @@ class HttpScriptHost(
         /** 这些状态码说明直连被挡（Cloudflare / 校验页），值得用无头 WebView 再试一次 */
         private val WEBVIEW_FALLBACK_CODES = setOf(403, 429, 503)
 
-        /** 挑战 / 拦截页特征：命中就不当内容用，也不写缓存 */
-        private val CHALLENGE_MARKERS = listOf(
-            "just a moment", "attention required", "checking your browser",
-            "verify you are human", "cf-challenge", "challenge-platform",
-            "安全验证", "人机验证", "访问被拒绝", "403 forbidden",
+        /** 挑战页标题特征：命中即视为需要人机校验（与参考实现的 checkBoot 一致） */
+        private val CHALLENGE_TITLES = listOf(
+            "just a moment", "captcha", "checking your browser",
+            "attention required", "verify you are human",
+            "安全验证", "人机验证",
         )
+        private val TITLE_REGEX =
+            Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         private fun defaultClient(rules: () -> ProxyRules): OkHttpClient = OkHttpClient.Builder()

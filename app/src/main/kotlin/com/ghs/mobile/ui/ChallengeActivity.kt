@@ -200,16 +200,14 @@ class ChallengeActivity : Activity() {
         val DETECT_JS = """
             (function() {
               try {
-                var html = document.documentElement ? document.documentElement.outerHTML : '';
-                var body = document.body ? (document.body.innerText || '') : '';
-                var title = document.title || '';
-                var probe = (title + ' ' + body + ' ' + html.slice(0, 4000)).toLowerCase();
-                var marks = ['just a moment', 'attention required', 'checking your browser',
-                             'verify you are human', 'cf-challenge', 'challenge-platform',
-                             '请稍候', '正在验证', '安全验证', '人机验证'];
+                // 与 checkBoot 一致：先看标题是否命中挑战特征
+                var title = (document.title || '').trim();
+                var marks = ['Just a moment', 'CAPTCHA', 'Checking your Browser',
+                             'Attention Required', '安全验证', '人机验证'];
                 for (var i = 0; i < marks.length; i++) {
-                  if (probe.indexOf(marks[i]) >= 0) return 'WAIT';
+                  if (title.indexOf(marks[i]) >= 0) return 'WAIT';
                 }
+                var body = document.body ? (document.body.innerText || '') : '';
                 if (body.trim().length < 200) return 'WAIT';
                 return 'OK:' + body.length;
               } catch (e) {
