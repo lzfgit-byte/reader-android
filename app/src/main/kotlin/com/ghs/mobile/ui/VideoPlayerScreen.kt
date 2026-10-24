@@ -74,6 +74,10 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import kotlinx.coroutines.launch
 import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.foundation.basicMarquee
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.heightIn
 
 /** 把毫秒格式化成 `12:34` / `1:02:03` */
 internal fun formatDuration(ms: Long): String {
@@ -161,6 +165,21 @@ fun VideoPlayerScreen(
     var playerViewRef by remember { mutableStateOf<PlayerView?>(null) }
     // 长按倍速是否生效中
     var boostActive by remember(currentUrl) { mutableStateOf(false) }
+    // 评论面板：显示当前视频源自带的评论
+    var commentsOpen by remember(currentUrl) { mutableStateOf(false) }
+    val currentComments = sources.getOrNull(index)?.comments.orEmpty()
+
+    // 交给系统播放器 / 浏览器打开：mp4 直链在应用内解不了时的兜底
+    fun openExternally() {
+        runCatching {
+            context.startActivity(
+                android.content.Intent(
+                    android.content.Intent.ACTION_VIEW,
+                    android.net.Uri.parse(currentUrl),
+                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK),
+            )
+        }
+    }
 
     // 播放进度镜像：给进度条与时间显示用
     var positionMs by remember(currentUrl) { mutableLongStateOf(0L) }
@@ -219,6 +238,9 @@ fun VideoPlayerScreen(
         val listener = object : Player.Listener {
             override fun onPlayerError(playerError: PlaybackException) {
                 error = playerError.errorCodeName + " · " + (playerError.message ?: "")
+                // mp4 直链在应用内解不了时交给系统播放器，避免只剩一张错误页
+                val path = currentUrl.substringBefore("?").lowercase()
+                if (path.endsWith(".mp4")) openExternally()
             }
         }
         player.addListener(listener)
@@ -583,6 +605,15 @@ fun VideoPlayerScreen(
                         }
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
+                        if (currentComments.isNotEmpty()) {
+                            TextButton(onClick = { commentsOpen = true }) {
+                                Text(
+                                    "评论 ${currentComments.size}",
+                                    color = Color.White,
+                                    style = MaterialTheme.typography.labelLarge,
+                                )
+                            }
+                        }
                         if (sources.size > 1) {
                             Box {
                                 TextButton(onClick = { menuOpen = true }) {
@@ -675,12 +706,49 @@ fun VideoPlayerScreen(
                         style = MaterialTheme.typography.labelSmall,
                         modifier = Modifier.padding(top = 8.dp),
                     )
-                    TextButton(onClick = { sheet = PlayerSheet.SWITCHER }) { Text("换线路") }
+                    Row {
+                        TextButton(onClick = { sheet = PlayerSheet.SWITCHER }) { Text("换线路") }
+                        TextButton(onClick = { openExternally() }) { Text("用外部播放器打开") }
+                    }
                 }
             }
         }
     }
 
+    // 评论：视频源自带的评论列表
+    if (commentsOpen && currentComments.isNotEmpty()) {
+        ModalBottomSheet(
+            onDismissRequest = { commentsOpen = false },
+            sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+        ) {
+            Column(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp)
+                    .padding(bottom = 24.dp),
+            ) {
+                Text("评论 ${currentComments.size}", style = MaterialTheme.typography.titleSmall)
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .verticalScroll(rememberScrollState()),
+                ) {
+                    currentComments.forEach { comment ->
+                        Column(modifier = Modifier.padding(vertical = 8.dp)) {
+                            if (comment.datetime.isNotBlank()) {
+                                Text(
+                                    comment.datetime,
+                                    color = Color(0xFF9E9E9E),
+                                    style = MaterialTheme.typography.labelSmall,
+                                )
+                            }
+                            Text(comment.comment, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
+        }
+    }
     if (sheet != PlayerSheet.NONE && series != null) {
         ModalBottomSheet(
             onDismissRequest = { sheet = PlayerSheet.NONE },
@@ -809,3 +877,4 @@ private fun LockIcon(locked: Boolean, tint: Color, boxSize: androidx.compose.ui.
         )
     }
 }
+
