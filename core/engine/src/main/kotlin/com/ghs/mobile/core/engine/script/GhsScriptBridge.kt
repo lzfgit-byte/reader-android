@@ -284,7 +284,8 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
               return __fetchHtmlProcessed(String(url));
             };
             globalThis.executeJs = function (url, code, show) {
-              return __executePage(String(url), String(code));
+              // show=true：把取页窗口显示出来，让用户完成验证/登录
+              return __executePageEx(String(url), String(code), !!show);
             };
             /**
              * 配置里的日志入口：全部汇到调试日志（应用内「日志云」+ logcat GHS-JS）。
