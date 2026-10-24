@@ -14,6 +14,12 @@ interface ScriptHostTransport : AutoCloseable {
     /** 取页面 HTML；失败抛异常（脚本里的 try/catch 能捕获） */
     fun fetchHtml(url: String): String
 
+    /**
+     * 需要「跑过页面脚本」的取页：默认退回普通取页，
+     * 真机实现会走 WebView 打开页面再取渲染后的 HTML。
+     */
+    fun fetchHtmlProcessed(url: String): String = fetchHtml(url)
+
     /** 发一次请求；返回状态码、头与响应体 */
     fun request(url: String, method: String, headers: Map<String, String>, body: String?): HostResponse
 

@@ -45,6 +45,9 @@ class ReaderHost(
             http.challengeHandler = value
         }
 
+    override fun fetchHtmlProcessed(url: String): String =
+        if (isDemo(url)) assetHtml(url) else http.fetchHtmlProcessed(url)
+
     override fun fetchHtml(url: String): String =
         if (isDemo(url)) assetHtml(url) else http.fetchHtml(url)
 

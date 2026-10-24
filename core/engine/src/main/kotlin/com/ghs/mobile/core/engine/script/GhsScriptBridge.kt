@@ -147,6 +147,10 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
         engine.setFunction("__fetchHtml") { args ->
             transport.fetchHtml(textOf(args.getOrNull(0)))
         }
+        // 需要 JS 渲染的取页：交给 WebView 打开并取渲染后的 HTML
+        engine.setFunction("__fetchHtmlProcessed") { args ->
+            transport.fetchHtmlProcessed(textOf(args.getOrNull(0)))
+        }
         engine.setFunction("__httpRequest") { args ->
             val url = textOf(args.getOrNull(0))
             val method = textOf(args.getOrNull(1)).ifEmpty { "GET" }
@@ -257,6 +261,13 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
              */
             globalThis.getHtml = function (url, forceWebView) {
               return __fetchHtml(String(url));
+            };
+            /**
+             * 需要「跑过页面脚本」的取页：用无头 WebView 打开页面后取渲染结果。
+             * 配置里靠它拿 JS 渲染/登录后的内容。
+             */
+            globalThis.getHtmlWithProcess = function (url) {
+              return __fetchHtmlProcessed(String(url));
             };
             globalThis.executeJs = function (url, code, show) {
               return __executePage(String(url), String(code));
