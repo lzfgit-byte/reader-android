@@ -351,8 +351,17 @@ class AdminServer(
             val url = row.optString("url")
             if (url.isBlank()) continue
             val payload = row.optString("payload").ifBlank { "{}" }
+            val count = row.optInt("count", 0)
+            val createTime = row.optLong("createTime", 0L)
             runCatching {
-                kotlinx.coroutines.runBlocking { repository.collect(key, url, payload) }
+                kotlinx.coroutines.runBlocking {
+                    // 导入保留原始「看过次数」，否则按次数排序会全部打平
+                    if (count > 0) {
+                        repository.collectWithCount(key, url, payload, count, createTime)
+                    } else {
+                        repository.collect(key, url, payload)
+                    }
+                }
             }.onSuccess { imported += 1 }
         }
         return jsonOk(org.json.JSONObject().put("imported", imported))
