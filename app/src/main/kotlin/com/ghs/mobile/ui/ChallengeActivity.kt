@@ -168,7 +168,7 @@ class ChallengeActivity : Activity() {
         root.addView(actions, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
         setContentView(root)
-        view.loadUrl(url)
+        // 桌面页面：UA 已在 settings 里设置，这里补中文与桌面 Client Hints         val pageHeaders = mutableMapOf("Accept-Language" to com.ghs.mobile.core.engine.net.UserAgents.ACCEPT_LANGUAGE)         pageHeaders.putAll(com.ghs.mobile.core.engine.net.UserAgents.clientHints())         view.loadUrl(url, pageHeaders)
         // 兜底：即使页面不回调，也要开始检测（403/挑战页常见）
         scheduleDetection(FIRST_CHECK_DELAY_MS)
     }

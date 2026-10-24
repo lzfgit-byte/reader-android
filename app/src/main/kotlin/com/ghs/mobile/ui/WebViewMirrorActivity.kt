@@ -10,6 +10,7 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
+import com.ghs.mobile.core.engine.net.UserAgents
 import com.ghs.mobile.core.script.WebViewFallbackHub
 
 /**

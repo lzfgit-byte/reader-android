@@ -72,12 +72,16 @@ class HttpScriptHost(
             return cached
         }
         android.util.Log.i("GHS", "fetchHtml start $url")
-        val request = Request.Builder()
+        val requestBuilder = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
             .header("Accept-Language", LANGUAGE)
             .header("Accept", "text/html,application/xhtml+xml")
-            .build()
+        // 桌面 Client Hints：不加的话服务端按 sec-ch-ua-mobile=?1 仍回移动版
+        com.ghs.mobile.core.engine.net.UserAgents.clientHints().forEach { (name, value) ->
+            requestBuilder.header(name, value)
+        }
+        val request = requestBuilder.build()
 
         try {
             // 代理偶尔在响应收尾时断开（"connection closed"），重试一次通常就好
@@ -323,8 +327,10 @@ class HttpScriptHost(
             }
 
             // WebView 也要中文：loadUrl 支持附带请求头
-            view.loadUrl(url, mapOf("Accept-Language" to LANGUAGE))
-
+            // WebView 也要桌面页面：中文 + 桌面 Client Hints 一起附上
+            val pageHeaders = mutableMapOf("Accept-Language" to LANGUAGE)
+            pageHeaders.putAll(com.ghs.mobile.core.engine.net.UserAgents.clientHints())
+            view.loadUrl(url, pageHeaders)
             // 桌面页资源多、广告脚本常卡住 onPageFinished（实测 25s 都不来）。
             // 这里并行轮询 DOM 就绪：正文出现就取，不再干等"页面彻底加载完"。
             Thread {
