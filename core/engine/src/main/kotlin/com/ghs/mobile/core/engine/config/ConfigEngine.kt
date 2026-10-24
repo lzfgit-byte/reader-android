@@ -163,6 +163,9 @@ class ConfigEngine(
             "var src = { value: __ghsImgSrc };" +
             "var canvas = { value: document.createElement('canvas') };" +
             "var Md5 = { hashStr: __ghsMd5HashStr };" +
+            // 诊断：确认 Md5 输出格式（标准 md5('a') = 0cc175b9c0f1b6a831c399e269772661）
+            "try { __log('probe md5(a)=' + Md5.hashStr('a') + ' url=' + ${quote(url)}); }" +
+            "catch (e) { __log('probe md5 error: ' + e); }" +
             "var f = (typeof config.adapterImageCode === 'function')" +
             "? config.adapterImageCode" +
             ": (new Function(String(config.adapterImageCode)))();" +

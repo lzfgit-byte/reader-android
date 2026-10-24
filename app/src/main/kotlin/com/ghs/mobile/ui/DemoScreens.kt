@@ -189,7 +189,11 @@ fun DemoApp(
     // 配置日志（LogMsgUtil / console.log）→ 应用内「日志云」
     var logEntries by remember { mutableStateOf<List<String>>(emptyList()) }
     DisposableEffect(Unit) {
-        val listener: (List<String>) -> Unit = { logEntries = it }
+        val listener: (List<String>) -> Unit = { entries ->
+            logEntries = entries
+            // 同时打到 logcat：adb logcat -s GHS-JS 可看配置脚本输出
+            entries.lastOrNull()?.let { android.util.Log.i("GHS-JS", it) }
+        }
         com.ghs.mobile.core.engine.script.LogHub.addListener(listener)
         onDispose { com.ghs.mobile.core.engine.script.LogHub.removeListener(listener) }
     }
