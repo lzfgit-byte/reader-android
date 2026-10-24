@@ -342,12 +342,12 @@ fun VideoPlayerScreen(
                 PlayerView(ctx).apply {
                     this.player = player
                     useController = false // 控制层由我们自己画
-                    setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+                    // 遮罩默认色随主题可能是白色：显式设黑，首帧未到时不会白屏
+                    setShutterBackgroundColor(android.graphics.Color.BLACK)
                     playerViewRef = this
                 }
             },
             update = { view ->
-                // 换集后必须把新播放器交给 PlayerView，否则画面停留在旧实例
                 view.player = player
                 playerViewRef = view
             },
