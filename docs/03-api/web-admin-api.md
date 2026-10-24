@@ -133,7 +133,8 @@ POST /api/validate
 | GET | `/api/favorites/export` | 导出全部站点的收藏：`{version, exportedAt, items:[{configKey,url,payload,count,createTime}]}`；`url` 为相对地址，`payload` 为条目原 JSON |
 | POST | `/api/favorites/import` | 请求体同上（也接受 `favorites` 或裸数组）；按 `configKey+url` **覆盖**写入，返回 `{imported}` |
 
-> 写成幂等覆盖而非追加：同一收藏重复导入不会产生重复行，便于多设备互相同步。
+'> 写成幂等覆盖而非追加：同一收藏重复导入不会产生重复行，便于多设备互相同步。
+> 提供了 `count` 时按该值原样写入（不累加），用于迁移「看过多少次」；未提供则按一次收藏处理。'
 
 
 ### 4.4 运行时控制
