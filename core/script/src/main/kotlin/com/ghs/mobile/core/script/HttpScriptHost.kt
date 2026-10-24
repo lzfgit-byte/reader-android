@@ -203,23 +203,19 @@ class HttpScriptHost(
     /**
      * 无头 WebView 取渲染后的 HTML。
      *
-     * 单独设上限（[FALLBACK_TIMEOUT_MS]），避免校验页一直不结束把请求拖到 180s；
+     * **不设超时**：WebView 方式可能真的要等人机验证/登录，
+     * 超时只会把「还能救」的页面判死。要放弃由用户点「取消」（cancelPending）。
      * 失败返回空串，由调用方回落到原错误。
      */
     private fun fetchWithWebView(url: String): String {
         // 告诉 UI：正在用 WebView 取这个地址，方便提供「显示 webview」入口
         WebViewFallbackHub.start(url)
-        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
         return try {
-            val task = executor.submit(
-                java.util.concurrent.Callable { executePage(url, "document.documentElement.outerHTML") },
-            )
-            task.get(FALLBACK_TIMEOUT_MS, java.util.concurrent.TimeUnit.MILLISECONDS)
+            executePage(url, "document.documentElement.outerHTML")
         } catch (error: Throwable) {
             android.util.Log.w("GHS", "webview fallback failed ${error.javaClass.simpleName}: ${error.message}")
             ""
         } finally {
-            executor.shutdownNow()
             WebViewFallbackHub.stop()
         }
     }
@@ -461,7 +457,6 @@ class HttpScriptHost(
         private const val REQUEST_ATTEMPTS = 3
         private const val EVAL_TIMEOUT_MS = 20_000L
         /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
-        private const val FALLBACK_TIMEOUT_MS = 12_000L
         /** DOM 就绪轮询：每 500ms 探一次，最多 80 次（约 40s） */
         private const val DOM_POLL_INTERVAL_MS = 500L
         private const val DOM_POLL_ATTEMPTS = 24
@@ -486,9 +481,9 @@ class HttpScriptHost(
 
         private fun defaultClient(rules: () -> ProxyRules): OkHttpClient = OkHttpClient.Builder()
             // 真实站点经代理时一页 HTML 可能要十几秒；20s 读超时会把正常请求判成失败
-            .connectTimeout(30, TimeUnit.SECONDS)
-            .readTimeout(120, TimeUnit.SECONDS)
-            .callTimeout(180, TimeUnit.SECONDS)
+            .connectTimeout(20, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .callTimeout(45, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .followRedirects(true)
             // 与 WebView 共用 Cookie：人机校验拿到的凭证后续请求要带上（F29）
