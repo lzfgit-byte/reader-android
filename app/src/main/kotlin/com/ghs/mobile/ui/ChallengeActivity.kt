@@ -33,7 +33,10 @@ import com.ghs.mobile.GhsApp
 class ChallengeActivity : Activity() {
 
     private var webView: WebView? = null
-    
+
+    /** 主框架 403/429 次数：连续两次就放弃，避免无意义等待 */
+    private var httpErrorCount = 0
+
     private var host: String = ""
     private var finished = false
     private var pollToken = 0
@@ -103,6 +106,16 @@ class ChallengeActivity : Activity() {
                 if (!request.isForMainFrame) return
                 val code = errorResponse.statusCode
                 android.util.Log.w("GHS", "challenge http $code ${request.url}")
+                // 主框架连续 403/429：这条链路根本出不了页面（多半是代理出口被封），
+                // 让用户点「我已完成」也没意义，直接结束，避免卡在无意义的循环里。
+                if (code == 403 || code == 429) {
+                    httpErrorCount += 1
+                    if (httpErrorCount >= 2) {
+                        android.util.Log.w("GHS", "challenge 连续 $httpErrorCount 次 $code，放弃本次校验")
+                        finish()
+                        return
+                    }
+                }
                 scheduleDetection(POLL_INTERVAL_MS)
             }
         }
