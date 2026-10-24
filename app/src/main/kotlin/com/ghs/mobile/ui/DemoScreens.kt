@@ -211,7 +211,9 @@ fun DemoApp(
     // 详情解析任务：允许手动取消，并统计已用时间
     var detailJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     var detailElapsedSec by remember { mutableStateOf(0) }
-    // 正在解析的条目：不切页面，首页原地转圈
+    // 用户手动取消：不再展示任何错误页，直接回到列表
+    // 用户手动取消：不再展示任何错误页，直接回到列表
+    var detailCancelled by remember { mutableStateOf(false) }
     var parseTarget by remember { mutableStateOf<Item?>(null) }
     // 打开条目的整体等待态：解析 + 目录 + 图片全流程都显示 loading
     var opening by remember { mutableStateOf(false) }
@@ -513,6 +515,8 @@ fun DemoApp(
     LaunchedEffect(parseTarget) {
         val item = parseTarget ?: return@LaunchedEffect
         detailJob?.cancel()
+        detailJob?.cancel()
+        detailCancelled = false
         detailElapsedSec = 0
         opening = true
         detailJob = scope.launch {
@@ -526,6 +530,11 @@ fun DemoApp(
             text = null
             textUrl = null
             val outcome = runCatching { withContext(Dispatchers.IO) { active.detail(item) } }
+            // 用户点了取消：静默结束，不进入错误页
+            if (detailCancelled) {
+                finish()
+                return@launch
+            }
             val info = outcome.getOrNull()
             detailError = outcome.exceptionOrNull()?.let { it.message ?: it.toString() }
             if (info != null) {
