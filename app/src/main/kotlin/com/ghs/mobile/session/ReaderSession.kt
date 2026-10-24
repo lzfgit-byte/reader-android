@@ -146,11 +146,11 @@ class ReaderSession(
         // 配置若实现了 adapterGetHtml，优先用它取页（自己处理头 / Cookie / 二次请求）
         val html = configEngine.adapterGetHtml(url) ?: host.fetchHtml(url)
         android.util.Log.i("GHS", "page html=${html.length} hasOwl=${html.contains("owl-stage-outer")} hasWell=${html.contains("div class=\"well")} head=${html.take(200).replace("\n"," ")}")
-        configEngine.withHtml(html)
+        configEngine.withHtml(html).withCurrentUrl(url)
         val page = configEngine.page()
         android.util.Log.i(
             "GHS",
-            "page items=${page.items.size} tags=${page.tags.size} urlReplace=${page.urlReplace.size}",
+            "page items=${page.items.size} tags=${page.tags.size} pagination=${page.pagination.size} urlReplace=${page.urlReplace.size}",
         )
         return page
     }

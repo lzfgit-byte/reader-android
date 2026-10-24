@@ -53,6 +53,22 @@ class ConfigEngine(
         bridge.loadDocument(html)
         return this
     }
+    /**
+     * 把当前页地址交给配置（`config.currentUrl`）。
+     *
+     * 有些配置的 getPagination 用 `new URL(this.currentUrl)` 拼下一页地址，
+     * currentUrl 为空时会抛异常，整页分页就变成空的。
+     */
+    fun withCurrentUrl(url: String): ConfigEngine {
+        runCatching { bridge.setGlobalValue("__ghsCurrentUrl", url) }
+        runCatching {
+            bridge.invokeAwaitRaw(
+                "(function(){ config.currentUrl = String(__ghsCurrentUrl || ''); return 1; })()",
+            )
+        }
+        return this
+    }
+
 
     fun hasMethod(method: String): Boolean = bridge.hasMethod(method)
 
