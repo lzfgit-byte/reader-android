@@ -1388,7 +1388,10 @@ fun DemoApp(
                 shadowElevation = 12.dp,
             ) {
                 Column(modifier = Modifier.fillMaxSize().padding(top = 24.dp)) {
-                    drawerSettings()
+                    // 设置内容占满剩余高度（内部自己滚动），菜单固定钉在底部可见
+                    Box(modifier = Modifier.weight(1f)) {
+                        drawerSettings()
+                    }
                     NavigationDrawerItem(
                         label = {
                             Text(
