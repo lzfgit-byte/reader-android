@@ -221,9 +221,13 @@ fun ComicReaderScreen(
         frontier = index
     }
 
-    val lastVisible = listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index ?: 0
-    val allowUpTo = (maxOf(frontier + LOAD_CONCURRENCY - 1, lastVisible + 1)).coerceAtMost(pages.size - 1)
-
+    // 严格按从上到下：只放行 frontier 这一张；滚动时把 frontier 拉到可见起点，
+    // 避免快速下滑时还要先把中间几十页全部加载完。
+    val firstVisible = listState.firstVisibleItemIndex
+    LaunchedEffect(firstVisible) {
+        if (firstVisible > frontier) frontier = firstVisible
+    }
+    val allowUpTo = frontier.coerceAtMost(pages.size - 1)
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF151517))) {
         // 连续滚动：所有图片上下拼接，一滚到底
         LazyColumn(
@@ -328,6 +332,10 @@ fun ComicReaderScreen(
                                 style = MaterialTheme.typography.labelSmall,
                                 color = Color(0xFF9A9AA5),
                             )
+                            // 等太久时可以复制地址去浏览器排查，不必等到它失败
+                            TextButton(onClick = { copyAddress(context, url) }) {
+                                Text("复制地址", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
 
                         else -> Unit
