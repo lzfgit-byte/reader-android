@@ -1,4 +1,4 @@
-﻿package com.ghs.mobile.core.engine.net
+package com.ghs.mobile.core.engine.net
 
 /**
  * 统一的 User-Agent。
@@ -10,4 +10,7 @@ object UserAgents {
     /** 桌面 Chrome（Windows） */
     const val DESKTOP_CHROME =
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+
+    /** 统一要求中文页面：不少站点按语言返回不同模板，选择器会跟着变 */
+    const val ACCEPT_LANGUAGE = "zh-CN,zh;q=0.9,en;q=0.8"
 }

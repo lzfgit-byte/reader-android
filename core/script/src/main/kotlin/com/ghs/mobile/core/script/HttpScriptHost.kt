@@ -70,6 +70,7 @@ class HttpScriptHost(
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
+            .header("Accept-Language", LANGUAGE)
             .header("Accept", "text/html,application/xhtml+xml")
             .build()
 
@@ -308,7 +309,8 @@ class HttpScriptHost(
                 }
             }
 
-            view.loadUrl(url)
+            // WebView 也要中文：loadUrl 支持附带请求头
+            view.loadUrl(url, mapOf("Accept-Language" to LANGUAGE))
 
             // 桌面页资源多、广告脚本常卡住 onPageFinished（实测 25s 都不来）。
             // 这里并行轮询 DOM 就绪：正文出现就取，不再干等"页面彻底加载完"。
@@ -438,6 +440,8 @@ class HttpScriptHost(
     }
 
     companion object {
+        private const val LANGUAGE = com.ghs.mobile.core.engine.net.UserAgents.ACCEPT_LANGUAGE
+
         private const val USER_AGENT =
             com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
         /** WebView 兜底统一用桌面 UA（加载电脑端页面） */
