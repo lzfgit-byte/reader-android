@@ -187,6 +187,8 @@ fun DemoApp(
     // 从哪个界面点进条目的：返回要回到那一页（尤其是搜索结果，别清成普通列表）
     var returnScreen by remember { mutableStateOf<Screen?>(null) }
     var progressByUrl by remember { mutableStateOf<Map<String, ReadingProgress>>(emptyMap()) }
+    // 从哪个 tab 点进来的：从收藏/历史进来的，退出播放器要回到收藏/历史，而不是首页
+    var returnTab by remember { mutableStateOf(DemoTab.HOME) }
     var text by remember { mutableStateOf<TextContent?>(null) }
     var textUrl by remember { mutableStateOf<String?>(null) }
     var textLoading by remember { mutableStateOf(false) }
@@ -226,6 +228,7 @@ fun DemoApp(
             // 详情 / 播放 / 漫画：回到点进来的那个界面（搜索结果要保留搜索态）
             screen is Screen.ComicReader || screen is Screen.VideoPlayer || screen is Screen.Detail -> {
                 screen = returnScreen ?: lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                tab = returnTab
             }
             tab != DemoTab.HOME -> tab = DemoTab.HOME
         }
@@ -1057,10 +1060,11 @@ fun DemoApp(
                     val back = reader.backToSeries
                     screen = when {
                         back != null -> Screen.Series(reader.item, back)
-                        // 从搜索结果进来：回到那一页搜索结果，别清成首页列表
                         returnScreen != null -> returnScreen!!
                         else -> lastPage?.let { Screen.List(it) } ?: Screen.Loading
                     }
+                    // 退出播放器回到「点进来的那个 tab」：收藏进来就回收藏
+                    tab = returnTab
                 },
             )
             // 整屏播放器必须 return：否则外层 Scaffold 会把列表画在视频上（只剩声音）
@@ -1241,6 +1245,7 @@ fun DemoApp(
                     layout = layoutMode,
                     onOpen = { item ->
                         tab = DemoTab.HOME
+                        returnTab = DemoTab.FAVORITES
                         returnScreen = null
                         parseTarget = item
                     },
@@ -1256,6 +1261,7 @@ fun DemoApp(
                     layout = layoutMode,
                     onOpen = { item ->
                         tab = DemoTab.HOME
+                        returnTab = DemoTab.HISTORY
                         returnScreen = null
                         parseTarget = item
                     },
@@ -1353,6 +1359,7 @@ fun DemoApp(
                         onOpen = { item ->
                             // 从搜索结果进来：返回回到这一页（保留搜索词与分页）
                             returnScreen = Screen.SearchResults(current.keyword, current.page)
+                            returnScreen = Screen.SearchResults(current.keyword, current.page)
                             parseTarget = item
                         },
                         onToggleCollect = { item -> toggleCollect(item) },
@@ -1377,7 +1384,8 @@ fun DemoApp(
                         loadingMore = loadingMore,
                         noMore = noMore,
                         onOpen = { item ->
-                            // 普通列表进来：返回回到列表（保留分页位置）
+                            returnScreen = Screen.List(current.page)
+                            returnTab = DemoTab.HOME
                             returnScreen = Screen.List(current.page)
                             parseTarget = item
                         },
