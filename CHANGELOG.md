@@ -22,6 +22,8 @@
 
 ### Fixed
 
+- **搜索结果固定一页（F09）**：`loadMore` 只处理列表页，搜索结果滑到底不再取；现同时处理搜索结果并合并分页，新搜索时重置「没有更多」。
+
 - **收藏导入未保留次数（F07）**：导入流程仍调用累加式 `collect`，迁移后所有条目的 `count` 相同、按次数排序形同失效。改为读取 JSON 里的 `count`/`createTime` 走 `collectWithCount`，并在 `collects()` 里加代码层倒序兜底。
 
 ### Changed
