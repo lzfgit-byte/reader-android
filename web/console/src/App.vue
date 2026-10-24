@@ -567,7 +567,7 @@ button.danger { border-color: #5a3030; color: #e39a9a; }
 .item.active { border-color: var(--accent); background: #2c2a3a; }
 .name { font-size: 13px; }
 .key { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
-'.badge { font-size: 10px; color: var(--warn); }
+.badge { font-size: 10px; color: var(--warn); }
 
 /* 排序箭头：固定在条目右侧并垂直居中 */
 .list .order {
