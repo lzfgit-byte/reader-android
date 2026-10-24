@@ -1665,7 +1665,12 @@ private suspend fun rememberOpened(
         // 用空白记录覆盖会把续看信息冲掉，表现为"明明看过却从头开始"
         repository.saveProgress(existing.copy(updatedAt = System.currentTimeMillis()))
     }
-    repository.recordView(configKey, relUrl(item.jumpUrl, homeUrl), ItemCodec.encode(item))
+    val key = relUrl(item.jumpUrl, homeUrl)
+    // 打开即计数：收藏里的 count 表示「同一地址看过多少次」，用于收藏排序
+    if (repository.isCollected(configKey, key)) {
+        repository.collect(configKey, key, ItemCodec.encode(item))
+    }
+    repository.recordView(configKey, key, ItemCodec.encode(item))
     repository.putSetting(SettingScope.DEVICE, "last_opened", item.jumpUrl)
 }
 
