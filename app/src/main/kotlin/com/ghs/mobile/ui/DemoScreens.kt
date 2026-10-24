@@ -1395,6 +1395,9 @@ fun DemoApp(
                             detailJob = null
                             detailError = null
                             parseTarget = null
+                            // 必须同时收起 loading：否则弹窗会一直停在「正在解析详情…」
+                            opening = false
+                            detailElapsedSec = 0
                         },
                         modifier = Modifier.fillMaxWidth().padding(top = 20.dp),
                     ) { Text("取消") }
