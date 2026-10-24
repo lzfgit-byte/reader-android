@@ -29,6 +29,8 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.material3.Text
+import androidx.compose.ui.platform.LocalContext
 
 /**
  * 入口：主界面 / 引擎自检 / 设置三个页面。
@@ -81,6 +83,14 @@ private fun AppRoot() {
                 com.ghs.mobile.core.engine.script.LogHub.addListener(listener)
                 onDispose { com.ghs.mobile.core.engine.script.LogHub.removeListener(listener) }
             }
+            // 正在用 WebView 取页时，右上角出现「显示 webview」悬浮按钮
+            var fallbackUrl by remember { mutableStateOf<String?>(null) }
+            DisposableEffect(Unit) {
+                val listener: (String?) -> Unit = { fallbackUrl = it }
+                com.ghs.mobile.core.script.WebViewFallbackHub.addListener(listener)
+                onDispose { com.ghs.mobile.core.script.WebViewFallbackHub.removeListener(listener) }
+            }
+            val context = androidx.compose.ui.platform.LocalContext.current
             Box(modifier = Modifier.fillMaxSize()) {
                 when (page) {
                 Page.MAIN -> DemoApp(
@@ -128,8 +138,20 @@ private fun AppRoot() {
                         .align(Alignment.TopCenter)
                         .padding(top = 8.dp),
                 )
+                // 取页回退到 WebView 时出现的入口：把那个页面显示给用户
+                fallbackUrl?.let { url ->
+                    androidx.compose.material3.SmallFloatingActionButton(
+                        onClick = { com.ghs.mobile.ui.WebViewMirrorActivity.start(context, url) },
+                        modifier = Modifier
+                            .align(Alignment.TopEnd)
+                            .padding(top = 56.dp, end = 16.dp),
+                    ) {
+                        Text("显示 webview", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
             }
         }
     }
 }
+
 

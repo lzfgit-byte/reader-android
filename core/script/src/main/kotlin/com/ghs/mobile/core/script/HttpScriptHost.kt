@@ -207,6 +207,8 @@ class HttpScriptHost(
      * 失败返回空串，由调用方回落到原错误。
      */
     private fun fetchWithWebView(url: String): String {
+        // 告诉 UI：正在用 WebView 取这个地址，方便提供「显示 webview」入口
+        WebViewFallbackHub.start(url)
         val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
         return try {
             val task = executor.submit(
@@ -218,6 +220,7 @@ class HttpScriptHost(
             ""
         } finally {
             executor.shutdownNow()
+            WebViewFallbackHub.stop()
         }
     }
 
