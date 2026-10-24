@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Page { MAIN, PROBE, SETTINGS }
+private enum class Page { MAIN, PROBE, SETTINGS, BROWSER }
 
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -122,9 +122,16 @@ private fun AppRoot() {
                     },
                     onOpenProbe = { page = Page.PROBE },
                     onOpenSettings = { page = Page.SETTINGS },
+                    onOpenBrowser = { page = Page.BROWSER },
                 )
 
                 Page.PROBE -> ProbeScreen(onBack = { page = Page.MAIN })
+
+                Page.BROWSER -> com.ghs.mobile.ui.UrlBrowserScreen(
+                    proxyState = proxyState,
+                    globalRules = proxyRules,
+                    onBack = { page = Page.MAIN },
+                )
 
                 Page.SETTINGS -> SettingsScreen(
                     settings = settings,

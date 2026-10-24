@@ -173,6 +173,7 @@ private const val CONFIG_KEY = "demo"
 @Composable
 fun DemoApp(
     onOpenProbe: () -> Unit = {},
+    onOpenBrowser: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     /** 左侧抽屉里直接展开的设置内容（由外层提供，避免二级菜单） */
     drawerSettings: @Composable () -> Unit = {},
@@ -1599,6 +1600,16 @@ fun DemoApp(
                             onOpenProbe()
                         },
                         icon = { Icon(Icons.Default.Info, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("网页浏览（可选代理/直连）") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            onOpenBrowser()
+                        },
+                        icon = { Icon(Icons.Default.Refresh, contentDescription = null) },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                     NavigationDrawerItem(
