@@ -274,6 +274,8 @@ class HttpScriptHost(
      * 返回值统一转成字符串：本身就是字符串就原样返回，否则 JSON 序列化。
      */
     override fun executePage(url: String, code: String, show: Boolean): String {
+        // 只要在用 WebView 取页，就让 UI 出现「显示 webview」入口
+        WebViewFallbackHub.start(url)
         // 记住本次调用的代号：只有这之后发生的「取消」才作数
         val epoch = cancelEpoch.get()
         val loaded = CountDownLatch(1)
@@ -411,6 +413,7 @@ class HttpScriptHost(
 
         result.await()
         failure?.let { throw IllegalStateException(it) }
+        WebViewFallbackHub.stop()
         return output
     }
 

@@ -45,15 +45,21 @@ object WebViewFallbackHub {
         listeners -= listener
     }
 
+    /** 并发深度：fetchHtml 与 executePage 都会 start/stop，靠它避免提前清空 */
+    private val depth = java.util.concurrent.atomic.AtomicInteger(0)
+
     /** 开始用 WebView 取页 */
     fun start(url: String) {
+        depth.incrementAndGet()
         currentUrl = url
         listeners.forEach { runCatching { it(url) } }
     }
 
     /** 取页结束（成功或失败都调） */
     fun stop() {
+        if (depth.decrementAndGet() > 0) return
         currentUrl = null
+        currentView = null
         listeners.forEach { runCatching { it(null) } }
     }
 }
