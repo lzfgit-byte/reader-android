@@ -1,3 +1,5 @@
+### Changed
+- **User-Agent（F05/F29）**：所有取页通道统一为桌面 Chrome UA（`UserAgents.DESKTOP_CHROME`），避免站点返回移动版页面导致解析不到条目
 ### Added
 - **强制代理名单（F28）**：与白名单同样写法，命中即走代理且优先于白名单
 
