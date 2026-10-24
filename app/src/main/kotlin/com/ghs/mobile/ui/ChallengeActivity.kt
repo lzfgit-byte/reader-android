@@ -119,7 +119,30 @@ class ChallengeActivity : Activity() {
                 scheduleDetection(POLL_INTERVAL_MS)
             }
         }
-        root.addView(view, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+        // 进度条：加载中显示，加载完自动隐藏
+        val progress = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
+            max = 100
+        }
+        root.addView(progress, LinearLayout.LayoutParams(MATCH_PARENT, 8))
+
+        // 描边容器：白页面和白底分不清边界，套一层 2px 边框
+        val frame = android.widget.FrameLayout(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.WHITE)
+                setStroke(2, android.graphics.Color.parseColor("#B9A7FF"))
+                cornerRadius = 8f
+            }
+            setPadding(3, 3, 3, 3)
+        }
+        frame.addView(view, android.widget.FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        root.addView(frame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
+
+        view.webChromeClient = object : android.webkit.WebChromeClient() {
+            override fun onProgressChanged(view: WebView?, newProgress: Int) {
+                progress.progress = newProgress
+                progress.visibility = if (newProgress >= 100) android.view.View.GONE else android.view.View.VISIBLE
+            }
+        }
 
         val actions = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
