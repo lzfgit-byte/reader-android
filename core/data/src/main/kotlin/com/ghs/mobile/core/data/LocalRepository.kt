@@ -135,10 +135,16 @@ class LocalRepository(private val database: GhsDatabase) {
     suspend fun isCollected(configKey: String, url: String): Boolean =
         collectDao.find(configKey, url) != null
 
+    /**
+     * 某站点的收藏，**按看过次数倒序**（次数相同按收藏时间倒序）。
+     *
+     * 代码层再排一次：SQL 的 ORDER BY 依赖 Room 生成的语句，
+     * 万一哪次构建没刷新生成代码，顺序会悄悄变回收藏时间，这里兜底。
+     */
     suspend fun collects(configKey: String): List<CollectedItem> =
-        collectDao.list(configKey).map {
-            CollectedItem(it.configKey, it.url, it.payload, it.count, it.createTime)
-        }
+        collectDao.list(configKey)
+            .map { CollectedItem(it.configKey, it.url, it.payload, it.count, it.createTime) }
+            .sortedWith(compareByDescending<CollectedItem> { it.count }.thenByDescending { it.createTime })
 
     // ── 观看历史 ────────────────────────────────────────────────────────────
 
