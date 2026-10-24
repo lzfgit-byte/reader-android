@@ -36,6 +36,17 @@ object WebViewFallbackHub {
 
     private val listeners = CopyOnWriteArrayList<(String?) -> Unit>()
 
+    /**
+     * 中止当前取页：由 HttpScriptHost 注入，长按「显示 webview」时调用。
+     * 效果等同取页失败，调用方按失败分支处理。
+     */
+    @Volatile
+    var abortHandler: (() -> Unit)? = null
+
+    fun abortCurrent() {
+        abortHandler?.invoke()
+    }
+
     fun addListener(listener: (String?) -> Unit) {
         listeners += listener
         listener(currentUrl)

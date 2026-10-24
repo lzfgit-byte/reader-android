@@ -60,6 +60,11 @@ class HttpScriptHost(
         cancelEpoch.incrementAndGet()
     }
 
+    init {
+        // 长按「显示 webview」→ 中止当前取页，按失败处理
+        WebViewFallbackHub.abortHandler = { cancelPending() }
+    }
+
     override fun fetchHtml(url: String): String {
         val started = System.currentTimeMillis()
         htmlCache?.get(url)?.let { cached ->

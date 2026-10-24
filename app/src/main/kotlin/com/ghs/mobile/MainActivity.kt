@@ -31,6 +31,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.material3.Text
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.foundation.background
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 
 /**
  * 入口：主界面 / 引擎自检 / 设置三个页面。
@@ -49,6 +52,7 @@ class MainActivity : ComponentActivity() {
 private enum class Page { MAIN, PROBE, SETTINGS }
 
 @Composable
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 private fun AppRoot() {
     val store = GhsApp.instance.settings
     val proxyStore = GhsApp.instance.proxy
@@ -138,20 +142,38 @@ private fun AppRoot() {
                         .align(Alignment.TopCenter)
                         .padding(top = 8.dp),
                 )
-                // 取页回退到 WebView 时出现的入口：把那个页面显示给用户
+                // 取页回退到 WebView 时出现的入口：点击显示、长按中止本次取页
                 fallbackUrl?.let { url ->
-                    androidx.compose.material3.SmallFloatingActionButton(
-                        onClick = { com.ghs.mobile.ui.WebViewMirrorActivity.start(context, url) },
+                    androidx.compose.foundation.layout.Box(
                         modifier = Modifier
                             .align(Alignment.TopEnd)
-                            .padding(top = 56.dp, end = 16.dp),
+                            .padding(top = 56.dp, end = 16.dp)
+                            .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
+                            .combinedClickable(
+                                onClick = { com.ghs.mobile.ui.WebViewMirrorActivity.start(context, url) },
+                                onLongClick = {
+                                    // 长按：停止当前取页，按失败返回
+                                    com.ghs.mobile.core.script.WebViewFallbackHub.abortCurrent()
+                                    android.widget.Toast.makeText(
+                                        context,
+                                        "已停止本次取页",
+                                        android.widget.Toast.LENGTH_SHORT,
+                                    ).show()
+                                },
+                            )
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
                     ) {
-                        Text("显示 webview", style = MaterialTheme.typography.labelSmall)
+                        Text(
+                            "显示 webview",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onPrimary,
+                        )
                     }
                 }
             }
         }
     }
 }
+
 
 
