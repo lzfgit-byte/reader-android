@@ -80,7 +80,7 @@ http://192.168.1.20:18600/console/                ← 直接用局域网地址�
 | GET | `/api/configs/{key}` | 单个配置（含 `config`、`format`、`enabled`、`sort`） |
 | GET | `/api/configs/{key}/script` | 脚本源码（纯文本） |
 | POST | `/api/configs` | 新建；body：`{ format, config, script }`；**先校验后落库** |
-| PUT | `/api/configs/{key}` | 保存；同上；`key` 不可改（改名走 duplicate + delete） |
+| PUT | `/api/configs/{key}`（按请求体 `enabled` 落库） | 保存；同上；`key` 不可改（改名走 duplicate + delete） |
 | PATCH | `/api/configs/{key}` | 局部更新：`{ enabled?, sort? }` |
 | DELETE | `/api/configs/{key}` | 删除；若为当前配置则自动切换到第一个启用项 |
 | POST | `/api/configs/{key}/duplicate` | 复制为新 key（body 可指定新 key） |
