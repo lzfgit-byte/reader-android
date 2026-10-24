@@ -1,5 +1,7 @@
 ### Changed
 
+- **返回层级（F07）**：从收藏/历史点开的条目，退出播放器/详情后回到原 tab；搜索进来仍回搜索结果，列表进来回列表。
+
 - **Web 管理：启用开关与配置排序（F25）**：`PUT /api/configs/{key}` 改为按请求体的 `enabled` 落库（此前固定沿用旧值，勾选无效）；控制台配置列表支持 ↑/↓ 调整顺序，调用 `POST /api/configs/order`
 - **User-Agent（F05/F29）**：所有取页通道统一为桌面 Chrome UA（`UserAgents.DESKTOP_CHROME`），避免站点返回移动版页面导致解析不到条目
 ### Added
