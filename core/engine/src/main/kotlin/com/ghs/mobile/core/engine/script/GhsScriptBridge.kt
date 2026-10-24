@@ -94,6 +94,12 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
 
     private fun intOf(value: Any?): Int = (value as? Number)?.toInt() ?: 0
 
+    private fun booleanOf(value: Any?): Boolean = when (value) {
+        is Boolean -> value
+        is Number -> value.toInt() != 0
+        else -> value?.toString()?.equals("true", ignoreCase = true) == true
+    }
+
     private fun textOf(value: Any?): String = when (value) {
         null -> ""
         is String -> value
@@ -168,6 +174,14 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
                 append(response.headers.entries.joinToString(";") { "${it.key}:${it.value}" }).append(SEP)
                 append(response.body)
             }
+        }
+        engine.setFunction("__executePageEx") { args ->
+            // show=true：把取页用的 WebView 显示出来（配置里让用户完成验证/登录）
+            transport.executePage(
+                textOf(args.getOrNull(0)),
+                textOf(args.getOrNull(1)),
+                booleanOf(args.getOrNull(2)),
+            )
         }
         engine.setFunction("__executePage") { args ->
             transport.executePage(textOf(args.getOrNull(0)), textOf(args.getOrNull(1)))

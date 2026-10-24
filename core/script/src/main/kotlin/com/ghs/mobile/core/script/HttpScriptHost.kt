@@ -274,7 +274,7 @@ class HttpScriptHost(
      * `code` 应当是**表达式**（配置里的写法都是 `(function(){...})()` 这类）；
      * 返回值统一转成字符串：本身就是字符串就原样返回，否则 JSON 序列化。
      */
-    override fun executePage(url: String, code: String): String {
+    override fun executePage(url: String, code: String, show: Boolean): String {
         // 记住本次调用的代号：只有这之后发生的「取消」才作数
         val epoch = cancelEpoch.get()
         val loaded = CountDownLatch(1)
@@ -293,6 +293,8 @@ class HttpScriptHost(
             view.settings.domStorageEnabled = true
             // 登记实例：用户点「显示 webview」时把它直接挂到窗口上
             WebViewFallbackHub.attach(view)
+            // 配置要求显示（executeJs show=true）：自动打开显示窗口
+            if (show) WebViewMirrorLauncher.open(context, url)
             // 配置里的页面脚本常常返回 Promise（等 iframe / fetch 完成）：用它回传最终结果
             view.addJavascriptInterface(
                 object {

@@ -24,7 +24,7 @@ interface ScriptHostTransport : AutoCloseable {
     fun request(url: String, method: String, headers: Map<String, String>, body: String?): HostResponse
 
     /** 在无头页面里执行脚本并把结果序列化回来（等价于 executeJs） */
-    fun executePage(url: String, code: String): String
+    fun executePage(url: String, code: String, show: Boolean = false): String
 
     data class HostResponse(
         val status: Int,
@@ -38,7 +38,7 @@ interface ScriptHostTransport : AutoCloseable {
         override fun request(url: String, method: String, headers: Map<String, String>, body: String?): HostResponse =
             throw UnsupportedOperationException("未配置请求能力：$method $url")
 
-        override fun executePage(url: String, code: String): String =
+        override fun executePage(url: String, code: String, show: Boolean): String =
             throw UnsupportedOperationException("未配置无头页面能力：$url")
     }
 }

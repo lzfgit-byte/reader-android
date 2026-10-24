@@ -68,8 +68,8 @@ class ReaderHost(
             http.request(url, method, headers, body)
         }
 
-    override fun executePage(url: String, code: String): String =
-        if (isDemo(url)) "" else http.executePage(url, code)
+    override fun executePage(url: String, code: String, show: Boolean): String =
+        if (isDemo(url)) "" else http.executePage(url, code, show)
 
     override fun close() {
         runCatching { http.close() }
