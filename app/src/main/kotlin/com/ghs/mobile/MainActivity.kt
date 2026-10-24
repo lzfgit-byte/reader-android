@@ -59,6 +59,8 @@ private fun AppRoot() {
     val webAdmin = GhsApp.instance.webAdmin
     val settings by store.state.collectAsState()
     val proxyRules by proxyStore.rules.collectAsState()
+    // 代理列表：多条代理、单选生效
+    val proxyState by proxyStore.state.collectAsState()
     val webState by webAdmin.state.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -106,9 +108,13 @@ private fun AppRoot() {
                             onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
                             onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
                             onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
-                            onProxyApply = { enabled, url, user, pass, whitelist, forceProxy ->
-                                scope.launch { proxyStore.apply(enabled, url, user, pass, whitelist, forceProxy) }
+                            onProxyApply = { enabled, whitelist, forceProxy ->
+                                scope.launch { proxyStore.apply(enabled, whitelist, forceProxy) }
                             },
+                            proxyState = proxyState,
+                            onProxyAdd = { url -> scope.launch { proxyStore.add(url) } },
+                            onProxySelect = { id -> scope.launch { proxyStore.select(id) } },
+                            onProxyRemove = { id -> scope.launch { proxyStore.remove(id) } },
                             onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
                             onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
                             onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },
@@ -127,9 +133,13 @@ private fun AppRoot() {
                     onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
                     onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
                     onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
-                    onProxyApply = { enabled, url, user, pass, whitelist, forceProxy ->
-                        scope.launch { proxyStore.apply(enabled, url, user, pass, whitelist, forceProxy) }
+                    onProxyApply = { enabled, whitelist, forceProxy ->
+                        scope.launch { proxyStore.apply(enabled, whitelist, forceProxy) }
                     },
+                    proxyState = proxyState,
+                    onProxyAdd = { url -> scope.launch { proxyStore.add(url) } },
+                    onProxySelect = { id -> scope.launch { proxyStore.select(id) } },
+                    onProxyRemove = { id -> scope.launch { proxyStore.remove(id) } },
                     onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
                     onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
                     onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },

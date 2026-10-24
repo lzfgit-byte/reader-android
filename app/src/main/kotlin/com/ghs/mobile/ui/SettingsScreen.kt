@@ -30,6 +30,7 @@ import com.ghs.mobile.settings.ThemeMode
 import com.ghs.mobile.settings.label
 import androidx.compose.material3.Switch
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -54,7 +55,11 @@ fun SettingsScreen(
     onThemeChange: (ThemeMode) -> Unit,
     onFontScaleChange: (FontScale) -> Unit,
     onReaderModeChange: (ReaderMode) -> Unit,
-    onProxyApply: (enabled: Boolean, url: String, username: String, password: String, whitelist: String, forceProxy: String) -> Unit,
+    onProxyApply: (enabled: Boolean, whitelist: String, forceProxy: String) -> Unit,
+    proxyState: com.ghs.mobile.settings.ProxyStore.State,
+    onProxyAdd: (String) -> Unit,
+    onProxySelect: (String) -> Unit,
+    onProxyRemove: (String) -> Unit,
     onWebToggle: (Boolean) -> Unit,
     onWebPortChange: (Int) -> Unit,
     onWebBindChange: (Boolean) -> Unit,
@@ -81,6 +86,10 @@ fun SettingsScreen(
                 onFontScaleChange = onFontScaleChange,
                 onReaderModeChange = onReaderModeChange,
                 onProxyApply = onProxyApply,
+                proxyState = proxyState,
+                onProxyAdd = onProxyAdd,
+                onProxySelect = onProxySelect,
+                onProxyRemove = onProxyRemove,
                 onWebToggle = onWebToggle,
                 onWebPortChange = onWebPortChange,
                 onWebBindChange = onWebBindChange,
@@ -99,7 +108,11 @@ fun SettingsContent(
     onThemeChange: (ThemeMode) -> Unit,
     onFontScaleChange: (FontScale) -> Unit,
     onReaderModeChange: (ReaderMode) -> Unit,
-    onProxyApply: (enabled: Boolean, url: String, username: String, password: String, whitelist: String, forceProxy: String) -> Unit,
+    onProxyApply: (enabled: Boolean, whitelist: String, forceProxy: String) -> Unit,
+    proxyState: com.ghs.mobile.settings.ProxyStore.State,
+    onProxyAdd: (String) -> Unit,
+    onProxySelect: (String) -> Unit,
+    onProxyRemove: (String) -> Unit,
     onWebToggle: (Boolean) -> Unit,
     onWebPortChange: (Int) -> Unit,
     onWebBindChange: (Boolean) -> Unit,
@@ -138,7 +151,14 @@ fun SettingsContent(
         }
 
         SettingSection(title = "网络代理") {
-            ProxyForm(proxy = proxy, onApply = onProxyApply)
+            ProxyForm(
+                proxy = proxy,
+                state = proxyState,
+                onApply = onProxyApply,
+                onAdd = onProxyAdd,
+                onSelect = onProxySelect,
+                onRemove = onProxyRemove,
+            )
         }
 
         SettingSection(title = "阅读") {
@@ -187,19 +207,20 @@ private fun SettingRow(
 }
 
 /** 代理表单：改动后点「应用」才落库，避免每敲一个字都写一次数据库 */
+/** 代理表单：多条代理、单选生效；只填地址，不做认证 */
 @Composable
 private fun ProxyForm(
     proxy: ProxyRules,
-    onApply: (Boolean, String, String, String, String, String) -> Unit,
+    state: com.ghs.mobile.settings.ProxyStore.State,
+    onApply: (Boolean, String, String) -> Unit,
+    onAdd: (String) -> Unit,
+    onSelect: (String) -> Unit,
+    onRemove: (String) -> Unit,
 ) {
     var enabled by remember(proxy) { mutableStateOf(proxy.enabled) }
-    var url by remember(proxy) {
-        mutableStateOf(proxy.endpoint?.let { "http://${it.authority}" } ?: ProxyRules.DEFAULT_PROXY_URL)
-    }
-    var username by remember(proxy) { mutableStateOf(proxy.endpoint?.username.orEmpty()) }
-    var password by remember(proxy) { mutableStateOf(proxy.endpoint?.password.orEmpty()) }
     var whitelist by remember(proxy) { mutableStateOf(proxy.whitelist.joinToString(", ")) }
     var forceProxy by remember(proxy) { mutableStateOf(proxy.forceProxy.joinToString(", ")) }
+    var newUrl by remember { mutableStateOf("") }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
@@ -211,34 +232,54 @@ private fun ProxyForm(
             Switch(checked = enabled, onCheckedChange = { enabled = it })
         }
 
-        OutlinedTextField(
-            value = url,
-            onValueChange = { url = it },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true,
-            label = { Text("代理地址（http://host:port）") },
-        )
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = username,
-                onValueChange = { username = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                label = { Text("用户名（可选）") },
-            )
-            OutlinedTextField(
-                value = password,
-                onValueChange = { password = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                label = { Text("密码（可选）") },
+        Text("代理列表（同时只有一条生效）", style = MaterialTheme.typography.labelMedium)
+        if (state.entries.isEmpty()) {
+            Text(
+                "还没有代理，先在下面添加一条",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
+        state.entries.forEach { entry ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                RadioButton(
+                    selected = entry.id == state.activeId,
+                    onClick = { onSelect(entry.id) },
+                )
+                Text(
+                    entry.url,
+                    style = MaterialTheme.typography.bodySmall,
+                    modifier = Modifier.weight(1f),
+                )
+                TextButton(onClick = { onRemove(entry.id) }) { Text("删除") }
+            }
+        }
+
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedTextField(
+                value = newUrl,
+                onValueChange = { newUrl = it },
+                modifier = Modifier.weight(1f),
+                singleLine = true,
+                label = { Text("新增代理（host:port）") },
+            )
+            TextButton(
+                onClick = {
+                    onAdd(newUrl)
+                    newUrl = ""
+                },
+                enabled = newUrl.isNotBlank(),
+            ) { Text("添加") }
+        }
+
         OutlinedTextField(
             value = whitelist,
             onValueChange = { whitelist = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("白名单（逗号分隔；example.com 同时覆盖其子域，如 cdn.example.com）") },
+            label = { Text("白名单（逗号分隔；example.com 同时覆盖其子域）") },
         )
         OutlinedTextField(
             value = forceProxy,
@@ -248,15 +289,13 @@ private fun ProxyForm(
         )
 
         Text(
-            "白名单内的地址直连；强制代理名单命中则一律走代理；未启用代理时全部直连。代理设置只存本机，不随导出包走。",
+            "白名单内直连；强制代理命中则一律走代理；未启用时全部直连。代理设置只存本机，不随导出包走。",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = { onApply(enabled, url, username, password, whitelist, forceProxy) }) {
-                Text("应用")
-            }
+            TextButton(onClick = { onApply(enabled, whitelist, forceProxy) }) { Text("应用") }
         }
     }
 }
