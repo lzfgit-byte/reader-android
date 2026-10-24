@@ -15,6 +15,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
@@ -1638,7 +1639,8 @@ private fun ListScreen(
             verticalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.weight(1f).fillMaxWidth(),
         ) {
-            items(page.items, key = { it.jumpUrl }) { item ->
+        // key 用「下标 + 地址」：同一页里偶尔出现重复条目，纯地址会撞 key 直接崩
+        itemsIndexed(page.items, key = { index, item -> "${index}#${item.jumpUrl}" }) { _, item ->
                 ItemCard(
                     item = item,
                     progress = progress[item.jumpUrl],

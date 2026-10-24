@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -53,7 +55,7 @@ fun FavoritesScreen(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        items(items, key = { it.jumpUrl }) { item ->
+        itemsIndexed(items, key = { index, item -> "${index}#${item.jumpUrl}" }) { _, item ->
             ItemCard(
                 item = item,
                 progress = progress[item.jumpUrl],
@@ -91,7 +93,7 @@ fun HistoryScreen(
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        items(entries, key = { it.item.jumpUrl }) { entry ->
+        itemsIndexed(entries, key = { index, entry -> "${index}#${entry.item.jumpUrl}" }) { _, entry ->
             ItemCard(
                 item = entry.item,
                 progress = progress[entry.item.jumpUrl],
@@ -160,7 +162,7 @@ fun PagerBar(
         contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
         horizontalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        items(pages, key = { it.url + it.title }) { page ->
+        itemsIndexed(pages, key = { index, page -> "${index}#${page.url}${page.title}" }) { _, page ->
             Text(
                 page.title.ifEmpty { "·" },
                 style = MaterialTheme.typography.labelLarge,
