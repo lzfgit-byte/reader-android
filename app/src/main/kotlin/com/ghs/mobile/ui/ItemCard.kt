@@ -118,7 +118,7 @@ private fun GridCard(
                 }
             }
             Row(
-                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 0.dp, top = 2.dp, bottom = 2.dp),
+                modifier = Modifier.fillMaxWidth().padding(start = 8.dp, end = 0.dp, top = 1.dp, bottom = 1.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Text(
@@ -139,7 +139,7 @@ private fun GridCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 6.dp),
+                    modifier = Modifier.padding(start = 8.dp, end = 8.dp, bottom = 3.dp),
                 )
             }
         }
@@ -256,8 +256,10 @@ private fun StarToggle(collected: Boolean, onToggle: () -> Unit) {
     )
     IconButton(
         onClick = onToggle,
+        // 星标整体压小：默认 IconButton 有 48dp 触摸区，会把标题行撑得很高，
+        // 卡片上就出现上下两条空带
         modifier = Modifier
-            .padding(2.dp)
+            .size(30.dp)
             .graphicsLayer {
                 scaleX = bounce.value
                 scaleY = bounce.value
@@ -267,6 +269,7 @@ private fun StarToggle(collected: Boolean, onToggle: () -> Unit) {
             imageVector = Icons.Default.Star,
             contentDescription = if (collected) "取消收藏" else "收藏",
             tint = tint,
+            modifier = Modifier.size(17.dp),
         )
     }
 }
