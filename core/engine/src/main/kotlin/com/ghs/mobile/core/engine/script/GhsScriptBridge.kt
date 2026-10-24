@@ -272,6 +272,29 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
             globalThis.executeJs = function (url, code, show) {
               return __executePage(String(url), String(code));
             };
+            /**
+             * 配置里的日志入口：全部汇到调试日志（应用内「日志云」+ logcat GHS-JS）。
+             * 站点脚本常用 sendMessage / MessageUtil / LogMsgUtil 打进度，
+             * 不接的话排查时什么也看不到。
+             */
+            globalThis.sendMessage = function (msg) { __log(String(msg)); };
+            globalThis.MessageUtil = {
+              info: function (msg) { __log(String(msg)); },
+              warning: function (msg) { __log(String(msg)); },
+              warn: function (msg) { __log(String(msg)); },
+              error: function (msg) { __log('ERROR: ' + String(msg)); },
+              success: function (msg) { __log(String(msg)); },
+              sendMessage: function (msg) { __log(String(msg)); }
+            };
+            globalThis.LogMsgUtil = {
+              sendLogMsg: function (msg) { __log(String(msg)); },
+              info: function (msg) { __log(String(msg)); },
+              error: function (msg) { __log('ERROR: ' + String(msg)); }
+            };
+            globalThis.NotifyMsgUtil = {
+              sendNotifyMsg: function () { },
+              close: function () { }
+            };
             globalThis.net = {
               request: function (options) {
                 var opts = options || {};
