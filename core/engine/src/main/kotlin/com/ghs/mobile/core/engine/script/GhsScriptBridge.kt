@@ -266,15 +266,25 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
             };
             globalThis.NotifyMsgUtil = { sendNotifyMsg: function () {}, close: function () {} };
             // 进度消息要进调试日志/顶部灵动岛，不能是空实现
+            // sendProgress(已处理, 总数, 标题)：第三个参数才是要展示的文案
             globalThis.ProgressMsgUtil = {
-              sendProgress: function (msg) { __log(String(msg)); },
-              sendProgressMsg: function (msg) { __log(String(msg)); },
-              info: function (msg) { __log(String(msg)); },
-              update: function (msg) { __log(String(msg)); },
-              finish: function (msg) { __log(String(msg)); },
+              sendProgress: function (done, total, title) {
+                var text = (typeof title === 'string' && title)
+                  ? title
+                  : (typeof total === 'string' && total ? total : String(done == null ? '' : done));
+                __log(String(text));
+              },
+              sendProgressMsg: function (done, total, title) {
+                var text = (typeof title === 'string' && title)
+                  ? title
+                  : (typeof total === 'string' && total ? total : String(done == null ? '' : done));
+                __log(String(text));
+              },
+              info: function (m) { __log(String(m)); },
+              update: function (m) { __log(String(m)); },
+              finish: function (m) { __log(String(m)); },
               close: function () { }
             };
-            globalThis.eventEmitter = { on: function () {}, off: function () {}, emit: function () {} };
             globalThis.getCurrentItems = function () { return []; };
 
             /**
