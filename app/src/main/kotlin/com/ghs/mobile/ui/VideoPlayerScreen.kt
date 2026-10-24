@@ -285,10 +285,10 @@ fun VideoPlayerScreen(
         }
     }
 
-    // 续看提示只停留 2 秒：默认从头播，想续看要在这 2 秒内点
+    // 续看提示只停留 5 秒：默认从头播，想续看要在这 5 秒内点
     LaunchedEffect(pendingResume) {
         if (pendingResume > 0) {
-            delay(2_000)
+            delay(5_000)
             pendingResume = 0L
         }
     }
