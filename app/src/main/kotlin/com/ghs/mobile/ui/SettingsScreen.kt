@@ -287,6 +287,16 @@ private fun WebSection(
             Text("启用 Web 管理", style = MaterialTheme.typography.bodyMedium)
             Switch(checked = web.enabled, onCheckedChange = onToggle)
         }
+        // 实机排查用：明确告诉用户服务是否真的起来了、绑定在哪
+        Text(
+            when {
+                !web.enabled -> "服务未启用"
+                !web.bindAll -> "服务已启用，仅本机可访问（手机浏览器打开 127.0.0.1:$portText）"
+                else -> "服务已启用，局域网可访问（电脑用下面列出的地址）"
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
 
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
             OutlinedTextField(

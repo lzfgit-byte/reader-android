@@ -29,11 +29,12 @@ class WebAdminController(
     data class WebSettings(
         val enabled: Boolean = false,
         val port: Int = DEFAULT_PORT,
-        val bindAll: Boolean = false,
+        /** 默认允许局域网访问：只开主开关时电脑也能连上 */
+        val bindAll: Boolean = true,
     ) {
         /** 监听地址：允许局域网时绑 0.0.0.0，否则只绑本机 */
-        val bindHost: String get() = if (bindAll) "0.0.0.0" else "127.0.0.1"
-
+        val bindHost: String
+            get() = if (bindAll) "0.0.0.0" else "127.0.0.1"
         /**
          * 展示给用户的所有可访问地址。
          *
@@ -68,13 +69,23 @@ class WebAdminController(
     suspend fun load() {
         val saved = withContext(Dispatchers.IO) { repository.settings(SettingScope.DEVICE) }
 
+        // 一次性迁移：旧版本默认只绑 127.0.0.1，实机上电脑连不上。
+        // 迁移后默认允许局域网访问；用户之后手动关掉不会被再次覆盖。
+        val migrated = saved["web_bind_migrated"] == "1"
+        val bindAll = if (migrated) {
+            saved["web_bind_all"]?.toBooleanStrictOrNull() ?: true
+        } else {
+            true
+        }
         _state.value = WebSettings(
             enabled = saved["web_enabled"]?.toBooleanStrictOrNull() ?: false,
             port = saved["web_port"]?.toIntOrNull()?.takeIf { it in 1024..65535 } ?: DEFAULT_PORT,
-            bindAll = saved["web_bind_all"]?.toBooleanStrictOrNull() ?: false,
-
+            bindAll = bindAll,
         )
         persist(_state.value)
+        if (!migrated) {
+            withContext(Dispatchers.IO) { repository.putSetting(SettingScope.DEVICE, "web_bind_migrated", "1") }
+        }
         if (_state.value.enabled) start()
     }
 
