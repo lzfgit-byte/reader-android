@@ -255,7 +255,9 @@ fun VideoPlayerScreen(
                 runCatching { onProgress(currentUrl, player.currentPosition, player.duration.coerceAtLeast(0)) }
             }
             player.removeListener(listener)
-            player.release()
+            // 先停再释放：release 抛异常时也不会留下后台播放在响
+            runCatching { player.stop() }
+            runCatching { player.release() }
         }
     }
 

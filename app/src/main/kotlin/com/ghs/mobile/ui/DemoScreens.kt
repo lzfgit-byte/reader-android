@@ -1235,7 +1235,11 @@ fun DemoApp(
                     progress = progressByUrl,
                     collected = collected,
                     layout = layoutMode,
-                    onOpen = { item -> parseTarget = item },
+                    onOpen = { item ->
+                        // 收藏/历史不是独立屏幕：点开要切回首页，否则详情/播放器渲染不出来
+                        tab = DemoTab.HOME
+                        parseTarget = item
+                    },
                     onToggleCollect = { item -> toggleCollect(item) },
                 )
                 return@Surface
@@ -1246,7 +1250,10 @@ fun DemoApp(
                     collected = collected,
                     progress = progressByUrl,
                     layout = layoutMode,
-                    onOpen = { item -> parseTarget = item },
+                    onOpen = { item ->
+                        tab = DemoTab.HOME
+                        parseTarget = item
+                    },
                     onToggleCollect = { item -> toggleCollect(item) },
                 )
                 return@Surface
