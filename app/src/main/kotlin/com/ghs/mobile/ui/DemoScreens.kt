@@ -481,6 +481,8 @@ fun DemoApp(
         }
 
         session = created
+        // 进度按相对地址存：记录当前站点，供 ProgressKeys 剥/拼域名
+        ProgressKeys.homeUrl = created.homeUrl
         // 调试台（F25）：把求值器挂到当前会话上
         com.ghs.mobile.web.DebugHub.evaluator = { code -> created.eval(code) }
         // 图片解码（F05）：图集打散图交给当前配置的 adapterImageCode 还原
@@ -503,7 +505,7 @@ fun DemoApp(
     LaunchedEffect(screen) {
         val list = screen as? Screen.List ?: return@LaunchedEffect
         progressByUrl = withContext(Dispatchers.IO) {
-            list.page.items.mapNotNull { item -> repository.progress(item.jumpUrl)?.let { item.jumpUrl to it } }.toMap()
+            list.page.items.mapNotNull { item -> repository.progress(ProgressKeys.key(item.jumpUrl))?.let { item.jumpUrl to it } }.toMap()
         }
     }
 
@@ -532,7 +534,7 @@ fun DemoApp(
 
             // 视频：解析出地址后直接播放
             if (info != null && (info.detailType == DetailType.MP4 || info.detailType == DetailType.M3U8)) {
-                val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+                val saved = withContext(Dispatchers.IO) { repository.progress(ProgressKeys.key(item.jumpUrl)) }
                 screen = Screen.VideoPlayer(
                     item = item,
                     sources = info.details,
@@ -550,7 +552,7 @@ fun DemoApp(
             }
             // 图片：直接进阅读器，从上次的页续看
             if (info != null && info.detailType == DetailType.IMAGE && info.details.isNotEmpty()) {
-                val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+                val saved = withContext(Dispatchers.IO) { repository.progress(ProgressKeys.key(item.jumpUrl)) }
                 screen = Screen.ComicReader(
                     item = item,
                     pages = info.details,
@@ -564,7 +566,7 @@ fun DemoApp(
                 val chapterUrl = info.details.first().url
                 val chapters = runCatching { withContext(Dispatchers.IO) { active.comicChapters(chapterUrl) } }
                     .getOrDefault(emptyList())
-                val saved = withContext(Dispatchers.IO) { repository.progress(item.jumpUrl) }
+                val saved = withContext(Dispatchers.IO) { repository.progress(ProgressKeys.key(item.jumpUrl)) }
                 // 续看要回到「上次那一话」：只记页码、不记话数会永远从第一话开始
                 val startChapter = (saved?.chapterIndex ?: 0)
                     .coerceIn(0, (chapters.size - 1).coerceAtLeast(0))
@@ -619,7 +621,7 @@ fun DemoApp(
                 val chapterIndex = Regex("page=(\\d+)").find(url)?.groupValues?.get(1)?.toIntOrNull()?.minus(1) ?: 0
                 repository.saveProgress(
                     ReadingProgress(
-                        itemUrl = item.jumpUrl,
+                        itemUrl = ProgressKeys.key(item.jumpUrl),
                         kind = ReaderKind.TEXT,
                         chapterUrl = url,
                         chapterIndex = chapterIndex,
@@ -717,7 +719,7 @@ fun DemoApp(
                     scope.launch {
                         repository.saveProgress(
                             ReadingProgress(
-                                itemUrl = reader.item.jumpUrl,
+                                itemUrl = ProgressKeys.key(reader.item.jumpUrl),
                                 kind = ReaderKind.IMAGE,
                                 chapterUrl = reader.chapters.getOrNull(reader.chapterIndex)?.url.orEmpty(),
                                 chapterIndex = reader.chapterIndex,
@@ -752,7 +754,7 @@ fun DemoApp(
             LaunchedEffect(reader.item.jumpUrl) {
                 if (restored) return@LaunchedEffect
                 restored = true
-                val saved = withContext(Dispatchers.IO) { repository.progress(reader.item.jumpUrl) }
+                val saved = withContext(Dispatchers.IO) { repository.progress(ProgressKeys.key(reader.item.jumpUrl)) }
                 if (saved == null) return@LaunchedEffect
                 if (saved.chapterUrl.isBlank()) return@LaunchedEffect
                 val line = reader.info.analysis.firstOrNull { it.url == saved.chapterUrl }
@@ -909,7 +911,7 @@ fun DemoApp(
                     scope.launch {
                         repository.saveProgress(
                             ReadingProgress(
-                                itemUrl = reader.item.jumpUrl,
+                                itemUrl = ProgressKeys.key(reader.item.jumpUrl),
                                 kind = ReaderKind.VIDEO,
                                 // 剧集：把「线路 + 第几集」也记下来，下次直接续上
                                 chapterUrl = ctx?.lineUrl ?: reader.sources.getOrNull(reader.startIndex)?.url.orEmpty(),
@@ -1535,11 +1537,11 @@ private suspend fun rememberOpened(
         DetailType.MP4, DetailType.M3U8 -> ReaderKind.VIDEO
         else -> ReaderKind.IMAGE
     }
-    val existing = repository.progress(item.jumpUrl)
+    val existing = repository.progress(ProgressKeys.key(item.jumpUrl))
     if (existing == null) {
         repository.saveProgress(
             ReadingProgress(
-                itemUrl = item.jumpUrl,
+                itemUrl = ProgressKeys.key(item.jumpUrl),
                 kind = kind,
                 chapterUrl = info.details.firstOrNull()?.url ?: item.jumpUrl,
                 chapterIndex = 0,
@@ -1859,3 +1861,15 @@ private fun absUrl(url: String, homeUrl: String?): String = runCatching {
     val base = java.net.URI(homeUrl)
     "${base.scheme}://${base.rawAuthority}$url"
 }.getOrDefault(url)
+/**
+ * 进度也用相对地址做 key（与收藏/历史一致）。
+ *
+ * 当前站点的 homeUrl 在会话创建时写入，关闭时清空；读写进度都过这里，
+ * 站点换域名后还能续上原来的位置。
+ */
+object ProgressKeys {
+    @Volatile
+    var homeUrl: String? = null
+
+    fun key(url: String): String = relUrl(url, homeUrl)
+}
