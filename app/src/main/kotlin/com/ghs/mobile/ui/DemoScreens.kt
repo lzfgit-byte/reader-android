@@ -184,6 +184,8 @@ fun DemoApp(
     var screen by remember { mutableStateOf<Screen>(Screen.Loading) }
     // 记住上一次解析好的列表：返回时直接回填，避免回到 Loading 又无处可去
     var lastPage by remember { mutableStateOf<Page?>(null) }
+    // 从哪个界面点进条目的：返回要回到那一页（尤其是搜索结果，别清成普通列表）
+    var returnScreen by remember { mutableStateOf<Screen?>(null) }
     var progressByUrl by remember { mutableStateOf<Map<String, ReadingProgress>>(emptyMap()) }
     var text by remember { mutableStateOf<TextContent?>(null) }
     var textUrl by remember { mutableStateOf<String?>(null) }
@@ -205,9 +207,25 @@ fun DemoApp(
     androidx.activity.compose.BackHandler(enabled = canGoBack) {
         when {
             drawerOpen -> drawerOpen = false
-            screen is Screen.ComicReader || screen is Screen.SinglePage ||
-                screen is Screen.VideoPlayer || screen is Screen.Detail -> {
-                screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading
+            // 单图阅读：退回漫画阅读（双击进来的位置）
+            screen is Screen.SinglePage -> {
+                val single = screen as Screen.SinglePage
+                screen = if (single.fromComic) {
+                    Screen.ComicReader(
+                        item = single.item,
+                        pages = single.pages,
+                        startIndex = single.startIndex,
+                        chapters = single.chapters,
+                        chapterIndex = single.chapterIndex,
+                        preloadNext = single.preloadNext,
+                    )
+                } else {
+                    lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                }
+            }
+            // 详情 / 播放 / 漫画：回到点进来的那个界面（搜索结果要保留搜索态）
+            screen is Screen.ComicReader || screen is Screen.VideoPlayer || screen is Screen.Detail -> {
+                screen = returnScreen ?: lastPage?.let { Screen.List(it) } ?: Screen.Loading
             }
             tab != DemoTab.HOME -> tab = DemoTab.HOME
         }
@@ -1320,7 +1338,11 @@ fun DemoApp(
                         layout = layoutMode,
                         loadingMore = loadingMore,
                         noMore = noMore,
-                        onOpen = { item -> parseTarget = item },
+                        onOpen = { item ->
+                            // 从搜索结果进来：返回回到这一页（保留搜索词与分页）
+                            returnScreen = Screen.SearchResults(current.keyword, current.page)
+                            parseTarget = item
+                        },
                         onToggleCollect = { item -> toggleCollect(item) },
                         onLoadMore = { loadMore() },
                     )
@@ -1342,7 +1364,11 @@ fun DemoApp(
                         layout = layoutMode,
                         loadingMore = loadingMore,
                         noMore = noMore,
-                        onOpen = { item -> parseTarget = item },
+                        onOpen = { item ->
+                            // 普通列表进来：返回回到列表（保留分页位置）
+                            returnScreen = Screen.List(current.page)
+                            parseTarget = item
+                        },
                         onToggleCollect = { item -> toggleCollect(item) },
                         onLoadMore = { loadMore() },
                     )

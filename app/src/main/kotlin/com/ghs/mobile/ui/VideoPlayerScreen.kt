@@ -192,9 +192,12 @@ fun VideoPlayerScreen(
     var dragging by remember(currentUrl) { mutableStateOf(false) }
     var dragPosition by remember(currentUrl) { mutableLongStateOf(0L) }
 
-    // 硬件返回键：交给播放器自己的返回逻辑，避免直接退出应用
+
+    // 硬件返回键：全屏先退全屏，锁屏先解锁，最后才退出播放器
     androidx.activity.compose.BackHandler {
-        if (locked) {
+        if (fullscreen) {
+            fullscreen = false
+        } else if (locked) {
             locked = false
         } else {
             onBack()
