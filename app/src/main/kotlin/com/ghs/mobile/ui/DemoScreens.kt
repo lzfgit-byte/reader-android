@@ -539,7 +539,9 @@ fun DemoApp(
                     item = item,
                     sources = info.details,
                     startIndex = 0,
-                    startMs = saved?.positionMs ?: 0L,
+                    // 默认从 0 开始播；历史进度只作为「继续观看」提示（2 秒内可点）
+                    startMs = 0L,
+                    resumePositionMs = saved?.positionMs ?: 0L,
                 )
                 finish()
                 return@launch

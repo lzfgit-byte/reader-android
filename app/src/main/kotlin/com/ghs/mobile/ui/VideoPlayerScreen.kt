@@ -21,6 +21,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -651,6 +652,18 @@ fun VideoPlayerScreen(
                                     }
                                 }
                             }
+                        }
+                        // 重播：回到开头继续播（播完后进度已归零）
+                        IconButton(onClick = {
+                            reachedEnd = false
+                            player.seekTo(0)
+                            player.play()
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.Refresh,
+                                contentDescription = "重播",
+                                tint = Color.White,
+                            )
                         }
                         IconButton(onClick = { fullscreen = !fullscreen }) {
                             FullscreenIcon(expanded = fullscreen, tint = Color.White)
