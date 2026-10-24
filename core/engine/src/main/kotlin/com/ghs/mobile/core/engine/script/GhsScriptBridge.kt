@@ -267,7 +267,18 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
             globalThis.NotifyMsgUtil = { sendNotifyMsg: function () {}, close: function () {} };
             // 进度消息要进调试日志/顶部灵动岛，不能是空实现
             // sendProgress(已处理, 总数, 标题)：第三个参数才是要展示的文案
-            globalThis.ProgressMsgUtil = {
+'            // 事件总线：配置里常用 eventEmitter.emit/on 做进度通知，缺失会直接 ReferenceError
+            globalThis.eventEmitter = {
+              on: function () { return function () { }; },
+              addListener: function () { },
+              once: function () { },
+              off: function () { },
+              removeListener: function () { },
+              removeAllListeners: function () { },
+              emit: function () { },
+              listenerCount: function () { return 0; }
+            };
+            globalThis.ProgressMsgUtil = {'
               sendProgress: function (done, total, title) {
                 var text = (typeof title === 'string' && title)
                   ? title

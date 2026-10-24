@@ -1133,13 +1133,15 @@ fun DemoApp(
                     }
                 },
                 navigationIcon = {
-                    // 左侧菜单：设置 / 引擎自检
-                    IconButton(onClick = { drawerOpen = true }) {
-                        Icon(Icons.Default.Menu, contentDescription = "菜单")
-                    }
-                    if (tab == DemoTab.HOME && (screen is Screen.Detail || screen is Screen.SearchResults)) {
+                    // 详情/搜索页只显示「返回」；其余页面只显示「菜单」——两者不叠加
+                    val showBack = tab == DemoTab.HOME && (screen is Screen.Detail || screen is Screen.SearchResults)
+                    if (showBack) {
                         IconButton(onClick = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
+                        }
+                    } else {
+                        IconButton(onClick = { drawerOpen = true }) {
+                            Icon(Icons.Default.Menu, contentDescription = "菜单")
                         }
                     }
                 },
