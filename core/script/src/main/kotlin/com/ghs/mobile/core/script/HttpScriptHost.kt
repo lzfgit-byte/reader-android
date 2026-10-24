@@ -52,12 +52,12 @@ class HttpScriptHost(
     @Volatile
     var htmlCache: HtmlCache? = null
 
-    /** 用户点了「取消」：置位后正在等待的取页/求值尽快退出 */
-    private val cancelFlag = java.util.concurrent.atomic.AtomicBoolean(false)
+    /** 取消令牌：每次取消自增；调用方记住自己的代号，只响应之后的取消 */
+    private val cancelEpoch = java.util.concurrent.atomic.AtomicLong(0)
 
-    /** 取消当前所有等待；下一次取页会自动复位 */
+    /** 取消当前正在等待的取页/求值（不影响之后的调用） */
     fun cancelPending() {
-        cancelFlag.set(true)
+        cancelEpoch.incrementAndGet()
     }
 
     override fun fetchHtml(url: String): String {
@@ -272,6 +272,8 @@ class HttpScriptHost(
      * 返回值统一转成字符串：本身就是字符串就原样返回，否则 JSON 序列化。
      */
     override fun executePage(url: String, code: String): String {
+        // 记住本次调用的代号：只有这之后发生的「取消」才作数
+        val epoch = cancelEpoch.get()
         val loaded = CountDownLatch(1)
         val result = CountDownLatch(1)
         var output = ""
@@ -339,7 +341,7 @@ class HttpScriptHost(
                 try {
                     // 不设超时：由用户点「取消」决定放弃
                     while (!loaded.await(200, TimeUnit.MILLISECONDS)) {
-                        if (cancelFlag.get()) {
+                        if (cancelEpoch.get() != epoch) {
                             failure = "已取消"
                             result.countDown()
                             return@Thread
@@ -380,7 +382,7 @@ class HttpScriptHost(
             // 等待结果：不设超时，只响应取消
             Thread {
                 while (!result.await(200, TimeUnit.MILLISECONDS)) {
-                    if (cancelFlag.get()) {
+                    if (cancelEpoch.get() != epoch) {
                         failure = "已取消"
                         result.countDown()
                         break
