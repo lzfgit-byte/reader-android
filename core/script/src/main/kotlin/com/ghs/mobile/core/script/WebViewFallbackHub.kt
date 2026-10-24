@@ -1,4 +1,4 @@
-﻿package com.ghs.mobile.core.script
+package com.ghs.mobile.core.script
 
 import java.util.concurrent.CopyOnWriteArrayList
 
@@ -15,6 +15,24 @@ object WebViewFallbackHub {
     @Volatile
     var currentUrl: String? = null
         private set
+
+    /**
+     * 正在执行取页任务的那个 WebView 实例。
+     *
+     * 用户点「显示 webview」时，直接把**这个**实例挂到窗口上，
+     * 而不是另开一个去重新加载——重新加载看不到任务真实状态（cookie/跳转/挑战都在原实例里）。
+     */
+    @Volatile
+    var currentView: android.webkit.WebView? = null
+        private set
+
+    fun attach(view: android.webkit.WebView?) {
+        currentView = view
+    }
+
+    fun detach(view: android.webkit.WebView?) {
+        if (currentView === view) currentView = null
+    }
 
     private val listeners = CopyOnWriteArrayList<(String?) -> Unit>()
 

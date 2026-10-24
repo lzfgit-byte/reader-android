@@ -5,39 +5,29 @@ import android.content.Context
 import android.content.Intent
 import android.os.Bundle
 import android.view.ViewGroup
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import android.widget.Button
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
-import androidx.compose.material3.MaterialTheme
-import com.ghs.mobile.GhsApp
-import com.ghs.mobile.core.engine.net.UserAgents
-import com.ghs.mobile.core.script.WebViewProxy
+import com.ghs.mobile.core.script.WebViewFallbackHub
 
 /**
- * 把「取页用的 WebView」显示出来。
+ * 显示「正在执行取页任务」的那个 WebView。
  *
- * 背景：无头 WebView 取页失败时（403 / 挑战页 / 需要登录），用户看不到页面，
- * 也没法手动完成验证。这个页面用同一套 UA/代理/语言设置重新打开同一个地址，
- * 让用户能看见并操作；关掉后回到应用继续原流程。
+ * 不是重新加载页面：直接取 [WebViewFallbackHub.currentView]，把它挂到本窗口，
+ * 这样看到的就是任务真实状态（cookie、跳转、挑战页、登录页都在原实例里）。
  */
 class WebViewMirrorActivity : ComponentActivity() {
 
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val url = intent.getStringExtra(EXTRA_URL).orEmpty()
-        if (url.isBlank()) {
-            finish()
-            return
-        }
 
-        val root = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-        }
+        val url = intent.getStringExtra(EXTRA_URL).orEmpty()
+        val view = WebViewFallbackHub.currentView
+
+        val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -45,7 +35,7 @@ class WebViewMirrorActivity : ComponentActivity() {
         }
         bar.addView(
             TextView(this).apply {
-                text = url
+                text = if (view != null) "正在取页：$url" else "取页已结束：$url"
                 textSize = 11f
                 maxLines = 2
             },
@@ -57,20 +47,27 @@ class WebViewMirrorActivity : ComponentActivity() {
                 setOnClickListener { finish() }
             },
         )
-        root.addView(bar, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT))
+        root.addView(bar)
 
-        val view = WebView(this)
-        view.settings.javaScriptEnabled = true
-        view.settings.domStorageEnabled = true
-        // 与取页通道保持一致：桌面 UA + 中文
-        view.settings.userAgentString = UserAgents.DESKTOP_CHROME
-        view.webViewClient = WebViewClient()
-        runCatching { WebViewProxy.apply(GhsApp.instance.proxy.rules.value) }
-        view.loadUrl(url, mapOf("Accept-Language" to UserAgents.ACCEPT_LANGUAGE))
-        root.addView(view, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
+        val frame = FrameLayout(this).apply {
+            background = android.graphics.drawable.GradientDrawable().apply {
+                setColor(android.graphics.Color.WHITE)
+                setStroke(2, android.graphics.Color.parseColor("#B9A7FF"))
+                cornerRadius = 8f
+            }
+            setPadding(3, 3, 3, 3)
+        }
+        if (view != null) {
+            // 同一个 View 不能有两个父容器：先从原容器摘下
+            (view.parent as? ViewGroup)?.removeView(view)
+            frame.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+        }
+        root.addView(frame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         setContentView(root)
     }
+
+    // 关闭窗口只是不再显示：任务结束后 HttpScriptHost 会自行销毁该 WebView
 
     companion object {
         private const val EXTRA_URL = "url"

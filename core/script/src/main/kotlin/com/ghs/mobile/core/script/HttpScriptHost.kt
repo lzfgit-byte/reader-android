@@ -291,6 +291,8 @@ class HttpScriptHost(
             // 兜底用桌面 UA：不少站点对移动 UA 直接返回精简页或挑战页
             view.settings.userAgentString = DESKTOP_UA
             view.settings.domStorageEnabled = true
+            // 登记实例：用户点「显示 webview」时把它直接挂到窗口上
+            WebViewFallbackHub.attach(view)
             // 配置里的页面脚本常常返回 Promise（等 iframe / fetch 完成）：用它回传最终结果
             view.addJavascriptInterface(
                 object {
@@ -398,6 +400,7 @@ class HttpScriptHost(
                 runCatching { result.await() }
                 onMain {
                     runCatching {
+                        WebViewFallbackHub.detach(view)
                         view.stopLoading()
                         view.destroy()
                     }
