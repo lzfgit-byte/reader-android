@@ -112,6 +112,9 @@ class HttpScriptHost(
                         }
                         val body = response.body?.string()
                             ?: throw IllegalStateException("取页为空：$url")
+                        // 把 Set-Cookie 同步给 WebView：否则无头取页拿到的登录态
+                        // 不会带到「显示 webview」的窗口里，页面就是空白
+                        syncCookies(url, response.headers)
                         // 200 也可能是挑战页：不缓存，交给上层按失败处理
                         if (!isChallengePage(body)) htmlCache?.put(url, body)
                         return body
@@ -414,6 +417,15 @@ class HttpScriptHost(
     override fun close() {
         runCatching { client.dispatcher.executorService.shutdown() }
         runCatching { client.connectionPool.evictAll() }
+    }
+
+    /** 把 OkHttp 收到的 Set-Cookie 写进 WebView 的 CookieManager */
+    private fun syncCookies(url: String, headers: okhttp3.Headers) {
+        val cookies = headers.values("Set-Cookie")
+        if (cookies.isEmpty()) return
+        val manager = android.webkit.CookieManager.getInstance()
+        cookies.forEach { cookie -> runCatching { manager.setCookie(url, cookie) } }
+        runCatching { manager.flush() }
     }
 
     private fun normalize(raw: String?): String {
