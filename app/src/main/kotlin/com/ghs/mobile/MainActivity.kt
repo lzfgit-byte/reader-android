@@ -80,8 +80,8 @@ private fun AppRoot() {
                             onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
                             onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
                             onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
-                            onProxyApply = { enabled, url, user, pass, whitelist ->
-                                scope.launch { proxyStore.apply(enabled, url, user, pass, whitelist) }
+                            onProxyApply = { enabled, url, user, pass, whitelist, forceProxy ->
+                                scope.launch { proxyStore.apply(enabled, url, user, pass, whitelist, forceProxy) }
                             },
                             onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
                             onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
@@ -101,8 +101,8 @@ private fun AppRoot() {
                     onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
                     onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
                     onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
-                    onProxyApply = { enabled, url, user, pass, whitelist ->
-                        scope.launch { proxyStore.apply(enabled, url, user, pass, whitelist) }
+                    onProxyApply = { enabled, url, user, pass, whitelist, forceProxy ->
+                        scope.launch { proxyStore.apply(enabled, url, user, pass, whitelist, forceProxy) }
                     },
                     onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
                     onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },

@@ -54,7 +54,7 @@ fun SettingsScreen(
     onThemeChange: (ThemeMode) -> Unit,
     onFontScaleChange: (FontScale) -> Unit,
     onReaderModeChange: (ReaderMode) -> Unit,
-    onProxyApply: (enabled: Boolean, url: String, username: String, password: String, whitelist: String) -> Unit,
+    onProxyApply: (enabled: Boolean, url: String, username: String, password: String, whitelist: String, forceProxy: String) -> Unit,
     onWebToggle: (Boolean) -> Unit,
     onWebPortChange: (Int) -> Unit,
     onWebBindChange: (Boolean) -> Unit,
@@ -99,7 +99,7 @@ fun SettingsContent(
     onThemeChange: (ThemeMode) -> Unit,
     onFontScaleChange: (FontScale) -> Unit,
     onReaderModeChange: (ReaderMode) -> Unit,
-    onProxyApply: (enabled: Boolean, url: String, username: String, password: String, whitelist: String) -> Unit,
+    onProxyApply: (enabled: Boolean, url: String, username: String, password: String, whitelist: String, forceProxy: String) -> Unit,
     onWebToggle: (Boolean) -> Unit,
     onWebPortChange: (Int) -> Unit,
     onWebBindChange: (Boolean) -> Unit,
@@ -190,7 +190,7 @@ private fun SettingRow(
 @Composable
 private fun ProxyForm(
     proxy: ProxyRules,
-    onApply: (Boolean, String, String, String, String) -> Unit,
+    onApply: (Boolean, String, String, String, String, String) -> Unit,
 ) {
     var enabled by remember(proxy) { mutableStateOf(proxy.enabled) }
     var url by remember(proxy) {
@@ -199,6 +199,7 @@ private fun ProxyForm(
     var username by remember(proxy) { mutableStateOf(proxy.endpoint?.username.orEmpty()) }
     var password by remember(proxy) { mutableStateOf(proxy.endpoint?.password.orEmpty()) }
     var whitelist by remember(proxy) { mutableStateOf(proxy.whitelist.joinToString(", ")) }
+    var forceProxy by remember(proxy) { mutableStateOf(proxy.forceProxy.joinToString(", ")) }
 
     Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
         Row(
@@ -239,15 +240,21 @@ private fun ProxyForm(
             modifier = Modifier.fillMaxWidth(),
             label = { Text("白名单（逗号分隔；example.com 同时覆盖其子域，如 cdn.example.com）") },
         )
+        OutlinedTextField(
+            value = forceProxy,
+            onValueChange = { forceProxy = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("强制代理名单（逗号分隔；命中即走代理，优先于白名单）") },
+        )
 
         Text(
-            "白名单内的地址直连；未启用代理时全部直连。代理设置只存本机，不随导出包走。",
+            "白名单内的地址直连；强制代理名单命中则一律走代理；未启用代理时全部直连。代理设置只存本机，不随导出包走。",
             style = MaterialTheme.typography.labelSmall,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
         )
 
         Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = { onApply(enabled, url, username, password, whitelist) }) {
+            TextButton(onClick = { onApply(enabled, url, username, password, whitelist, forceProxy) }) {
                 Text("应用")
             }
         }

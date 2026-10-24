@@ -242,9 +242,15 @@ fun DemoApp(
         scope.launch {
             val snapshot = withContext(Dispatchers.IO) {
                 val collects = repository.collects(siteKey)
-                val favorites = collects.mapNotNull { record -> ItemCodec.decode(record.url, record.payload) }
+                // 库里存的是相对地址：读出来时用当前 homeUrl 补回域名
+                val home = session?.homeUrl
+                val favorites = collects.mapNotNull { record ->
+                    ItemCodec.decode(record.url, record.payload)?.let { it.copy(jumpUrl = absUrl(it.jumpUrl, home)) }
+                }
                 val history = repository.history(siteKey, 100).mapNotNull { record ->
-                    ItemCodec.decode(record.url, record.payload)?.let { item -> HistoryEntry(item, record.createTime) }
+                    ItemCodec.decode(record.url, record.payload)?.let { item ->
+                        HistoryEntry(item.copy(jumpUrl = absUrl(item.jumpUrl, home)), record.createTime)
+                    }
                 }
                 Triple(collects.map { it.url }.toSet(), favorites, history)
             }
@@ -273,10 +279,12 @@ fun DemoApp(
     fun toggleCollect(item: Item) {
         scope.launch {
             withContext(Dispatchers.IO) {
-                if (repository.isCollected(siteKey, item.jumpUrl)) {
-                    repository.uncollect(siteKey, item.jumpUrl)
+                // 存相对地址：域名由当前 homeUrl 决定，站点换域名后收藏仍然可用
+                val key = relUrl(item.jumpUrl, session?.homeUrl)
+                if (repository.isCollected(siteKey, key)) {
+                    repository.uncollect(siteKey, key)
                 } else {
-                    repository.collect(siteKey, item.jumpUrl, ItemCodec.encode(item))
+                    repository.collect(siteKey, key, ItemCodec.encode(item))
                 }
             }
             refreshLibrary()
@@ -519,7 +527,7 @@ fun DemoApp(
             val info = outcome.getOrNull()
             detailError = outcome.exceptionOrNull()?.let { it.message ?: it.toString() }
             if (info != null) {
-                withContext(Dispatchers.IO) { rememberOpened(repository, siteKey, item, info) }
+            withContext(Dispatchers.IO) { rememberOpened(repository, siteKey, item, info, session?.homeUrl) }
             }
 
             // 视频：解析出地址后直接播放
@@ -1519,6 +1527,7 @@ private suspend fun rememberOpened(
     configKey: String,
     item: Item,
     info: DetailInfo,
+    homeUrl: String?,
 ) {
     val kind = when (info.detailType) {
         DetailType.TEXT -> ReaderKind.TEXT
@@ -1545,8 +1554,7 @@ private suspend fun rememberOpened(
         // 用空白记录覆盖会把续看信息冲掉，表现为"明明看过却从头开始"
         repository.saveProgress(existing.copy(updatedAt = System.currentTimeMillis()))
     }
-    repository.recordView(configKey, item.jumpUrl, ItemCodec.encode(item))
-    repository.trimHistory(100)
+    repository.recordView(configKey, relUrl(item.jumpUrl, homeUrl), ItemCodec.encode(item))
     repository.putSetting(SettingScope.DEVICE, "last_opened", item.jumpUrl)
 }
 
@@ -1827,3 +1835,27 @@ private fun deviceReferer(session: ReaderSession?, item: Item): String? {
         "${uri.scheme}://${uri.host}/"
     }.getOrNull()
 }
+/**
+ * 把绝对地址转成「相对 homeUrl」的地址（保留 path/query/fragment）。
+ *
+ * 收藏与历史只存这个相对地址：站点换域名时不需要迁移数据，打开时用当前 homeUrl 拼回来。
+ * 与当前站点不同源（比如外部链接）的原样保留。
+ */
+private fun relUrl(url: String, homeUrl: String?): String = runCatching {
+    if (homeUrl.isNullOrBlank() || !url.startsWith("http")) return@runCatching url
+    val base = java.net.URI(homeUrl)
+    val target = java.net.URI(url)
+    if (!target.host.equals(base.host, ignoreCase = true)) return@runCatching url
+    buildString {
+        append(target.rawPath?.takeIf { it.isNotEmpty() } ?: "/")
+        target.rawQuery?.let { append('?').append(it) }
+        target.rawFragment?.let { append('#').append(it) }
+    }
+}.getOrDefault(url)
+
+/** 相对地址 → 绝对地址（用当前 homeUrl 的协议与主机） */
+private fun absUrl(url: String, homeUrl: String?): String = runCatching {
+    if (!url.startsWith("/") || homeUrl.isNullOrBlank()) return@runCatching url
+    val base = java.net.URI(homeUrl)
+    "${base.scheme}://${base.rawAuthority}$url"
+}.getOrDefault(url)

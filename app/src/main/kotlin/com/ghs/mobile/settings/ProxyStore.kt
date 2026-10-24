@@ -37,6 +37,7 @@ class ProxyStore(private val repository: LocalRepository) {
             enabled = saved["proxy_enabled"]?.toBooleanStrictOrNull() ?: true,
             endpoint = endpoint,
             whitelist = ProxyRules.parseWhitelist(saved["proxy_whitelist"]),
+            forceProxy = ProxyRules.parseWhitelist(saved["proxy_force"]),
         )
     }
 
@@ -53,6 +54,7 @@ class ProxyStore(private val repository: LocalRepository) {
             repository.putSetting(SettingScope.DEVICE, "proxy_user", next.endpoint?.username.orEmpty())
             repository.putSetting(SettingScope.DEVICE, "proxy_pass", next.endpoint?.password.orEmpty())
             repository.putSetting(SettingScope.DEVICE, "proxy_whitelist", next.whitelist.joinToString(","))
+            repository.putSetting(SettingScope.DEVICE, "proxy_force", next.forceProxy.joinToString(","))
         }
     }
 
@@ -63,6 +65,7 @@ class ProxyStore(private val repository: LocalRepository) {
         username: String,
         password: String,
         whitelist: String,
+        forceProxy: String,
     ) {
         update {
             ProxyRules(
@@ -72,6 +75,7 @@ class ProxyStore(private val repository: LocalRepository) {
                     password = password.takeIf { it.isNotBlank() },
                 ),
                 whitelist = ProxyRules.parseWhitelist(whitelist),
+                forceProxy = ProxyRules.parseWhitelist(forceProxy),
             )
         }
     }
