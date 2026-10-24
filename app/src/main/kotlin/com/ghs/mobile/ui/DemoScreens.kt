@@ -1426,7 +1426,10 @@ fun DemoApp(
     // 解析详情弹窗：显示已用时间，可手动取消
     val parsingDetail = opening
     if (parsingDetail) {
-        Dialog(onDismissRequest = { /* 只能通过按钮关闭，避免误触中断 */ }) {
+        Box(
+            modifier = Modifier.fillMaxSize().background(Color(0x66000000)),
+            contentAlignment = Alignment.Center,
+        ) {
             Surface(
                 shape = RoundedCornerShape(20.dp),
                 tonalElevation = 6.dp,

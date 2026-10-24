@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.compose.AsyncImagePainter
 import coil.request.ImageRequest
+import kotlinx.coroutines.launch
 import com.ghs.mobile.core.model.Detail
 
 /**
@@ -63,6 +64,8 @@ fun SinglePageReaderScreen(
     val start = startIndex.coerceIn(0, pages.lastIndex)
     val pagerState = rememberPagerState(initialPage = start) { pages.size }
     var chromeVisible by remember { mutableStateOf(true) }
+    var zoomed by remember { mutableStateOf(false) }
+    val scope = androidx.compose.runtime.rememberCoroutineScope()
     val current = pagerState.currentPage
 
     LaunchedEffect(current) { onProgress(current) }
@@ -124,25 +127,48 @@ fun SinglePageReaderScreen(
         }
 
         // 底部：页码进度 + 关闭按钮（始终显示，避免迷路）
+        // 底部工具条：左侧页码，右侧 缩 / 全 / 关闭 / 上一张 / 下一张
         Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(bottom = 28.dp),
+                .fillMaxWidth()
+                .background(Color(0xCC000000))
+                .padding(horizontal = 8.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Surface(color = Color(0xCC000000), shape = RoundedCornerShape(50)) {
-                Text(
-                    text = "${current + 1} / ${pages.size}",
-                    color = Color(0xFFE6E6EA),
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
-                )
+            Text(
+                text = "${current + 1}/${pages.size}",
+                color = Color(0xFFE6E6EA),
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier.padding(start = 8.dp),
+            )
+            Spacer(Modifier.weight(1f))
+
+            // 缩小 / 适屏
+            TextButton(onClick = { zoomed = !zoomed }) {
+                Text(if (zoomed) "全" else "缩", color = Color.White)
             }
-            Spacer(Modifier.width(10.dp))
-            Surface(color = Color(0xCC000000), shape = RoundedCornerShape(50)) {
-                TextButton(onClick = onClose) {
-                    Text("关闭", color = Color.White, style = MaterialTheme.typography.labelLarge)
-                }
+            // 关闭
+            TextButton(onClick = onClose) { Text("×", color = Color.White) }
+            // 上一张 / 下一张
+            TextButton(
+                enabled = current > 0,
+                onClick = {
+                    val target = (current - 1).coerceAtLeast(0)
+                    scope.launch { pagerState.animateScrollToPage(target) }
+                },
+            ) { Text("‹", color = if (current > 0) Color.White else Color(0x66FFFFFF)) }
+            TextButton(
+                enabled = current < pages.lastIndex,
+                onClick = {
+                    val target = (current + 1).coerceAtMost(pages.lastIndex)
+                    scope.launch { pagerState.animateScrollToPage(target) }
+                },
+            ) {
+                Text(
+                    "›",
+                    color = if (current < pages.lastIndex) Color.White else Color(0x66FFFFFF),
+                )
             }
         }
     }
