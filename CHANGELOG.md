@@ -1,4 +1,6 @@
 ### Changed
+
+- **Web 管理：启用开关与配置排序（F25）**：`PUT /api/configs/{key}` 改为按请求体的 `enabled` 落库（此前固定沿用旧值，勾选无效）；控制台配置列表支持 ↑/↓ 调整顺序，调用 `POST /api/configs/order`
 - **User-Agent（F05/F29）**：所有取页通道统一为桌面 Chrome UA（`UserAgents.DESKTOP_CHROME`），避免站点返回移动版页面导致解析不到条目
 ### Added
 - **强制代理名单（F28）**：与白名单同样写法，命中即走代理且优先于白名单
