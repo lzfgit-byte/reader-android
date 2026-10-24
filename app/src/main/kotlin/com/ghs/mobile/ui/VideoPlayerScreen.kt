@@ -202,7 +202,7 @@ fun VideoPlayerScreen(
                     referer?.takeIf { it.isNotBlank() }?.let { put("Referer", it) }
                     put(
                         "User-Agent",
-                        "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Mobile Safari/537.36",
+                        com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME,
                     )
                 },
             )

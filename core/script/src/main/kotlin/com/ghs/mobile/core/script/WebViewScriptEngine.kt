@@ -49,6 +49,8 @@ class WebViewScriptEngine(
             val view = WebView(context.applicationContext)
             view.settings.javaScriptEnabled = true
             view.settings.domStorageEnabled = true
+            // 引擎里的页面也要桌面 Chrome UA：站点据此返回桌面版，配置选择器才对得上
+            view.settings.userAgentString = com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
             @Suppress("DEPRECATION")
             view.addJavascriptInterface(HostApi(), BRIDGE)
             // 必须等页面加载完成：early evaluateJavascript 落在临时上下文里，页面一加载就被丢弃

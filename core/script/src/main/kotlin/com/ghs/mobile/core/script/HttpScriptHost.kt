@@ -392,10 +392,10 @@ class HttpScriptHost(
 
     companion object {
         private const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+            com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
         /** WebView 兜底统一用桌面 UA（加载电脑端页面） */
         private const val DESKTOP_UA =
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+            com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
         private const val PAGE_TIMEOUT_MS = 180_000L
         private const val REQUEST_ATTEMPTS = 3
         private const val EVAL_TIMEOUT_MS = 180_000L

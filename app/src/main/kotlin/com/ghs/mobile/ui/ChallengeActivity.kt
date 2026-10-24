@@ -191,7 +191,7 @@ class ChallengeActivity : Activity() {
         const val POLL_INTERVAL_MS = 800L
         const val FIRST_CHECK_DELAY_MS = 2_500L
         const val USER_AGENT =
-            "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Mobile Safari/537.36"
+            com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
 
         /** 通过返回 `OK:<长度>`，仍在等待返回 `WAIT` */
         val DETECT_JS = """
