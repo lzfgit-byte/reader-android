@@ -416,9 +416,17 @@ class AdminServer(
                     .put("updatedAt", System.currentTimeMillis()),
             )
         }
-        store.save(key, source, enabled = existing.enabled, sort = existing.sort)
+        // 启用状态以请求体为准：控制台的「启用」复选框走的正是这条路径，
+        // 之前固定沿用 existing.enabled，勾掉再保存等于没改
+        val enabled = body.optBoolean("enabled", existing.enabled)
+        store.save(key, source, enabled = enabled, sort = existing.sort)
         notifyChanged()
-        return jsonOk(JSONObject().put("key", key).put("updatedAt", System.currentTimeMillis()))
+        return jsonOk(
+            JSONObject()
+                .put("key", key)
+                .put("enabled", enabled)
+                .put("updatedAt", System.currentTimeMillis()),
+        )
     }
 
     private fun patchConfig(key: String, rawBody: String): Response {

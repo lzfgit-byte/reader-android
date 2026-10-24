@@ -36,6 +36,8 @@ export interface ConsoleApi {
   /** 返回实际落库的 key：源码里的 key 变了会触发改名，renamedFrom 指出旧 key */
   save(key: string, source: string, enabled: boolean): Promise<{ key: string; renamedFrom?: string }>
   remove(key: string): Promise<void>
+  /** 重排配置顺序（数组顺序即显示/加载顺序） */
+  reorder(keys: string[]): Promise<void>
   validate(source: string): Promise<ValidateResult>
   /** 导出全部配置（JSON 文本，可直接回灌 importConfigs） */
   exportAll(): Promise<string>
@@ -173,6 +175,17 @@ export function createMockApi(): ConsoleApi {
         .sort((a, b) => b.updatedAt - a.updatedAt)
     },
 
+    /** 脱离 App 单独跑时的排序：按给定 key 顺序重写 localStorage */
+    async reorder(keys) {
+      const all = loadAll()
+      const byKey = new Map(all.map((c) => [c.key, c]))
+      const ordered = keys.map((k) => byKey.get(k)).filter((c) => c != null) as typeof all
+      all.forEach((c) => {
+        if (!keys.includes(c.key)) ordered.push(c)
+      })
+      saveAll(ordered)
+    },
+
     async get(key) {
       return loadAll().find((item) => item.key === key) ?? null
     },
@@ -297,6 +310,14 @@ export function createHttpApi(): ConsoleApi {
     async list() {
       const data = await call<{ configs: ConfigSummary[] }>('/configs')
       return data.configs ?? []
+    },
+
+    /** 重排配置顺序：数组顺序即列表/加载顺序 */
+    async reorder(keys: string[]) {
+      await call('/configs/order', {
+        method: 'POST',
+        body: JSON.stringify({ keys }),
+      })
     },
 
     async get(key) {

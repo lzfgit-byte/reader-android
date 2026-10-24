@@ -281,6 +281,24 @@ async function validate(): Promise<void> {
   monacoApi.monaco.editor.setModelMarkers(model, 'ghs-config', markers)
 }
 
+/** 上移 / 下移一条配置：本地先换位，再把新顺序提交给服务端 */
+async function moveConfig(index: number, delta: number): Promise<void> {
+  const target = index + delta
+  if (target < 0 || target >= configs.value.length) return
+  const next = [...configs.value]
+  const [moved] = next.splice(index, 1)
+  next.splice(target, 0, moved)
+  configs.value = next
+  try {
+    await api.reorder(next.map((c) => c.key))
+    status.value = "顺序已保存"
+    error.value = ""
+  } catch (e) {
+    error.value = `排序失败：${String(e)}`
+    configs.value = await api.list()
+  }
+}
+
 async function save(): Promise<void> {
   if (!selectedKey.value) return
   saving.value = true
@@ -423,8 +441,8 @@ onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer
 
     <main class="body">
       <aside class="list">
-        <button
-          v-for="item in configs"
+        <div
+          v-for="(item, i) in configs"
           :key="item.key"
           :class="['item', { active: item.key === selectedKey }]"
           @click="openConfig(item.key)"
@@ -432,7 +450,11 @@ onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer
           <span class="name">{{ item.name }}</span>
           <span class="key">{{ item.key }}</span>
           <span v-if="!item.enabled" class="badge">已停用</span>
-        </button>
+          <span class="order">
+            <span class="mini" title="上移" :class="{ off: i === 0 }" @click.stop="moveConfig(i, -1)">↑</span>
+            <span class="mini" title="下移" :class="{ off: i === configs.length - 1 }" @click.stop="moveConfig(i, 1)">↓</span>
+          </span>
+        </div>
       </aside>
 
       <section ref="editorHost" class="editor"></section>
