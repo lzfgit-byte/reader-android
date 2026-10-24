@@ -280,7 +280,9 @@ fun DemoApp(
                         HistoryEntry(item.copy(jumpUrl = absUrl(item.jumpUrl, home)), record.createTime)
                     }
                 }
-                Triple(collects.map { it.url }.toSet(), favorites, history)
+                // 库里存相对地址、界面上的 item.jumpUrl 是绝对地址：统一成绝对地址，
+                // 否则「是否已收藏」永远为 false，星标点了不变、取消也删不掉
+                Triple(collects.map { absUrl(it.url, home) }.toSet(), favorites, history)
             }
             collected = snapshot.first
             favoriteItems = snapshot.second
@@ -307,12 +309,17 @@ fun DemoApp(
     fun toggleCollect(item: Item) {
         scope.launch {
             withContext(Dispatchers.IO) {
-                // 存相对地址：域名由当前 homeUrl 决定，站点换域名后收藏仍然可用
-                val key = relUrl(item.jumpUrl, session?.homeUrl)
-                if (repository.isCollected(siteKey, key)) {
-                    repository.uncollect(siteKey, key)
+                // 新数据存相对地址（换域名仍可用）；但历史/导入的旧数据可能是绝对地址。
+                // 两种都要认，否则「取消收藏」删不到旧那条，星标会一直亮着。
+                val rel = relUrl(item.jumpUrl, session?.homeUrl)
+                val abs = item.jumpUrl
+                val hasRel = repository.isCollected(siteKey, rel)
+                val hasAbs = !hasRel && repository.isCollected(siteKey, abs)
+                if (hasRel || hasAbs) {
+                    if (hasRel) repository.uncollect(siteKey, rel)
+                    if (hasAbs) repository.uncollect(siteKey, abs)
                 } else {
-                    repository.collect(siteKey, key, ItemCodec.encode(item))
+                    repository.collect(siteKey, rel, ItemCodec.encode(item))
                 }
             }
             refreshLibrary()
