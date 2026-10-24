@@ -1256,8 +1256,8 @@ fun DemoApp(
                     layout = layoutMode,
                     onOpen = { item ->
                         tab = DemoTab.HOME
-                        tab = DemoTab.HOME
                         returnScreen = null
+                        parseTarget = item
                     },
                     onToggleCollect = { item -> toggleCollect(item) },
                 )
