@@ -306,6 +306,14 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
               return __fetchHtml(String(url));
             };
             /**
+             * 同步 GET 取文本（配置里常用于拉 m3u8 / JSON 等小文件）。
+             * 返回字符串而不是 Promise：`await request_string_get(...)` 依然成立，
+             * 同步取页也能直接 `.split()` 处理。
+             */
+            globalThis.request_string_get = function (url) {
+              return __fetchHtml(String(url == null ? "" : url));
+            };
+            /**
              * 需要「跑过页面脚本」的取页：用无头 WebView 打开页面后取渲染结果。
              * 配置里靠它拿 JS 渲染/登录后的内容。
              */
