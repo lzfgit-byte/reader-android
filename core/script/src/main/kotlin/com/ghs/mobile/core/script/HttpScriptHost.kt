@@ -277,6 +277,23 @@ class HttpScriptHost(
             // 兜底用桌面 UA：不少站点对移动 UA 直接返回精简页或挑战页
             view.settings.userAgentString = DESKTOP_UA
             view.settings.domStorageEnabled = true
+            // 配置里的页面脚本常常返回 Promise（等 iframe / fetch 完成）：用它回传最终结果
+            view.addJavascriptInterface(
+                object {
+                    @android.webkit.JavascriptInterface
+                    fun done(value: String) {
+                        output = value
+                        result.countDown()
+                    }
+
+                    @android.webkit.JavascriptInterface
+                    fun error(message: String) {
+                        failure = "页面脚本出错：$message"
+                        result.countDown()
+                    }
+                },
+                "__ghsEval",
+            )
             view.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, finishedUrl: String) {
                     loaded.countDown()
@@ -316,9 +333,23 @@ class HttpScriptHost(
                     }
                     onMain {
                         view.evaluateJavascript(
-                            "(function(){ try { return ($code); } catch (e) { return '__GHS_ERR__' + e; } })()",
+                            "(function(){" +
+                                "try{" +
+                                "var v=(" + code + ");" +
+                                // 返回 Promise：交给 __ghsEval 回传，这里先标记为挂起
+                                "if(v&&typeof v.then==='function'){" +
+                                "v.then(function(r){__ghsEval.done(String(r));}," +
+                                "function(e){__ghsEval.error(String(e));});" +
+                                "return '__GHS_PENDING__';" +
+                                "}" +
+                                "return v;" +
+                                "}catch(e){return '__GHS_ERR__'+e;}" +
+                                "})()",
                         ) { raw ->
-                            output = normalize(raw)
+                            val value = normalize(raw)
+                            // Promise 挂起：结果稍后由 __ghsEval.done/error 回调
+                            if (value == "__GHS_PENDING__") return@evaluateJavascript
+                            output = value
                             if (output.startsWith("__GHS_ERR__")) {
                                 failure = "页面脚本出错：${output.removePrefix("__GHS_ERR__")}"
                             }
@@ -334,7 +365,7 @@ class HttpScriptHost(
             // 等待结果；超时则记失败
             Thread {
                 if (!result.await(EVAL_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-                    failure = "页面脚本超时：$url"
+                    failure = "页面脚本超时（页面可能要求登录或验证）：$url"
                     result.countDown()
                 }
             }.start()
@@ -396,9 +427,9 @@ class HttpScriptHost(
         /** WebView 兜底统一用桌面 UA（加载电脑端页面） */
         private const val DESKTOP_UA =
             com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
-        private const val PAGE_TIMEOUT_MS = 180_000L
+        private const val PAGE_TIMEOUT_MS = 25_000L
         private const val REQUEST_ATTEMPTS = 3
-        private const val EVAL_TIMEOUT_MS = 180_000L
+        private const val EVAL_TIMEOUT_MS = 20_000L
         /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
         private const val FALLBACK_TIMEOUT_MS = 12_000L
         /** DOM 就绪轮询：每 500ms 探一次，最多 80 次（约 40s） */
