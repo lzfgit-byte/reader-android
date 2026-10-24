@@ -16,13 +16,17 @@
 
 ---
 
-'## [Unreleased]
+## [Unreleased]
 
 ### Fixed
 
 - **收藏导入未保留次数（F07）**：导入流程仍调用累加式 `collect`，迁移后所有条目的 `count` 相同、按次数排序形同失效。改为读取 JSON 里的 `count`/`createTime` 走 `collectWithCount`，并在 `collects()` 里加代码层倒序兜底。
 
-### Added'
+### Changed
+
+- **打开收藏累加观看次数（F07）**：打开已收藏条目时 `count + 1`（未收藏不变），收藏列表据此倒序。
+
+### Added
 
 - **收藏导入 / 导出（F07）**
   - Web 管理界面新增「导出收藏」「导入收藏」：导出下载含 `configKey/url/payload/count/createTime` 的 JSON，导入按 `configKey+url` 覆盖写入
