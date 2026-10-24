@@ -72,10 +72,10 @@ class ChallengeActivity : Activity() {
         view.settings.userAgentString = USER_AGENT
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
-        // 校验窗口走「直连」：站点拦的往往是代理出口 IP，走代理只会得到一张空白 403 页，
-        // 用户没法在页面上完成验证。窗口销毁时恢复原代理规则（见 onDestroy）。
+        // 校验窗口与普通请求使用同一套代理规则：
+        // 白名单内的地址直连，不在白名单的走代理。窗口不绕过代理。
         runCatching {
-            com.ghs.mobile.core.script.WebViewProxy.apply(com.ghs.mobile.core.engine.proxy.ProxyRules.direct())
+            com.ghs.mobile.core.script.WebViewProxy.apply(GhsApp.instance.proxy.rules.value)
         }
 
         view.webViewClient = object : WebViewClient() {
@@ -138,10 +138,6 @@ class ChallengeActivity : Activity() {
     }
 
     override fun onDestroy() {
-        // 恢复原来的代理规则，避免影响后续请求
-        runCatching {
-            com.ghs.mobile.core.script.WebViewProxy.apply(GhsApp.instance.proxy.rules.value)
-        }
         pollToken += 1
         handler.removeCallbacksAndMessages(null)
         webView?.destroy()
