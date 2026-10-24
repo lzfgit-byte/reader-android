@@ -43,7 +43,18 @@ class WebViewMirrorActivity : ComponentActivity() {
         )
         bar.addView(
             Button(this).apply {
-                text = "关闭"
+                text = "复制地址"
+                setOnClickListener {
+                    val clipboard = getSystemService(Context.CLIPBOARD_SERVICE) as android.content.ClipboardManager
+                    clipboard.setPrimaryClip(android.content.ClipData.newPlainText("url", url))
+                    android.widget.Toast.makeText(this@WebViewMirrorActivity, "已复制", android.widget.Toast.LENGTH_SHORT).show()
+                }
+            },
+        )
+        bar.addView(
+            Button(this).apply {
+                // 隐藏：关窗口但取页任务继续，需要时再点「显示 webview」
+                text = "隐藏"
                 setOnClickListener { finish() }
             },
         )
