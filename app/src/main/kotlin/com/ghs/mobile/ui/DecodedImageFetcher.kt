@@ -57,12 +57,15 @@ class DecodedImageFetcher(
         val raw = runCatching { fetchBytesCached(url) }.getOrNull() ?: return null
         val attempt = runCatching { decoder(url, raw, extra) }
         val decoded = attempt.getOrNull()
-        val bytes = decoded ?: raw
-        if (decoded == null) {
+        // 有解图参数却解码失败：不回退原图 —— 原图是打散的切片，画出来是错的。
+        // 返回 null 让 Coil 报错，阅读器会显示「加载失败 + 重新加载 / 复制地址」。
+        val bytes = decoded
+        if (bytes == null) {
             android.util.Log.w(
                 "GHS",
                 "image decode failed(${attempt.exceptionOrNull()?.message}) raw=${raw.size}B extra=$extra url=$url",
             )
+            return null
         } else {
             android.util.Log.i("GHS", "image decoded: $url ${raw.size} → ${decoded.size} bytes")
         }

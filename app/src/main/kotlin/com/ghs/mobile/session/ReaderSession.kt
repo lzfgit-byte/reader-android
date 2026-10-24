@@ -177,7 +177,8 @@ class ReaderSession(
 
     /** 图集图片：`getComicImages(url, cheerio)`；顺带登记解图参数供 Coil Fetcher 识别 */
     fun comicPages(url: String): List<CComic> {
-        val list = configEngine.comicImages(url)
+        // 站点偶尔返回重复条目：按 URL 去重，避免同一张图渲染两次
+        val list = configEngine.comicImages(url).distinctBy { it.url }
         list.forEach { comic -> com.ghs.mobile.ui.ImageDecodeBridge.putExtra(comic.url, comic.info) }
         android.util.Log.i("GHS", "comic pages=${list.size} 有解图参数=${list.count { !it.info.isNullOrEmpty() }}")
         return list
