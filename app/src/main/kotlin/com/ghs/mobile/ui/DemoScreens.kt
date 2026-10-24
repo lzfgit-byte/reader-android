@@ -586,9 +586,10 @@ fun DemoApp(
                 return@launch
             }
             // 图片：直接进阅读器，从上次的页续看
+            // 图片（非 comic）：直接进单图阅读，从上次的页续看
             if (info != null && info.detailType == DetailType.IMAGE && info.details.isNotEmpty()) {
                 val saved = withContext(Dispatchers.IO) { repository.progress(ProgressKeys.key(item.jumpUrl)) }
-                screen = Screen.ComicReader(
+                screen = Screen.SinglePage(
                     item = item,
                     pages = info.details,
                     startIndex = saved?.chapterOffset ?: 0,
@@ -797,6 +798,14 @@ fun DemoApp(
                 pages = reader.pages,
                 startIndex = reader.startIndex,
                 quality = imageQuality,
+                onQualityChange = { next ->
+                    imageQuality = next
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            repository.putSetting(SettingScope.PREFS, "imageQuality", next.name.lowercase())
+                        }
+                    }
+                },
                 onProgress = { index ->
                     scope.launch {
                         repository.saveProgress(

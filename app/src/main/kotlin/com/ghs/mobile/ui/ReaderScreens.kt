@@ -495,7 +495,7 @@ private fun copyAddress(context: android.content.Context, url: String) {
 }
 
 /** 按清晰度取地址：原图优先 fullUrl，缩略图优先 url */
-private fun Detail.preferQuality(quality: ImageQuality): String = when (quality) {
+internal fun Detail.preferQuality(quality: ImageQuality): String = when (quality) {
     ImageQuality.ORIGINAL -> fullUrl?.takeIf { it.isNotBlank() } ?: url
     ImageQuality.PREVIEW -> url.ifEmpty { fullUrl.orEmpty() }
 }

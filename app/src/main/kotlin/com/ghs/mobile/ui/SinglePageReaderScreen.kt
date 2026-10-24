@@ -54,6 +54,7 @@ fun SinglePageReaderScreen(
     pages: List<Detail>,
     startIndex: Int,
     quality: ImageQuality,
+    onQualityChange: (ImageQuality) -> Unit,
     onProgress: (Int) -> Unit,
     onClose: () -> Unit,
 ) {
@@ -75,7 +76,7 @@ fun SinglePageReaderScreen(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
         ) { index ->
-            val url = pages[index].preferredUrl
+            val url = pages[index].preferQuality(quality)
             Box(
                 modifier = Modifier.fillMaxSize().clickable { chromeVisible = !chromeVisible },
                 contentAlignment = Alignment.Center,
@@ -123,6 +124,18 @@ fun SinglePageReaderScreen(
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
+                // 清晰度切换：原图 / 预览
+                TextButton(onClick = {
+                    onQualityChange(
+                        if (quality == ImageQuality.ORIGINAL) ImageQuality.PREVIEW else ImageQuality.ORIGINAL,
+                    )
+                }) {
+                    Text(
+                        if (quality == ImageQuality.ORIGINAL) "原图" else "预览",
+                        color = Color(0xFFB9A7FF),
+                        style = MaterialTheme.typography.labelLarge,
+                    )
+                }
             }
         }
 
