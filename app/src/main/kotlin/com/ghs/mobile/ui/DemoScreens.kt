@@ -523,6 +523,8 @@ fun DemoApp(
     // 配置切换或收到重载通知：关掉旧会话再按配置重建（引擎较重，不能并行两份）
     LaunchedEffect(configKey, reloadRequest) {
         val key = configKey ?: return@LaunchedEffect
+        // 切站点：把「从哪来回哪去」的缓存一起清掉，否则返回会回到上一个站点的列表
+        returnScreen = null
         screen = Screen.Loading
         // 切换站点 / 配置重载：作废 HTML 缓存，避免看到上一个站点的页面
         ImageCache.clearHtml()
@@ -1238,8 +1240,8 @@ fun DemoApp(
                     collected = collected,
                     layout = layoutMode,
                     onOpen = { item ->
-                        // 收藏/历史不是独立屏幕：点开要切回首页，否则详情/播放器渲染不出来
                         tab = DemoTab.HOME
+                        returnScreen = null
                         parseTarget = item
                     },
                     onToggleCollect = { item -> toggleCollect(item) },
@@ -1254,7 +1256,8 @@ fun DemoApp(
                     layout = layoutMode,
                     onOpen = { item ->
                         tab = DemoTab.HOME
-                        parseTarget = item
+                        tab = DemoTab.HOME
+                        returnScreen = null
                     },
                     onToggleCollect = { item -> toggleCollect(item) },
                 )
