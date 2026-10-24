@@ -1053,14 +1053,14 @@ fun DemoApp(
                 },
                 onBack = {
                     val back = reader.backToSeries
-                    screen = if (back != null) {
-                        Screen.Series(reader.item, back)
-                    } else {
-                        lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                    screen = when {
+                        back != null -> Screen.Series(reader.item, back)
+                        // 从搜索结果进来：回到那一页搜索结果，别清成首页列表
+                        returnScreen != null -> returnScreen!!
+                        else -> lastPage?.let { Screen.List(it) } ?: Screen.Loading
                     }
                 },
             )
-            return
         }
         is Screen.Detail -> if (reader.info?.detailType == DetailType.TEXT) {
             TextReaderScreen(
