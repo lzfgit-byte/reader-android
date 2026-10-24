@@ -220,6 +220,14 @@ fun VideoPlayerScreen(
             override fun onPlayerError(playerError: PlaybackException) {
                 error = playerError.errorCodeName + " · " + (playerError.message ?: "")
             }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                // 播完自动重播：回到开头继续放，而不是停在黑屏
+                if (playbackState == Player.STATE_ENDED) {
+                    player.seekTo(0)
+                    player.play()
+                }
+            }
         }
         player.addListener(listener)
         onDispose {
