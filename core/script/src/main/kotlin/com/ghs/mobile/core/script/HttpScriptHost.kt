@@ -73,31 +73,38 @@ class HttpScriptHost(
                 try {
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
-                            // 先走人机校验（F29）：挑战必须在有界面的窗口里完成，
-                            // 无头 WebView 只会撞到同一个挑战然后超时。
-                            if (response.code in WEBVIEW_FALLBACK_CODES && !challengeTried) {
-                                challengeTried = true
-                                val handler = challengeHandler
-                                if (handler != null) {
-                                    android.util.Log.w("GHS", "fetchHtml ${response.code} → 请求人机校验 $url")
-                                    if (handler(url)) {
-                                        android.util.Log.i("GHS", "人机校验完成，重试 $url")
-                                        val retried = retryOnce(request)
-                                        if (retried != null) return retried
-                                    }
-                                }
-                            }
-                            // 校验未启用或没通过时，退回无头 WebView 取渲染后的 HTML
+                            // 顺序：先用无头 WebView 试一次（它能执行 JS 过掉多数挑战），
+                            // 只有拿回的仍是挑战页/空页时，才把窗口弹给用户手动完成。
                             if (response.code in WEBVIEW_FALLBACK_CODES) {
                                 android.util.Log.w("GHS", "fetchHtml ${response.code} → webview fallback $url")
                                 val html = fetchWithWebView(url)
+                                if (html.isNotBlank() && !isChallengePage(html)) {
+                                    htmlCache?.put(url, html)
+                                    return html
+                                }
+                                if (!challengeTried) {
+                                    challengeTried = true
+                                    val handler = challengeHandler
+                                    if (handler != null) {
+                                        android.util.Log.w("GHS", "fetchHtml ${response.code} → 展示校验窗口 $url")
+                                        if (handler(url)) {
+                                            android.util.Log.i("GHS", "人机校验完成，重试 $url")
+                                            val retried = retryOnce(request)
+                                            if (retried != null) {
+                                                if (!isChallengePage(retried)) htmlCache?.put(url, retried)
+                                                return retried
+                                            }
+                                        }
+                                    }
+                                }
                                 if (html.isNotBlank()) return html
                             }
                             throw IllegalStateException("取页失败：HTTP ${response.code} $url")
                         }
                         val body = response.body?.string()
                             ?: throw IllegalStateException("取页为空：$url")
-                        htmlCache?.put(url, body)
+                        // 200 也可能是挑战页：不缓存，交给上层按失败处理
+                        if (!isChallengePage(body)) htmlCache?.put(url, body)
                         return body
                     }
                 } catch (error: java.io.IOException) {
@@ -112,11 +119,35 @@ class HttpScriptHost(
             // WebView 是浏览器握手，抗干扰能力比 OkHttp 强，且能执行页面脚本。
             android.util.Log.w("GHS", "fetchHtml 连接失败(${lastError?.message}) → webview fallback $url")
             val viaWebView = fetchWithWebView(url)
+            if (viaWebView.isNotBlank() && !isChallengePage(viaWebView)) {
+                htmlCache?.put(url, viaWebView)
+                return viaWebView
+            }
+            // WebView 也撞到挑战：弹窗口让用户完成
+            val handler = challengeHandler
+            if (handler != null) {
+                android.util.Log.w("GHS", "fetchHtml 回退仍是校验页 → 展示校验窗口 $url")
+                if (handler(url)) {
+                    val retried = retryOnce(request)
+                    if (retried != null) return retried
+                }
+            }
             if (viaWebView.isNotBlank()) return viaWebView
             throw lastError ?: IllegalStateException("取页失败：$url")
         } finally {
             logDone(url, started)
         }
+    }
+
+    /**
+     * 判断拿回来的是不是「挑战页 / 拦截页」。
+     *
+     * 这类页面不能当成内容：不能缓存，也不能直接解析，需要弹窗口给用户完成。
+     */
+    private fun isChallengePage(html: String): Boolean {
+        if (html.length < 512) return true
+        val probe = html.take(4000).lowercase()
+        return CHALLENGE_MARKERS.any { probe.contains(it) }
     }
 
     /** 校验完成后重放一次原请求；仍失败则返回 null 交给上层兜底 */
@@ -380,6 +411,13 @@ class HttpScriptHost(
 
         /** 这些状态码说明直连被挡（Cloudflare / 校验页），值得用无头 WebView 再试一次 */
         private val WEBVIEW_FALLBACK_CODES = setOf(403, 429, 503)
+
+        /** 挑战 / 拦截页特征：命中就不当内容用，也不写缓存 */
+        private val CHALLENGE_MARKERS = listOf(
+            "just a moment", "attention required", "checking your browser",
+            "verify you are human", "cf-challenge", "challenge-platform",
+            "安全验证", "人机验证", "访问被拒绝", "403 forbidden",
+        )
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         private fun defaultClient(rules: () -> ProxyRules): OkHttpClient = OkHttpClient.Builder()
