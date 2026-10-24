@@ -243,9 +243,17 @@ async function save(): Promise<void> {
   saving.value = true
   error.value = ''
   try {
-    await api.save(selectedKey.value, source.value, enabled.value)
+    // 源码 key 变化时服务端直接改名：跟随新 key，不再产生第二条配置
+    const saved = await api.save(selectedKey.value, source.value, enabled.value)
+    if (saved.renamedFrom) {
+      selectedKey.value = saved.key
+      keyConflict.value = null
+    }
     await refresh()
-    status.value = `已保存 ${new Date().toLocaleTimeString()}`
+    if (saved.renamedFrom) await openConfig(saved.key)
+    status.value = saved.renamedFrom
+      ? `已改名为 ${saved.key}`
+      : `已保存 ${new Date().toLocaleTimeString()}`
   } catch (e) {
     // key 不能在原地改：这是服务端的保护（改名 = 另存 + 删除），UI 给出两条出路
     if (e instanceof ApiError && e.code === 'E-CFG-004') {

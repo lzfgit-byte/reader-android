@@ -33,7 +33,8 @@ export interface ValidateResult {
 export interface ConsoleApi {
   list(): Promise<ConfigSummary[]>
   get(key: string): Promise<ConfigDetail | null>
-  save(key: string, source: string, enabled: boolean): Promise<void>
+  /** 返回实际落库的 key：源码里的 key 变了会触发改名，renamedFrom 指出旧 key */
+  save(key: string, source: string, enabled: boolean): Promise<{ key: string; renamedFrom?: string }>
   remove(key: string): Promise<void>
   validate(source: string): Promise<ValidateResult>
   /** 导出全部配置（JSON 文本，可直接回灌 importConfigs） */
@@ -188,6 +189,7 @@ export function createMockApi(): ConsoleApi {
         source,
       }
       saveAll(existing ? all.map((item) => (item.key === key ? next : item)) : [...all, next])
+      return { key }
     },
 
     async remove(key) {
@@ -312,14 +314,20 @@ export function createHttpApi(): ConsoleApi {
     async save(key, source, enabled) {
       const payload = JSON.stringify({ key, config: source, format: 'inline', enabled })
       try {
-        await call(`/configs/${encodeURIComponent(key)}`, { method: 'PUT', body: payload })
+        // 源码里的 key 变了，服务端直接改名（写新 key、删旧 key），
+        // 用返回的 renamedFrom 告诉界面新 key 是什么
+        const data = await call<{ key?: string; renamedFrom?: string }>(
+          `/configs/${encodeURIComponent(key)}`,
+          { method: 'PUT', body: payload },
+        )
+        return { key: String(data?.key ?? key), renamedFrom: data?.renamedFrom }
       } catch (error) {
         // 不存在则创建（PUT 返回 404 时回退到 POST）
         if (error instanceof ApiError && error.status === 404) {
           await call('/configs', { method: 'POST', body: payload })
-        } else {
-          throw error
+          return { key }
         }
+        throw error
       }
     },
 
