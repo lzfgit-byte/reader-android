@@ -41,7 +41,11 @@ object ItemCodec {
             jumpUrl = url,
             title = json.optString("title"),
             coverImg = json.optString("coverImg"),
-            type = runCatching { ItemType.valueOf(json.optString("type")) }.getOrDefault(ItemType.IMAGE),
+            // 老数据的 type 是小写（video/image），枚举名是大写；两种都认，
+            // 认不出来才退回 IMAGE。认错会直接走错解析分支（视频当图片 → details=0）
+            type = runCatching {
+                ItemType.valueOf(json.optString("type").uppercase())
+            }.getOrDefault(ItemType.IMAGE),
             tags = tags,
         ).normalized()
     }.getOrNull()
