@@ -104,6 +104,32 @@ class LocalRepository(private val database: GhsDatabase) {
         )
     }
 
+    /**
+     * 按给定次数写入收藏（导入用）。
+     *
+     * 与 [collect] 的区别：不累加，直接用导入文件里的次数，
+     * 这样从别处迁过来的「看过多少次」不会丢。
+     */
+    suspend fun collectWithCount(
+        configKey: String,
+        url: String,
+        payload: String,
+        count: Int,
+        createTime: Long,
+    ) {
+        val existing = collectDao.find(configKey, url)
+        collectDao.insert(
+            CollectEntity(
+                id = existing?.id ?: 0,
+                configKey = configKey,
+                url = url,
+                payload = payload,
+                count = count.coerceAtLeast(0),
+                createTime = if (createTime > 0) createTime else System.currentTimeMillis(),
+            ),
+        )
+    }
+
     suspend fun uncollect(configKey: String, url: String) = collectDao.delete(configKey, url)
 
     suspend fun isCollected(configKey: String, url: String): Boolean =

@@ -47,9 +47,9 @@ interface SettingDao {
 @Dao
 interface CollectDao {
 
-    @Query("SELECT * FROM collect WHERE configKey = :configKey ORDER BY createTime DESC")
+    // 收藏按「看过次数」倒序：看的最多的排最前，次数相同再按收藏时间
+    @Query("SELECT * FROM collect WHERE configKey = :configKey ORDER BY count DESC, createTime DESC")
     suspend fun list(configKey: String): List<CollectEntity>
-
     @Query("SELECT * FROM collect WHERE configKey = :configKey AND url = :url LIMIT 1")
     suspend fun find(configKey: String, url: String): CollectEntity?
 
