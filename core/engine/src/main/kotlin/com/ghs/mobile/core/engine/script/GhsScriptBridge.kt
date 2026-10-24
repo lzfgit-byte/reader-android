@@ -262,10 +262,18 @@ class GhsScriptBridge(private val engine: ScriptEngine) {
             globalThis.LogMsgUtil = { sendLogMsg: function () { __log.apply(null, arguments); } };
             globalThis.ConsoleLogUtil = { log: function () { __log.apply(null, arguments); } };
             globalThis.MessageUtil = {
-              info: function () {}, error: function () {}, success: function () {}, warning: function () {}
+              info: function (m) { __log(String(m)); }, error: function (m) { __log(String(m)); }, success: function (m) { __log(String(m)); }, warning: function (m) { __log(String(m)); }
             };
             globalThis.NotifyMsgUtil = { sendNotifyMsg: function () {}, close: function () {} };
-            globalThis.ProgressMsgUtil = { sendProgress: function () {}, close: function () {} };
+            // 进度消息要进调试日志/顶部灵动岛，不能是空实现
+            globalThis.ProgressMsgUtil = {
+              sendProgress: function (msg) { __log(String(msg)); },
+              sendProgressMsg: function (msg) { __log(String(msg)); },
+              info: function (msg) { __log(String(msg)); },
+              update: function (msg) { __log(String(msg)); },
+              finish: function (msg) { __log(String(msg)); },
+              close: function () { }
+            };
             globalThis.eventEmitter = { on: function () {}, off: function () {}, emit: function () {} };
             globalThis.getCurrentItems = function () { return []; };
 

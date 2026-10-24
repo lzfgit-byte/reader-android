@@ -187,6 +187,20 @@ fun DemoApp(
     var showSiteSheet by remember { mutableStateOf(false) }
     // 左侧菜单（设置 / 引擎自检）
     var drawerOpen by remember { mutableStateOf(false) }
+    // 系统返回键：按「阅读器/播放器 → 列表 → 首页 → 抽屉 → 退出」逐级回退
+    val canGoBack = screen is Screen.ComicReader ||
+        screen is Screen.VideoPlayer || screen is Screen.Detail ||
+        tab != DemoTab.HOME || drawerOpen
+    androidx.activity.compose.BackHandler(enabled = canGoBack) {
+        when {
+            drawerOpen -> drawerOpen = false
+            screen is Screen.ComicReader ||
+                screen is Screen.VideoPlayer || screen is Screen.Detail -> {
+                screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading
+            }
+            tab != DemoTab.HOME -> tab = DemoTab.HOME
+        }
+    }
     // 配置日志（LogMsgUtil / console.log）→ 应用内「日志云」
     var logEntries by remember { mutableStateOf<List<String>>(emptyList()) }
     DisposableEffect(Unit) {

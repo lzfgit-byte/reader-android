@@ -117,6 +117,9 @@ class DecodedImageFetcher(
     }
 
     private companion object {
+        /** 单张图解码上限：超时按失败处理（回退原图或错误卡片） */
+        const val DECODE_TIMEOUT_MS = 12_000L
+
         const val USER_AGENT =
             com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
     }
