@@ -212,14 +212,12 @@ class HttpScriptHost(
      */
     private fun fetchWithWebView(url: String): String {
         // 告诉 UI：正在用 WebView 取这个地址，方便提供「显示 webview」入口
-        WebViewFallbackHub.start(url)
         return try {
             executePage(url, "document.documentElement.outerHTML")
         } catch (error: Throwable) {
             android.util.Log.w("GHS", "webview fallback failed ${error.javaClass.simpleName}: ${error.message}")
             ""
         } finally {
-            WebViewFallbackHub.stop()
         }
     }
 
@@ -412,8 +410,9 @@ class HttpScriptHost(
         }
 
         result.await()
-        failure?.let { throw IllegalStateException(it) }
+        // 先撤掉「显示 webview」入口：失败分支会 throw，放在其后就永远不执行
         WebViewFallbackHub.stop()
+        failure?.let { throw IllegalStateException(it) }
         return output
     }
 
@@ -473,8 +472,8 @@ class HttpScriptHost(
         private const val EVAL_TIMEOUT_MS = 20_000L
         /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
         /** DOM 就绪轮询：每 500ms 探一次，最多 80 次（约 40s） */
-        private const val DOM_POLL_INTERVAL_MS = 500L
-        private const val DOM_POLL_ATTEMPTS = 24
+        private const val DOM_POLL_INTERVAL_MS = 800L
+        private const val DOM_POLL_ATTEMPTS = 16
 
         /** 正文出现即视为可解析，不要求图片 / 广告脚本全部加载完 */
         private const val READY_JS =
