@@ -1,3 +1,8 @@
+### Added
+- **强制代理名单（F28）**：与白名单同样写法，命中即走代理且优先于白名单
+
+### Changed
+- **收藏与历史（F07）**：入库只存相对地址（`path?query`），打开时按当前 `homeUrl` 拼回域名，站点换域名无需迁移
 # 变更日志
 
 格式参考 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
