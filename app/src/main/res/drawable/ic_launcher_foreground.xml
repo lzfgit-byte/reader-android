@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  应用图标前景：一本摊开的书 + 书签。
+
+  设计约束（自适应图标）：48dp 内容安全区，四周留白，
+  因为各厂商启动器会裁成圆形 / 方形 / 水滴形。
+-->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- 左页 -->
+    <path
+        android:fillColor="#B9A7FF"
+        android:pathData="M28,36 C36,32 46,32 52,35 L52,74 C46,71 36,71 28,75 Z" />
+    <!-- 右页 -->
+    <path
+        android:fillColor="#8E7BD6"
+        android:pathData="M80,36 C72,32 62,32 56,35 L56,74 C62,71 72,71 80,75 Z" />
+    <!-- 书脊 -->
+    <path
+        android:fillColor="#FFFFFF"
+        android:pathData="M52.6,35.4 L55.4,35.4 L55.4,74.4 L52.6,74.4 Z" />
+    <!-- 左页文字行 -->
+    <path
+        android:fillColor="#17171B"
+        android:pathData="M33,44 L47,42.4 L47,45 L33,46.6 Z" />
+    <path
+        android:fillColor="#17171B"
+        android:pathData="M33,51 L47,49.4 L47,52 L33,53.6 Z" />
+    <path
+        android:fillColor="#17171B"
+        android:pathData="M33,58 L43,56.8 L43,59.4 L33,60.6 Z" />
+    <!-- 右页文字行 -->
+    <path
+        android:fillColor="#17171B"
+        android:pathData="M61,42.4 L75,44 L75,46.6 L61,45 Z" />
+    <path
+        android:fillColor="#17171B"
+        android:pathData="M61,49.4 L75,51 L75,53.6 L61,52 Z" />
+    <path
+        android:fillColor="#17171B"
+        android:pathData="M65,56.8 L75,58 L75,60.6 L65,59.4 Z" />
+    <!-- 书签 -->
+    <path
+        android:fillColor="#FF6B6B"
+        android:pathData="M66,30 L74,30 L74,44 L70,40.5 L66,44 Z" />
+</vector>

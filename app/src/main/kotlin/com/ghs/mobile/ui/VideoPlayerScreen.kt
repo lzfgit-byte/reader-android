@@ -224,7 +224,7 @@ fun VideoPlayerScreen(
                     referer?.takeIf { it.isNotBlank() }?.let { put("Referer", it) }
                     put(
                         "User-Agent",
-                        com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME,
+                        com.ghs.mobile.core.engine.net.UserAgents.UA,
                     )
                 },
             )

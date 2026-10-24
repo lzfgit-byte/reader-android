@@ -72,6 +72,10 @@ class GhsApp : Application(), ImageLoaderFactory {
         }
         super.onCreate()
         instance = this
+        // UA 必须与设备 WebView 版本一致，否则风控会判定 UA 伪造
+        com.ghs.mobile.core.engine.net.UserAgents.initFromSystemDefault(
+            android.webkit.WebSettings.getDefaultUserAgent(this),
+        )
     }
 
     companion object {

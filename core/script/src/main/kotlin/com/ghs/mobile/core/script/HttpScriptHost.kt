@@ -467,11 +467,11 @@ class HttpScriptHost(
     companion object {
         private const val LANGUAGE = com.ghs.mobile.core.engine.net.UserAgents.ACCEPT_LANGUAGE
 
-        private const val USER_AGENT =
-            com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
+        // UA 随设备 WebView 版本变化，必须是 val + getter，不能是 const
+        private val USER_AGENT: String get() = com.ghs.mobile.core.engine.net.UserAgents.UA
         /** WebView 兜底统一用桌面 UA（加载电脑端页面） */
-        private const val DESKTOP_UA =
-            com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
+        /** WebView 兜底统一用桌面 UA（加载电脑端页面） */
+        private val DESKTOP_UA: String get() = com.ghs.mobile.core.engine.net.UserAgents.UA
         private const val PAGE_TIMEOUT_MS = 25_000L
         private const val REQUEST_ATTEMPTS = 3
         private const val EVAL_TIMEOUT_MS = 20_000L

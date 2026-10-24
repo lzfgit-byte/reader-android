@@ -74,8 +74,8 @@ object WebViewImageLoader {
 
     private const val TIMEOUT_MS = 15_000L
     private const val POLL_MS = 250L
-    private const val DESKTOP_UA =
-        com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
+    private val DESKTOP_UA: String get() = com.ghs.mobile.core.engine.net.UserAgents.UA
+
 
     /** 兜底 WebView 并发：2，兼顾速度与内存 */
     private val gate = java.util.concurrent.Semaphore(2)

@@ -213,8 +213,7 @@ class ChallengeActivity : Activity() {
     private companion object {
         const val POLL_INTERVAL_MS = 800L
         const val FIRST_CHECK_DELAY_MS = 2_500L
-        const val USER_AGENT =
-            com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
+        val USER_AGENT: String get() = com.ghs.mobile.core.engine.net.UserAgents.UA
 
         /** 通过返回 `OK:<长度>`，仍在等待返回 `WAIT` */
         val DETECT_JS = """

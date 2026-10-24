@@ -85,6 +85,6 @@ object ImageSaver {
         else -> "image/jpeg"
     }
 
-    private const val USER_AGENT =
-        com.ghs.mobile.core.engine.net.UserAgents.DESKTOP_CHROME
+    private val USER_AGENT: String get() = com.ghs.mobile.core.engine.net.UserAgents.UA
+
 }
