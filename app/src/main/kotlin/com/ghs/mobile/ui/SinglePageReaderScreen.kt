@@ -53,11 +53,11 @@ fun SinglePageReaderScreen(
     title: String,
     pages: List<Detail>,
     startIndex: Int,
-    quality: ImageQuality,
-    onQualityChange: (ImageQuality) -> Unit,
     onProgress: (Int) -> Unit,
     onClose: () -> Unit,
 ) {
+    // 每张图各自记住「全 / 缩」，互不影响；默认缩略
+    val chosen = remember { androidx.compose.runtime.mutableStateMapOf<Int, Boolean>() }
     if (pages.isEmpty()) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { Text("没有图片") }
         return
@@ -76,7 +76,8 @@ fun SinglePageReaderScreen(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
         ) { index ->
-            val url = pages[index].preferQuality(quality)
+            val full = chosen[index] == true && !pages[index].fullUrl.isNullOrBlank()
+            val url = if (full) pages[index].fullUrl.orEmpty() else pages[index].url
             Box(
                 modifier = Modifier.fillMaxSize().clickable { chromeVisible = !chromeVisible },
                 contentAlignment = Alignment.Center,
@@ -124,18 +125,6 @@ fun SinglePageReaderScreen(
                     maxLines = 1,
                     modifier = Modifier.weight(1f),
                 )
-                // 清晰度切换：原图 / 预览
-                TextButton(onClick = {
-                    onQualityChange(
-                        if (quality == ImageQuality.ORIGINAL) ImageQuality.PREVIEW else ImageQuality.ORIGINAL,
-                    )
-                }) {
-                    Text(
-                        if (quality == ImageQuality.ORIGINAL) "原图" else "预览",
-                        color = Color(0xFFB9A7FF),
-                        style = MaterialTheme.typography.labelLarge,
-                    )
-                }
             }
         }
 
@@ -157,9 +146,21 @@ fun SinglePageReaderScreen(
             )
             Spacer(Modifier.weight(1f))
 
-            // 缩小 / 适屏
-            TextButton(onClick = { zoomed = !zoomed }) {
-                Text(if (zoomed) "全" else "缩", color = Color.White)
+            // 【全】【缩】两个按钮：选中态由「当前页正在用的地址」决定，逐图独立
+            val useFull = chosen[current] == true && !pages[current].fullUrl.isNullOrBlank()
+            TextButton(onClick = { chosen[current] = false }) {
+                Text(
+                    "缩",
+                    color = if (!useFull) Color(0xFFB9A7FF) else Color.White,
+                )
+            }
+            if (!pages[current].fullUrl.isNullOrBlank()) {
+                TextButton(onClick = { chosen[current] = true }) {
+                    Text(
+                        "全",
+                        color = if (useFull) Color(0xFFB9A7FF) else Color.White,
+                    )
+                }
             }
             // 关闭
             TextButton(onClick = onClose) { Text("×", color = Color.White) }

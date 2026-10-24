@@ -142,6 +142,8 @@ private sealed interface Screen {
         val chapterIndex: Int = 0,
         val chapters: kotlin.collections.List<CContent> = emptyList(),
         val preloadNext: Boolean = false,
+        /** 是否从漫画阅读双击进入：是则关闭回漫画阅读，否则回列表 */
+        val fromComic: Boolean = false,
     ) : Screen
     data class Series(val item: Item, val info: DetailInfo) : Screen
     data class VideoPlayer(
@@ -786,6 +788,7 @@ fun DemoApp(
                         chapterIndex = reader.chapterIndex,
                         chapters = reader.chapters,
                         preloadNext = reader.preloadNext,
+                        fromComic = true,
                     )
                 },
             )
@@ -797,15 +800,6 @@ fun DemoApp(
                 title = reader.item.title,
                 pages = reader.pages,
                 startIndex = reader.startIndex,
-                quality = imageQuality,
-                onQualityChange = { next ->
-                    imageQuality = next
-                    scope.launch {
-                        withContext(Dispatchers.IO) {
-                            repository.putSetting(SettingScope.PREFS, "imageQuality", next.name.lowercase())
-                        }
-                    }
-                },
                 onProgress = { index ->
                     scope.launch {
                         repository.saveProgress(
@@ -822,16 +816,20 @@ fun DemoApp(
                         )
                     }
                 },
-                // 关闭：回到连续滚动模式，停在当前页
+                // 关闭：来自漫画阅读就回去；否则回列表（单图阅读是独立组件）
                 onClose = {
-                    screen = Screen.ComicReader(
-                        item = reader.item,
-                        pages = reader.pages,
-                        startIndex = reader.startIndex,
-                        chapters = reader.chapters,
-                        chapterIndex = reader.chapterIndex,
-                        preloadNext = reader.preloadNext,
-                    )
+                    if (reader.fromComic) {
+                        screen = Screen.ComicReader(
+                            item = reader.item,
+                            pages = reader.pages,
+                            startIndex = reader.startIndex,
+                            chapters = reader.chapters,
+                            chapterIndex = reader.chapterIndex,
+                            preloadNext = reader.preloadNext,
+                        )
+                    } else {
+                        screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                    }
                 },
             )
             return
