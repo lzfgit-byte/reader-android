@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -122,16 +123,26 @@ fun SinglePageReaderScreen(
             }
         }
 
-        // 底部：关闭按钮（始终显示，避免迷路）
-        Surface(
+        // 底部：页码进度 + 关闭按钮（始终显示，避免迷路）
+        Row(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
                 .padding(bottom = 28.dp),
-            color = Color(0xCC000000),
-            shape = RoundedCornerShape(50),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            TextButton(onClick = onClose) {
-                Text("关闭", color = Color.White, style = MaterialTheme.typography.labelLarge)
+            Surface(color = Color(0xCC000000), shape = RoundedCornerShape(50)) {
+                Text(
+                    text = "${current + 1} / ${pages.size}",
+                    color = Color(0xFFE6E6EA),
+                    style = MaterialTheme.typography.labelLarge,
+                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+                )
+            }
+            Spacer(Modifier.width(10.dp))
+            Surface(color = Color(0xCC000000), shape = RoundedCornerShape(50)) {
+                TextButton(onClick = onClose) {
+                    Text("关闭", color = Color.White, style = MaterialTheme.typography.labelLarge)
+                }
             }
         }
     }
