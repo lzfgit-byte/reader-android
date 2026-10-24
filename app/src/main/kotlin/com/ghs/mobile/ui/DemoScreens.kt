@@ -429,8 +429,11 @@ fun DemoApp(
     /** 滑到底部时取下一页：按 pagination 里当前页之后的第一条链接 */
     fun loadMore() {
         if (loadingMore || noMore) return
-        val current = screen as? Screen.List ?: return
-        val nextUrl = nextPageUrl(current.page) ?: run {
+        // 搜索结果同样带分页：不要只拉第一页就停（固定 24 条那种表现）
+        val listScreen = screen as? Screen.List
+        val searchScreen = screen as? Screen.SearchResults
+        val page = listScreen?.page ?: searchScreen?.page ?: return
+        val nextUrl = nextPageUrl(page) ?: run {
             noMore = true
             return
         }
@@ -439,13 +442,17 @@ fun DemoApp(
         scope.launch {
             val next = runCatching { withContext(Dispatchers.IO) { active.pageFrom(nextUrl) } }.getOrNull()
             if (next != null && next.items.isNotEmpty()) {
-                val known = current.page.items.map { it.jumpUrl }.toSet()
-                val merged = current.page.copy(
-                    items = current.page.items + next.items.filterNot { it.jumpUrl in known },
+                val known = page.items.map { it.jumpUrl }.toSet()
+                val merged = page.copy(
+                    items = page.items + next.items.filterNot { it.jumpUrl in known },
                     pagination = next.pagination,
                 )
-                lastPage = merged
-                screen = Screen.List(merged)
+                if (listScreen != null) {
+                    lastPage = merged
+                    screen = Screen.List(merged)
+                } else if (searchScreen != null) {
+                    screen = Screen.SearchResults(searchScreen.keyword, merged)
+                }
             } else {
                 noMore = true
             }

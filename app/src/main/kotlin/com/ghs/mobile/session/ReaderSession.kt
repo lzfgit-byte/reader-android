@@ -230,10 +230,10 @@ class ReaderSession(
     fun search(keyword: String): Pair<String, Page>? {
         val url = configEngine.searchUrl(keyword)
         if (url.isEmpty()) return null
-        configEngine.withHtml(host.fetchHtml(url))
+        // 与列表页一致：把地址交给配置，getPagination/getUrlReplace 可能要用 this.currentUrl
+        configEngine.withHtml(host.fetchHtml(url)).withCurrentUrl(url)
         return url to configEngine.page()
     }
-
     override fun close() {
         runCatching { configEngine.close() }
         host.close()
