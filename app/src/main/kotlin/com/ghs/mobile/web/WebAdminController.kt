@@ -105,7 +105,17 @@ class WebAdminController(
                 appVersion = appVersion,
                 onConfigsChanged = { _reloadSignal.value = _reloadSignal.value + 1 },
             )
-            val started = runCatching { instance.start(SOCKET_READ_TIMEOUT_MS, true) }.isSuccess
+            val attempt = runCatching { instance.start(SOCKET_READ_TIMEOUT_MS, true) }
+            val started = attempt.isSuccess
+            android.util.Log.i(
+                "GHS",
+                "web admin start bind=${settings.bindHost} port=$candidate ok=$started" +
+                    (
+                        attempt.exceptionOrNull()?.let {
+                            " err=${it.javaClass.simpleName}:${it.message}"
+                        } ?: ""
+                        ),
+            )
             if (started) {
                 server = instance
                 if (candidate != settings.port) {
