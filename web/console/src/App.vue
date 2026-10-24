@@ -557,8 +557,9 @@ button.danger { border-color: #5a3030; color: #e39a9a; }
 
 .list { border-right: 1px solid var(--line); overflow-y: auto; padding: 8px; }
 .item {
+  position: relative;
   display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  width: 100%; margin-bottom: 6px; padding: 10px; border-radius: 8px;
+  width: 100%; margin-bottom: 6px; padding: 10px 46px 10px 10px; border-radius: 8px;
   background: transparent; border: 1px solid transparent; color: var(--text); cursor: pointer;
   text-align: left;
 }
@@ -566,7 +567,31 @@ button.danger { border-color: #5a3030; color: #e39a9a; }
 .item.active { border-color: var(--accent); background: #2c2a3a; }
 .name { font-size: 13px; }
 .key { font-size: 11px; color: var(--muted); font-family: ui-monospace, monospace; }
-.badge { font-size: 10px; color: var(--warn); }
+'.badge { font-size: 10px; color: var(--warn); }
+
+/* 排序箭头：固定在条目右侧并垂直居中 */
+.list .order {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  display: flex;
+  flex-direction: row;
+  gap: 2px;
+}
+
+.list .mini {
+  cursor: pointer;
+  padding: 2px 5px;
+  border-radius: 4px;
+  color: inherit;
+  opacity: 0.6;
+  user-select: none;
+  line-height: 1;
+}
+
+.list .mini:hover { background: rgba(127, 127, 127, 0.3); opacity: 1; }
+.list .mini.off { opacity: 0.18; pointer-events: none; }
 
 .editor { min-width: 0; min-height: 0; height: 100%; }
 
