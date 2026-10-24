@@ -117,11 +117,13 @@ fun SettingsContent(
     onWebPortChange: (Int) -> Unit,
     onWebBindChange: (Boolean) -> Unit,
     modifier: Modifier = Modifier,
+    /** 抽屉里由外层统一滚动时传 false，避免嵌套垂直滚动直接崩（infinity 高度约束） */
+    scrollable: Boolean = true,
 ) {
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .verticalScroll(rememberScrollState())
+            .then(if (scrollable) Modifier.verticalScroll(rememberScrollState()) else Modifier)
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {

@@ -103,6 +103,7 @@ private fun AppRoot() {
                     drawerSettings = {
                         SettingsContent(
                             settings = settings,
+                            scrollable = false,
                             proxy = proxyRules,
                             web = webState,
                             onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
