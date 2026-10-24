@@ -6,7 +6,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -28,17 +27,19 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.window.Dialog
-import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.window.Popup
+import androidx.compose.ui.window.PopupProperties
 import kotlinx.coroutines.delay
 
 /**
  * 顶部「灵动岛」：把最新一条调试/进度消息浮在最上层。
  *
- * - 用独立窗口承载，因此不会被页面里的 Dialog / BottomSheet 盖住
- * - 只显示最新一条：新消息到达直接替换，不堆叠
- * - 2 秒内没有新消息就消失（新消息会重新出现）
+ * 用非聚焦 Popup（窗口只有胶囊大小）：
+ * - 位置在最上层，不会被页面内的弹窗盖住
+ * - 不拦截胶囊以外的点击，不挡住下面的按钮/弹窗
+ * - 只显示最新一条，2 秒没有新消息就消失
  */
 @Composable
 fun LogIsland(
@@ -65,52 +66,46 @@ fun LogIsland(
         label = "islandPulse",
     )
 
-    Dialog(
-        onDismissRequest = { },
-        properties = DialogProperties(
-            usePlatformDefaultWidth = false,
-            decorFitsSystemWindows = false,
+    Popup(
+        alignment = Alignment.TopCenter,
+        offset = IntOffset(0, 120),
+        properties = PopupProperties(
+            focusable = false,
             dismissOnBackPress = false,
             dismissOnClickOutside = false,
         ),
     ) {
-        Box(
-            modifier = Modifier.fillMaxSize(),
-            contentAlignment = Alignment.TopCenter,
-        ) {
-            Row(
-                modifier = modifier
-                    .padding(top = 8.dp)
-                    .widthIn(max = 340.dp)
-                    .shadow(elevation = 10.dp, shape = RoundedCornerShape(50), clip = false)
-                    .background(
-                        brush = Brush.horizontalGradient(
-                            listOf(
-                                Color(0xF21B1B20),
-                                Color(0xF22A2630),
-                                Color(0xF21B1B20),
-                            ),
+        Row(
+            modifier = modifier
+                .widthIn(max = 340.dp)
+                .shadow(elevation = 10.dp, shape = RoundedCornerShape(50), clip = false)
+                .background(
+                    brush = Brush.horizontalGradient(
+                        listOf(
+                            Color(0xF21B1B20),
+                            Color(0xF22A2630),
+                            Color(0xF21B1B20),
                         ),
-                        shape = RoundedCornerShape(50),
-                    )
-                    .padding(horizontal = 14.dp, vertical = 9.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size((7 * pulse).dp.coerceAtLeast(4.dp))
-                        .background(Color(0xFFB9A7FF), CircleShape),
+                    ),
+                    shape = RoundedCornerShape(50),
                 )
-                Spacer(Modifier.width(9.dp))
-                Text(
-                    text = shown.orEmpty(),
-                    color = Color(0xFFEDEBF5),
-                    style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+                .padding(horizontal = 14.dp, vertical = 9.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size((7 * pulse).dp.coerceAtLeast(4.dp))
+                    .background(Color(0xFFB9A7FF), CircleShape),
+            )
+            Spacer(Modifier.width(9.dp))
+            Text(
+                text = shown.orEmpty(),
+                color = Color(0xFFEDEBF5),
+                style = MaterialTheme.typography.labelMedium,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
         }
     }
 }
