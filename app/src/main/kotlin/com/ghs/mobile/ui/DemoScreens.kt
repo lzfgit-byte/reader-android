@@ -1122,8 +1122,9 @@ fun DemoApp(
                         }
                     }
                     // 页码：右上角，点开抽屉选页
-                    if (tab == DemoTab.HOME && screen is Screen.List) {
-                        val pages = (screen as? Screen.List)?.page?.pagination.orEmpty()
+                    if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
+                        val pages = ((screen as? Screen.List)?.page
+                            ?: (screen as? Screen.SearchResults)?.page)?.pagination.orEmpty()
                         if (pages.isNotEmpty()) {
                             TextButton(onClick = { showPageSheet = true }) {
                                 Text(pages.firstOrNull { it.isCurrent }?.title?.ifEmpty { "1" } ?: "1")
@@ -1627,14 +1628,32 @@ fun DemoApp(
         )
     }
 
-    // 页码抽屉：右上角点页码打开
+    // 页码抽屉：右上角点页码打开（列表与搜索结果共用）
     if (showPageSheet) {
-        val pages = (screen as? Screen.List)?.page?.pagination.orEmpty()
+        val pages = ((screen as? Screen.List)?.page
+            ?: (screen as? Screen.SearchResults)?.page)?.pagination.orEmpty()
         PagePickerSheet(
             pages = pages,
             onPick = { url ->
                 showPageSheet = false
-                openFromUrl(url, null)
+                val search = screen as? Screen.SearchResults
+                if (search != null) {
+                    // 搜索结果翻页：保持搜索状态，不要跳回普通列表
+                    val active = session
+                    if (active != null) {
+                        scope.launch {
+                            val page = runCatching {
+                                withContext(Dispatchers.IO) { active.pageFrom(url) }
+                            }.getOrNull()
+                            if (page != null) {
+                                noMore = false
+                                screen = Screen.SearchResults(search.keyword, page)
+                            }
+                        }
+                    }
+                } else {
+                    openFromUrl(url, null)
+                }
             },
             onDismiss = { showPageSheet = false },
         )
