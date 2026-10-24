@@ -107,10 +107,10 @@ internal object SelectorTranslator {
     fun translate(selector: String): String {
         val trimmed = selector.trim()
         require(trimmed.isNotEmpty()) { "选择器不能为空" }
-        // `:first` 直接改写；`:last` 不在 Jsoup 支持范围内，这里退化为 `:eq(-1)` 由调用方处理
-        return trimmed.replace(Regex(""":first\b"""), ":eq(0)")
+        // jQuery 扩展伪类（:first/:last/:eq/:lt/:gt/:even/:odd）由 GhsSelect 在结果集上处理，
+        // 这里原样返回，避免被 jsoup 误解成语义完全不同的兄弟序号。
+        return trimmed
     }
-
     /** 按顶层逗号切分（忽略括号/引号内的逗号） */
     fun split(selector: String): List<String> {
         val parts = mutableListOf<String>()
