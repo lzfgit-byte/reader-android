@@ -603,6 +603,11 @@ fun DemoApp(
             if (info?.detailType == DetailType.TEXT) {
                 textUrl = info.details.firstOrNull()?.url ?: item.jumpUrl
             }
+            // 用户已经取消：静默回列表，不落到详情/失败页
+            if (detailCancelled) {
+                finish()
+                return@launch
+            }
             // 其它情况（文本 / 解析失败）落到详情页展示
             screen = Screen.Detail(item, info)
             finish()
