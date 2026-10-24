@@ -134,6 +134,15 @@ private sealed interface Screen {
         /** 目录里的「预加载下一话」开关 */
         val preloadNext: Boolean = false,
     ) : Screen
+    /** 单图阅读：与连续滚动完全独立的模式，一次一张、左右翻页 */
+    data class SinglePage(
+        val item: Item,
+        val pages: kotlin.collections.List<com.ghs.mobile.core.model.Detail>,
+        val startIndex: Int,
+        val chapterIndex: Int = 0,
+        val chapters: kotlin.collections.List<CContent> = emptyList(),
+        val preloadNext: Boolean = false,
+    ) : Screen
     data class Series(val item: Item, val info: DetailInfo) : Screen
     data class VideoPlayer(
         val item: Item,
@@ -188,13 +197,13 @@ fun DemoApp(
     // 左侧菜单（设置 / 引擎自检）
     var drawerOpen by remember { mutableStateOf(false) }
     // 系统返回键：按「阅读器/播放器 → 列表 → 首页 → 抽屉 → 退出」逐级回退
-    val canGoBack = screen is Screen.ComicReader ||
+    val canGoBack = screen is Screen.ComicReader || screen is Screen.SinglePage ||
         screen is Screen.VideoPlayer || screen is Screen.Detail ||
         tab != DemoTab.HOME || drawerOpen
     androidx.activity.compose.BackHandler(enabled = canGoBack) {
         when {
             drawerOpen -> drawerOpen = false
-            screen is Screen.ComicReader ||
+            screen is Screen.ComicReader || screen is Screen.SinglePage ||
                 screen is Screen.VideoPlayer || screen is Screen.Detail -> {
                 screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading
             }
@@ -768,6 +777,53 @@ fun DemoApp(
                 onPreloadNextChange = { enabled -> screen = reader.copy(preloadNext = enabled) },
                 onChapterSelected = { index -> openChapter(index) },
                 onNextChapter = { openChapter(reader.chapterIndex + 1) },
+                onOpenSinglePage = { index ->
+                    screen = Screen.SinglePage(
+                        item = reader.item,
+                        pages = reader.pages,
+                        startIndex = index,
+                        chapterIndex = reader.chapterIndex,
+                        chapters = reader.chapters,
+                        preloadNext = reader.preloadNext,
+                    )
+                },
+            )
+            return
+        }
+
+        is Screen.SinglePage -> {
+            SinglePageReaderScreen(
+                title = reader.item.title,
+                pages = reader.pages,
+                startIndex = reader.startIndex,
+                quality = imageQuality,
+                onProgress = { index ->
+                    scope.launch {
+                        repository.saveProgress(
+                            ReadingProgress(
+                                itemUrl = ProgressKeys.key(reader.item.jumpUrl),
+                                kind = ReaderKind.IMAGE,
+                                chapterUrl = reader.chapters.getOrNull(reader.chapterIndex)?.url.orEmpty(),
+                                chapterIndex = reader.chapterIndex,
+                                chapterCount = reader.chapters.size.coerceAtLeast(1),
+                                chapterOffset = index,
+                                percent = ((index + 1) * 100.0 / reader.pages.size.coerceAtLeast(1)),
+                                updatedAt = System.currentTimeMillis(),
+                            ),
+                        )
+                    }
+                },
+                // 关闭：回到连续滚动模式，停在当前页
+                onClose = {
+                    screen = Screen.ComicReader(
+                        item = reader.item,
+                        pages = reader.pages,
+                        startIndex = reader.startIndex,
+                        chapters = reader.chapters,
+                        chapterIndex = reader.chapterIndex,
+                        preloadNext = reader.preloadNext,
+                    )
+                },
             )
             return
         }
@@ -989,6 +1045,7 @@ fun DemoApp(
             is Screen.List -> "List"
             is Screen.Detail -> "Detail"
             is Screen.ComicReader -> "ComicReader"
+            is Screen.SinglePage -> "SinglePage"
             is Screen.VideoPlayer -> "VideoPlayer"
             is Screen.Series -> "Series"
             is Screen.SearchResults -> "SearchResults"
@@ -1281,7 +1338,7 @@ fun DemoApp(
                 )
 
                 // 阅读器在上面已整屏返回，这里只是为了让 when 穷尽
-                is Screen.ComicReader -> Unit
+                is Screen.ComicReader, is Screen.SinglePage -> Unit
                 is Screen.VideoPlayer -> Unit
                 is Screen.Series -> Unit
             }
@@ -1609,6 +1666,7 @@ private fun titleFor(screen: Screen, tagTitle: String? = null): String = when (s
     is Screen.VideoPlayer -> screen.item.title.ifEmpty { "播放" }
     is Screen.Series -> screen.item.title.ifEmpty { "剧集" }
     is Screen.ComicReader -> screen.item.title.ifEmpty { "阅读" }
+    is Screen.SinglePage -> screen.item.title.ifEmpty { "阅读" }
 }
 
 @Composable

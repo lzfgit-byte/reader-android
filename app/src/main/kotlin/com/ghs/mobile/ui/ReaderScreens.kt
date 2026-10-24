@@ -120,6 +120,8 @@ fun ComicReaderScreen(
     onPreloadNextChange: (Boolean) -> Unit = {},
     onChapterSelected: (Int) -> Unit = {},
     onNextChapter: (() -> Unit)? = null,
+    /** 双击某张图：进入单图阅读（独立模式） */
+    onOpenSinglePage: (Int) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
     // 切话时整块状态重建：不这样会沿用上一话的滚动位置
@@ -231,6 +233,8 @@ fun ComicReaderScreen(
     Box(modifier = Modifier.fillMaxSize().background(Color(0xFF151517))) {
         // 连续滚动：所有图片上下拼接，一滚到底
         LazyColumn(
+            // 顶部留出标题栏高度：否则第一张图会被顶栏遮住
+            contentPadding = PaddingValues(top = 64.dp),
             state = listState,
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -243,7 +247,8 @@ fun ComicReaderScreen(
                         .fillMaxWidth()
                         .combinedClickable(
                             onClick = { chromeVisible = !chromeVisible },
-                            onLongClick = { saveCurrentPage() },
+                            onDoubleClick = { onOpenSinglePage(index) },
+                            // 长按保存已移除（用户不需要）
                         ),
                 ) {
                     // 已解码过的图直接从位图缓存出图：滚回不重新下载、不重新解码
