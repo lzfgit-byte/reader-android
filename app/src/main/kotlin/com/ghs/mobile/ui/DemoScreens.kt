@@ -467,7 +467,7 @@ fun DemoApp(
             val savedKey = repository.settings(SettingScope.PREFS)["currentConfig"]
             val picked = all.firstOrNull { it.key == savedKey && it.enabled }
                 ?: all.firstOrNull { it.enabled }
-                ?: all.firstOrNull()
+            // 全部停用时不选中任何站点：界面走「无可用站点」，不偷偷启用一个停用配置
             all to picked
         }
         configs = loaded
@@ -1271,8 +1271,8 @@ fun DemoApp(
                     if (configs.size > 1) {
                         OutlinedButton(
                             onClick = {
+                                // 只换到启用中的站点，别把停用的那批又放进来
                                 val next = configs.firstOrNull { it.key != configKey && it.enabled }
-                                    ?: configs.firstOrNull { it.key != configKey }
                                 if (next != null) {
                                     configKey = next.key
                                     screen = Screen.Loading
@@ -1610,7 +1610,8 @@ fun DemoApp(
     // 站点抽屉：标题 + 搜索 + 两列站点卡片，当前打勾
     if (showSiteSheet) {
         SitePickerSheet(
-            sites = configs,
+            // 只列启用的站点；当前站点即使被停用也保留，否则抽屉里连自己都找不到
+            sites = configs.filter { it.enabled || it.key == configKey },
             currentKey = configKey,
             onPick = { key ->
                 showSiteSheet = false
