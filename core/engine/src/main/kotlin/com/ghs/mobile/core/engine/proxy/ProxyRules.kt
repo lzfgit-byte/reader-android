@@ -32,6 +32,8 @@ data class ProxyRules(
     val enabled: Boolean = false,
     val endpoint: ProxyEndpoint? = null,
     val whitelist: List<String> = emptyList(),
+    /** 强制代理名单：命中即走代理，优先级高于白名单 */
+    val forceProxy: List<String> = emptyList(),
 ) {
     fun shouldProxy(host: String?, port: Int): Boolean {
         if (!enabled) return false
@@ -39,8 +41,13 @@ data class ProxyRules(
         val normalizedHost = normalizeHost(host) ?: return false
         // 代理自身所在的地址不应再走代理，避免自环
         if (normalizedHost == normalizeHost(target.host)) return false
+        // 强制代理优先：命中强制名单一律走代理，即使它同时在白名单里
+        if (isForceProxied(normalizedHost, port)) return true
         return !isWhitelisted(normalizedHost, port)
     }
+
+    fun isForceProxied(host: String, port: Int): Boolean =
+        forceProxy.any { entry -> matches(entry.trim(), host, port) }
 
     fun isWhitelisted(host: String, port: Int): Boolean =
         whitelist.any { entry -> matches(entry.trim(), host, port) }

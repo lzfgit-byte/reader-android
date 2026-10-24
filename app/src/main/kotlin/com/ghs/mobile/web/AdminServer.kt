@@ -338,13 +338,27 @@ class AdminServer(
             return json(Response.Status.BAD_REQUEST, error("E-CFG-002", "缺少 config 内容"))
         }
         val keyInSource = pickKey(source)
-        if (keyInSource.isNotEmpty() && keyInSource != key) {
-            return json(
-                Response.Status.BAD_REQUEST,
-                error("E-CFG-004", "配置内 key（$keyInSource）与路径 key（$key）不一致"),
+        val existing = store.get(key)!!
+        // 配置里的 key 被改了 = 改名：写到新 key 并删掉旧 key，
+        // 不新增第二条配置（改 key 的意图是覆盖这一份，不是另存为）
+        val targetKey = keyInSource.ifEmpty { key }
+        if (targetKey != key) {
+            if (!ConfigStore.isValidKey(targetKey)) {
+                return json(Response.Status.BAD_REQUEST, error("E-CFG-003", "key 不合法：$targetKey"))
+            }
+            if (store.get(targetKey) != null) {
+                return json(Response.Status.CONFLICT, error("E-CFG-009", "配置已存在：$targetKey"))
+            }
+            store.save(targetKey, source, enabled = existing.enabled, sort = existing.sort)
+            store.delete(key)
+            notifyChanged()
+            return jsonOk(
+                JSONObject()
+                    .put("key", targetKey)
+                    .put("renamedFrom", key)
+                    .put("updatedAt", System.currentTimeMillis()),
             )
         }
-        val existing = store.get(key)!!
         store.save(key, source, enabled = existing.enabled, sort = existing.sort)
         notifyChanged()
         return jsonOk(JSONObject().put("key", key).put("updatedAt", System.currentTimeMillis()))
