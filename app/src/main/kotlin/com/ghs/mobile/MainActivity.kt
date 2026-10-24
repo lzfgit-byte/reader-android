@@ -24,6 +24,11 @@ import com.ghs.mobile.ui.ProbeScreen
 import com.ghs.mobile.ui.SettingsScreen
 import kotlinx.coroutines.launch
 import com.ghs.mobile.ui.SettingsContent
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.padding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.DisposableEffect
 
 /**
  * 入口：主界面 / 引擎自检 / 设置三个页面。
@@ -69,8 +74,15 @@ private fun AppRoot() {
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             var page by remember { mutableStateOf(Page.MAIN) }
-
-            when (page) {
+            // 顶部灵动岛：展示最新一条调试日志（2 秒后自动收起）
+            var islandLogs by remember { mutableStateOf<List<String>>(emptyList()) }
+            DisposableEffect(Unit) {
+                val listener: (List<String>) -> Unit = { islandLogs = it }
+                com.ghs.mobile.core.engine.script.LogHub.addListener(listener)
+                onDispose { com.ghs.mobile.core.engine.script.LogHub.removeListener(listener) }
+            }
+            Box(modifier = Modifier.fillMaxSize()) {
+                when (page) {
                 Page.MAIN -> DemoApp(
                     drawerSettings = {
                         SettingsContent(
@@ -110,6 +122,14 @@ private fun AppRoot() {
                     onBack = { page = Page.MAIN },
                 )
             }
+                com.ghs.mobile.ui.LogIsland(
+                    entries = islandLogs,
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = 8.dp),
+                )
+            }
         }
     }
 }
+
