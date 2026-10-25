@@ -82,6 +82,7 @@ docs/
 | [03-api/rest-contract.md](03-api/rest-contract.md) | 数据层契约：接口路径、字段、参数编码、响应语义、双模式差异 | draft | 2026-10-19 |
 | [04-engineering/build.md](04-engineering/build.md) | 本地构建与验证：便携工具链（JDK/Gradle）、环境变量、踩坑、当前验证基线 | draft | 2026-10-19 |
 | [04-engineering/spike-script-runtime.md](04-engineering/spike-script-runtime.md) | Spike 报告：JVM 侧脚本运行时（5 份真实配置可求值、句柄式 `$` 桥接、未验证项） | draft | 2026-10-19 |
+| [04-engineering/postmortem-2026-10-25-challenge-loop.md](04-engineering/postmortem-2026-10-25-challenge-loop.md) | 复盘：人机校验死循环（窗口未加载 / 重载作废验证 / 挑战页被当正文），含取证、修复清单与未解决项 | draft | 2026-10-25 |
 
 ## 状态图例
 
@@ -132,3 +133,4 @@ docs/
 | v1.12 | 2026-10-19 | 新增 ADR-0015（QuickJS 封装选型）；索引同步 |
 | v1.13 | 2026-10-20 | 新增 ADR-0016（异步宿主改 WebView）；索引同步 |
 | v1.14 | 2026-10-25 | 新增 ADR-0017（WebView 统一为受管窗口）；索引同步 |
+| v1.15 | 2026-10-25 | 新增 `04-engineering/postmortem-2026-10-25-challenge-loop.md`（人机校验死循环复盘）；索引同步 |
