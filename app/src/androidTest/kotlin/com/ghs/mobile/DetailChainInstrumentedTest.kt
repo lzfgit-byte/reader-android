@@ -39,7 +39,7 @@ class DetailChainInstrumentedTest {
         ): ScriptHostTransport.HostResponse =
             ScriptHostTransport.HostResponse(200, emptyMap(), "{}")
 
-        override fun executePage(url: String, code: String): String = ""
+        override fun executePage(url: String, code: String, show: Boolean): String = ""
     }
 
     private fun config(): String = """

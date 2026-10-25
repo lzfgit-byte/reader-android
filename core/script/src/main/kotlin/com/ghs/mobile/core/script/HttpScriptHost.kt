@@ -9,6 +9,8 @@ import android.webkit.WebViewClient
 import com.ghs.mobile.core.engine.proxy.ProxyRules
 import com.ghs.mobile.core.engine.proxy.RulesProxySelector
 import com.ghs.mobile.core.engine.script.ScriptHostTransport
+import com.ghs.mobile.core.script.window.WebWindow
+import com.ghs.mobile.core.script.window.WebWindows
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import okhttp3.Credentials
@@ -54,6 +56,9 @@ class HttpScriptHost(
 
     /** 取消令牌：每次取消自增；调用方记住自己的代号，只响应之后的取消 */
     private val cancelEpoch = java.util.concurrent.atomic.AtomicLong(0)
+
+    /** 取页窗口是常驻的，同一时刻只允许一个任务占用它 */
+    private val fetchLock = java.util.concurrent.locks.ReentrantLock()
 
     /** 取消当前正在等待的取页/求值（不影响之后的调用） */
     fun cancelPending() {
@@ -279,152 +284,153 @@ class HttpScriptHost(
      *
      * `code` 应当是**表达式**（配置里的写法都是 `(function(){...})()` 这类）；
      * 返回值统一转成字符串：本身就是字符串就原样返回，否则 JSON 序列化。
+     *
+     * 容器用常驻的 [WebWindows.FETCH_SPEC] 窗口（对齐"单例隐藏窗口"的用法）：
+     * 第一次建，之后每次只换文档，省掉 1.5–3s 的 WebView 冷启动。
      */
     override fun executePage(url: String, code: String, show: Boolean): String {
         // 只要在用 WebView 取页，就让 UI 出现「显示 webview」入口
         WebViewFallbackHub.start(url)
-        // 记住本次调用的代号：只有这之后发生的「取消」才作数
-        val epoch = cancelEpoch.get()
-        val loaded = CountDownLatch(1)
-        val result = CountDownLatch(1)
+        try {
+            // 记住本次调用的代号：只有这之后发生的「取消」才作数
+            return runInFetchWindow(url, code, show, cancelEpoch.get())
+        } finally {
+            // 撤掉入口：失败分支会 throw，放在其后就永远不执行
+            WebViewFallbackHub.stop()
+        }
+    }
+
+    /** 同一时刻只允许一个取页任务占着这个窗口 */
+    private fun runInFetchWindow(url: String, code: String, show: Boolean, epoch: Long): String {
+        val window = WebWindows.acquire(WebWindows.FETCH_SPEC)
+        if (!fetchLock.tryLock(FETCH_LOCK_WAIT_MS, TimeUnit.MILLISECONDS)) {
+            throw IllegalStateException("取页窗口正忙，请稍后再试")
+        }
+        try {
+            val task = FetchTask()
+            // 桥与回调都指向「当前任务」：窗口复用后不会把结果写进上一个任务的槽位
+            window.setBridge(
+                done = { value -> task.finish(value) },
+                error = { message -> task.fail("页面脚本出错：$message") },
+            )
+            window.setPageFinishedListener { _, _ -> task.loaded.countDown() }
+            // 403 这类主框架错误不会触发 onPageFinished：也要让等待方继续，
+            // 否则取页会一直挂到用户手动取消
+            window.setHttpErrorListener { _, _ -> task.loaded.countDown() }
+            window.setErrorListener { _, _ -> task.loaded.countDown() }
+
+            onMain {
+                // WebView 兜底也必须走代理，否则直连会被站点挡掉
+                applyWebViewProxy()
+                val view = window.view
+                runCatching { view.stopLoading() }
+                runCatching { view.clearHistory() }
+                // 登记实例：用户点「显示 webview」时把它直接挂到窗口上
+                WebViewFallbackHub.attach(view)
+                // 配置要求显示（executeJs show=true）：自动打开显示窗口
+                if (show) WebViewMirrorLauncher.open(context, url)
+                // WebView 也要桌面页面：中文 + 桌面 Client Hints 一起附上
+                val pageHeaders = mutableMapOf("Accept-Language" to LANGUAGE)
+                pageHeaders.putAll(com.ghs.mobile.core.engine.net.UserAgents.clientHints())
+                view.loadUrl(url, pageHeaders)
+            }
+
+            // 桌面页资源多、广告脚本常卡住 onPageFinished（实测 25s 都不来）：
+            // 并行轮询 DOM 就绪，正文出现就取，不再干等"页面彻底加载完"
+            startDomPoll(window, task, epoch)
+            awaitLoaded(task, epoch)
+
+            if (task.failure == null) {
+                val raw = runCatching { window.eval(executeJs(code), EVAL_TIMEOUT_MS) }.getOrNull()
+                if (raw == null) {
+                    task.fail("页面脚本执行超时")
+                } else {
+                    val value = normalize(raw)
+                    when {
+                        // Promise 挂起：结果稍后由 __ghsWin.done/error 回传
+                        value == "__GHS_PENDING__" -> Unit
+                        value.startsWith("__GHS_ERR__") ->
+                            task.fail("页面脚本出错：${value.removePrefix("__GHS_ERR__")}")
+                        else -> task.finish(value)
+                    }
+                }
+            }
+
+            awaitResult(task, epoch)
+            task.failure?.let { throw IllegalStateException(it) }
+            return task.output
+        } finally {
+            fetchLock.unlock()
+        }
+    }
+
+    private fun startDomPoll(window: WebWindow, task: FetchTask, epoch: Long) {
+        Thread {
+            repeat(DOM_POLL_ATTEMPTS) {
+                Thread.sleep(DOM_POLL_INTERVAL_MS)
+                if (task.loaded.count == 0L) return@Thread
+                if (cancelEpoch.get() != epoch) return@Thread
+                val ready = runCatching { window.eval(READY_JS) }.getOrNull()?.trim() == "true"
+                if (ready) {
+                    android.util.Log.i("GHS", "webview DOM ready: ${window.url}")
+                    task.loaded.countDown()
+                    return@Thread
+                }
+            }
+        }.start()
+    }
+
+    /** 等页面就绪：不设上限，只响应「取消」 */
+    private fun awaitLoaded(task: FetchTask, epoch: Long) {
+        while (!task.loaded.await(200, TimeUnit.MILLISECONDS)) {
+            if (cancelEpoch.get() != epoch) {
+                task.fail("已取消")
+                return
+            }
+        }
+    }
+
+    /** 等脚本结果：同样只响应「取消」 */
+    private fun awaitResult(task: FetchTask, epoch: Long) {
+        while (!task.result.await(200, TimeUnit.MILLISECONDS)) {
+            if (cancelEpoch.get() != epoch) task.fail("已取消")
+        }
+    }
+
+    /** 在页面里执行配置给的表达式；Promise 结果经 `__ghsWin` 桥回传 */
+    private fun executeJs(code: String): String =
+        "(function(){" +
+            "try{" +
+            "var v=(" + code + ");" +
+            "if(v&&typeof v.then==='function'){" +
+            "v.then(function(r){__ghsWin.done(String(r));}," +
+            "function(e){__ghsWin.error(String(e));});" +
+            "return '__GHS_PENDING__';" +
+            "}" +
+            "return v;" +
+            "}catch(e){return '__GHS_ERR__'+e;}" +
+            "})()"
+
+    /** 一次取页任务的状态：窗口复用时靠它把回调隔离开 */
+    private class FetchTask {
+        @Volatile
         var output = ""
+
+        @Volatile
         var failure: String? = null
 
-        onMain {
-            // WebView 兜底也必须走代理，否则直连会被站点挡掉
-            applyWebViewProxy()
-            @SuppressLint("SetJavaScriptEnabled")
-            val view = WebView(context.applicationContext)
-            view.settings.javaScriptEnabled = true
-            // 兜底用桌面 UA：不少站点对移动 UA 直接返回精简页或挑战页
-            view.settings.userAgentString = DESKTOP_UA
-            view.settings.domStorageEnabled = true
-            // 登记实例：用户点「显示 webview」时把它直接挂到窗口上
-            WebViewFallbackHub.attach(view)
-            // 配置要求显示（executeJs show=true）：自动打开显示窗口
-            if (show) WebViewMirrorLauncher.open(context, url)
-            // 配置里的页面脚本常常返回 Promise（等 iframe / fetch 完成）：用它回传最终结果
-            view.addJavascriptInterface(
-                object {
-                    @android.webkit.JavascriptInterface
-                    fun done(value: String) {
-                        output = value
-                        result.countDown()
-                    }
+        val loaded = CountDownLatch(1)
+        val result = CountDownLatch(1)
 
-                    @android.webkit.JavascriptInterface
-                    fun error(message: String) {
-                        failure = "页面脚本出错：$message"
-                        result.countDown()
-                    }
-                },
-                "__ghsEval",
-            )
-            view.webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView, finishedUrl: String) {
-                    loaded.countDown()
-                }
-            }
-
-            // WebView 也要中文：loadUrl 支持附带请求头
-            // WebView 也要桌面页面：中文 + 桌面 Client Hints 一起附上
-            val pageHeaders = mutableMapOf("Accept-Language" to LANGUAGE)
-            pageHeaders.putAll(com.ghs.mobile.core.engine.net.UserAgents.clientHints())
-            view.loadUrl(url, pageHeaders)
-            // 桌面页资源多、广告脚本常卡住 onPageFinished（实测 25s 都不来）。
-            // 这里并行轮询 DOM 就绪：正文出现就取，不再干等"页面彻底加载完"。
-            Thread {
-                repeat(DOM_POLL_ATTEMPTS) {
-                    Thread.sleep(DOM_POLL_INTERVAL_MS)
-                    if (loaded.count == 0L) return@Thread
-                    val probe = CountDownLatch(1)
-                    var ready = false
-                    onMain {
-                        view.evaluateJavascript(READY_JS) { raw ->
-                            ready = raw?.trim() == "true"
-                            probe.countDown()
-                        }
-                    }
-                    probe.await(2, TimeUnit.SECONDS)
-                    if (ready) {
-                        android.util.Log.i("GHS", "webview DOM ready: $url")
-                        loaded.countDown()
-                        return@Thread
-                    }
-                }
-            }
-
-            Thread {
-                try {
-                    // 不设超时：由用户点「取消」决定放弃
-                    while (!loaded.await(200, TimeUnit.MILLISECONDS)) {
-                        if (cancelEpoch.get() != epoch) {
-                            failure = "已取消"
-                            result.countDown()
-                            return@Thread
-                        }
-                    }
-                    onMain {
-                        view.evaluateJavascript(
-                            "(function(){" +
-                                "try{" +
-                                "var v=(" + code + ");" +
-                                // 返回 Promise：交给 __ghsEval 回传，这里先标记为挂起
-                                "if(v&&typeof v.then==='function'){" +
-                                "v.then(function(r){__ghsEval.done(String(r));}," +
-                                "function(e){__ghsEval.error(String(e));});" +
-                                "return '__GHS_PENDING__';" +
-                                "}" +
-                                "return v;" +
-                                "}catch(e){return '__GHS_ERR__'+e;}" +
-                                "})()",
-                        ) { raw ->
-                            val value = normalize(raw)
-                            // Promise 挂起：结果稍后由 __ghsEval.done/error 回调
-                            if (value == "__GHS_PENDING__") return@evaluateJavascript
-                            output = value
-                            if (output.startsWith("__GHS_ERR__")) {
-                                failure = "页面脚本出错：${output.removePrefix("__GHS_ERR__")}"
-                            }
-                            result.countDown()
-                        }
-                    }
-                } catch (error: Throwable) {
-                    failure = error.message ?: error.toString()
-                    result.countDown()
-                }
-            }.start()
-
-            // 等待结果；超时则记失败
-            // 等待结果：不设超时，只响应取消
-            Thread {
-                while (!result.await(200, TimeUnit.MILLISECONDS)) {
-                    if (cancelEpoch.get() != epoch) {
-                        failure = "已取消"
-                        result.countDown()
-                        break
-                    }
-                }
-            }.start()
-
-            // 结果到齐后再销毁 WebView（必须在主线程）
-            Thread {
-                runCatching { result.await() }
-                onMain {
-                    runCatching {
-                        WebViewFallbackHub.detach(view)
-                        view.stopLoading()
-                        view.destroy()
-                    }
-                }
-            }.start()
+        fun finish(value: String) {
+            output = value
+            result.countDown()
         }
 
-        result.await()
-        // 先撤掉「显示 webview」入口：失败分支会 throw，放在其后就永远不执行
-        WebViewFallbackHub.stop()
-        failure?.let { throw IllegalStateException(it) }
-        return output
+        fun fail(message: String) {
+            failure = message
+            result.countDown()
+        }
     }
 
     override fun close() {
@@ -481,6 +487,9 @@ class HttpScriptHost(
         private const val PAGE_TIMEOUT_MS = 25_000L
         private const val REQUEST_ATTEMPTS = 3
         private const val EVAL_TIMEOUT_MS = 20_000L
+
+        /** 等别的取页任务让出窗口的上限 */
+        private const val FETCH_LOCK_WAIT_MS = 15_000L
         /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
         /** DOM 就绪轮询：每 500ms 探一次，最多 80 次（约 40s） */
         private const val DOM_POLL_INTERVAL_MS = 800L

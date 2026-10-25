@@ -135,64 +135,62 @@ object WebViewImageLoader {
         val latch = CountDownLatch(1)
         var output: ByteArray? = null
         var challenge = false
+        // 归还窗口后轮询线程必须停：否则会在下一个请求的页面上继续求值
+        val stopped = java.util.concurrent.atomic.AtomicBoolean(false)
 
-        main.post {
-            val view = WebView(context.applicationContext)
-            view.settings.javaScriptEnabled = true
-            view.settings.domStorageEnabled = true
-            view.settings.userAgentString = DESKTOP_UA
-            view.webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView, finishedUrl: String) {
-                    view.evaluateJavascript(
-                        "(function(){return document.contentType||'';})()",
-                    ) { raw ->
-                        val type = raw?.trim()?.removeSurrounding("\"") ?: ""
-                        if (!type.startsWith("image/")) {
-                            challenge = true
-                            android.util.Log.w("GHS", "image webview got '$type' (可能是挑战页) $url")
-                            runCatching { view.destroy() }
-                            latch.countDown()
-                            return@evaluateJavascript
-                        }
-                        view.evaluateJavascript(
-                            "fetch(location.href).then(function(r){return r.blob();})" +
-                                ".then(function(b){var fr=new FileReader();" +
-                                "fr.onload=function(){window.__ghsB64=fr.result.split(',')[1]||'';};" +
-                                "fr.readAsDataURL(b);}).catch(function(e){window.__ghsB64='';});0",
-                        ) { }
-                    }
-                }
-            }
-            view.loadUrl(url)
+        // 从对象池里取：图片兜底是高频路径，每次新建 WebView 的冷启动成本最明显
+        val window = com.ghs.mobile.core.script.window.WebWindows.acquire(
+            com.ghs.mobile.core.script.window.WebWindows.IMAGE_SPEC,
+        )
 
-            Thread {
-                val deadline = System.currentTimeMillis() + TIMEOUT_MS
-                while (System.currentTimeMillis() < deadline && output == null && !challenge) {
-                    Thread.sleep(POLL_MS)
-                    if (challenge) break
-                    val probe = CountDownLatch(1)
-                    var b64 = ""
-                    main.post {
-                        view.evaluateJavascript("window.__ghsB64||''") { raw ->
-                            b64 = raw?.trim()?.removeSurrounding("\"") ?: ""
-                            probe.countDown()
-                        }
-                    }
-                    probe.await(1, TimeUnit.SECONDS)
-                    if (b64.length > 100) {
-                        output = runCatching {
-                            android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
-                        }.getOrNull()
-                        break
-                    }
+        window.setPageFinishedListener { view, _ ->
+            view.evaluateJavascript(
+                "(function(){return document.contentType||'';})()",
+            ) { raw ->
+                val type = raw?.trim()?.removeSurrounding("\"") ?: ""
+                if (!type.startsWith("image/")) {
+                    challenge = true
+                    android.util.Log.w("GHS", "image webview got '$type' (可能是挑战页) $url")
+                    latch.countDown()
+                    return@evaluateJavascript
                 }
-                android.util.Log.i("GHS", "image webview done bytes=${output?.size ?: 0} challenge=$challenge $url")
-                main.post { runCatching { view.destroy() } }
-                latch.countDown()
+                view.evaluateJavascript(
+                    "fetch(location.href).then(function(r){return r.blob();})" +
+                        ".then(function(b){var fr=new FileReader();" +
+                        "fr.onload=function(){window.__ghsB64=fr.result.split(',')[1]||'';};" +
+                        "fr.readAsDataURL(b);}).catch(function(e){window.__ghsB64='';});0",
+                ) { }
             }
         }
 
+        main.post { runCatching { window.view.loadUrl(url) } }
+
+        Thread {
+            val deadline = System.currentTimeMillis() + TIMEOUT_MS
+            while (!stopped.get() && System.currentTimeMillis() < deadline && output == null && !challenge) {
+                Thread.sleep(POLL_MS)
+                if (stopped.get() || challenge) break
+                val b64 = runCatching { window.eval("window.__ghsB64||''", 1_500) }
+                    .getOrNull()
+                    ?.trim()
+                    ?.removeSurrounding("\"")
+                    ?: ""
+                if (b64.length > 100) {
+                    output = runCatching {
+                        android.util.Base64.decode(b64, android.util.Base64.DEFAULT)
+                    }.getOrNull()
+                    break
+                }
+            }
+            android.util.Log.i("GHS", "image webview done bytes=${output?.size ?: 0} challenge=$challenge $url")
+            latch.countDown()
+        }.start()
+
         latch.await(TIMEOUT_MS + 3_000L, TimeUnit.MILLISECONDS)
+        stopped.set(true)
+        // 归还前摘掉回调：池里的窗口会被下一个请求复用，别让上一页的回调打到新页面上
+        window.setPageFinishedListener(null)
+        com.ghs.mobile.core.script.window.WebWindows.release(window)
         if (challenge) {
             // 挑战页：弹人机校验窗口，用户完成后 Cookie 生效，下次请求即可命中
             runCatching { ChallengeGate.await(url) }

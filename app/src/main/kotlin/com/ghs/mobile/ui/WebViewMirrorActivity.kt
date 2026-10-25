@@ -12,6 +12,7 @@ import android.widget.TextView
 import androidx.activity.ComponentActivity
 import com.ghs.mobile.core.engine.net.UserAgents
 import com.ghs.mobile.core.script.WebViewFallbackHub
+import com.ghs.mobile.core.script.window.WebWindows
 
 /**
  * 显示「正在执行取页任务」的那个 WebView。
@@ -21,12 +22,17 @@ import com.ghs.mobile.core.script.WebViewFallbackHub
  */
 class WebViewMirrorActivity : ComponentActivity() {
 
+    /** 本次挂上来的 WebView：窗口关闭时摘下来，别让它挂在已销毁的容器上 */
+    private var attached: android.webkit.WebView? = null
+
     @SuppressLint("SetJavaScriptEnabled")
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
         val url = intent.getStringExtra(EXTRA_URL).orEmpty()
-        val view = WebViewFallbackHub.currentView
+        // 优先拿受管窗口：它是取页任务真正在用的那个实例
+        val window = WebWindows.current(WebWindows.FETCH)
+        val view = window?.view ?: WebViewFallbackHub.currentView
 
         val root = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
 
@@ -69,14 +75,27 @@ class WebViewMirrorActivity : ComponentActivity() {
             }
             setPadding(3, 3, 3, 3)
         }
-        if (view != null) {
-            // 同一个 View 不能有两个父容器：先从原容器摘下
+        if (window != null) {
+            window.attachTo(frame)
+            attached = window.view
+        } else if (view != null) {
+            // 没有受管窗口（旧路径）：同一个 View 不能有两个父容器，先从原容器摘下
             (view.parent as? ViewGroup)?.removeView(view)
             frame.addView(view, FrameLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT))
+            attached = view
         }
         root.addView(frame, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f))
 
         setContentView(root)
+    }
+
+    override fun onDestroy() {
+        // 关闭窗口只是不再显示：把 WebView 从本窗口摘下，任务与实例都继续活着
+        attached?.let { view ->
+            runCatching { (view.parent as? ViewGroup)?.removeView(view) }
+        }
+        attached = null
+        super.onDestroy()
     }
 
     // 关闭窗口只是不再显示：任务结束后 HttpScriptHost 会自行销毁该 WebView

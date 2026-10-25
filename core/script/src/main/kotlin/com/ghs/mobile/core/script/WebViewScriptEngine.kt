@@ -11,6 +11,8 @@ import androidx.webkit.ProxyController
 import androidx.webkit.WebViewFeature
 import com.ghs.mobile.core.engine.proxy.ProxyRules
 import com.ghs.mobile.core.engine.script.ScriptEngine
+import com.ghs.mobile.core.script.window.WebWindow
+import com.ghs.mobile.core.script.window.WebWindows
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -35,8 +37,8 @@ class WebViewScriptEngine(
     private val main = Handler(Looper.getMainLooper())
     private val functions = HashMap<String, (List<Any?>) -> Any?>()
 
-    @Volatile
-    private var webView: WebView? = null
+    /** 引擎窗口：常驻隐藏窗口，由 [WebWindows] 按名字复用 */
+    private val window: WebWindow = WebWindows.acquire(WebWindows.ENGINE_SPEC)
 
     private val ready = CountDownLatch(1)
 
@@ -46,21 +48,10 @@ class WebViewScriptEngine(
 
     init {
         onMain {
-            val view = WebView(context.applicationContext)
-            view.settings.javaScriptEnabled = true
-            view.settings.domStorageEnabled = true
-            // 引擎里的页面也要桌面 Chrome UA：站点据此返回桌面版，配置选择器才对得上
-            view.settings.userAgentString = com.ghs.mobile.core.engine.net.UserAgents.UA
             @Suppress("DEPRECATION")
-            view.addJavascriptInterface(HostApi(), BRIDGE)
-            // 必须等页面加载完成：early evaluateJavascript 落在临时上下文里，页面一加载就被丢弃
-            view.webViewClient = object : android.webkit.WebViewClient() {
-                override fun onPageFinished(view: WebView, url: String) {
-                    ready.countDown()
-                }
-            }
-            view.loadDataWithBaseURL(BASE_URL, "<html><body></body></html>", "text/html", "utf-8", null)
-            webView = view
+            window.view.addJavascriptInterface(HostApi(), BRIDGE)
+            window.setPageFinishedListener { _, _ -> ready.countDown() }
+            window.view.loadDataWithBaseURL(BASE_URL, "<html><body></body></html>", "text/html", "utf-8", null)
             applyProxyOverride()
         }
     }
@@ -84,7 +75,7 @@ class WebViewScriptEngine(
         var raw: String? = null
 
         onMain {
-            webView?.evaluateJavascript("(function(){ return ($script); })()") { value ->
+            window.view.evaluateJavascript("(function(){ return ($script); })()") { value ->
                 raw = value
                 latch.countDown()
             }
@@ -107,7 +98,7 @@ class WebViewScriptEngine(
             is String -> quote(value)
             else -> quote(value.toString())
         }
-        onMain { webView?.evaluateJavascript("window[${quote(name)}] = $literal; 0", null) }
+        onMain { window.view.evaluateJavascript("window[${quote(name)}] = $literal; 0", null) }
     }
 
     override fun setFunction(name: String, fn: (args: List<Any?>) -> Any?) {
@@ -137,7 +128,7 @@ class WebViewScriptEngine(
               try { return JSON.parse(raw); } catch (e) { return raw; }
             }; 0
         """.trimIndent()
-        onMain { webView?.evaluateJavascript(shim, null) }
+        onMain { window.view.evaluateJavascript(shim, null) }
         // 同步屏障：eval 会先等页面就绪，再按顺序执行，确保 shim 真正进了 JS 上下文。
         // 否则紧随其后的 prelude/配置求值可能跑在 shim 之前，得到 "xxx is not defined"。
         eval("1", "sync:$name")
@@ -145,11 +136,8 @@ class WebViewScriptEngine(
 
     override fun close() {
         onMain {
-            webView?.let {
-                it.removeJavascriptInterface(BRIDGE)
-                it.destroy()
-            }
-            webView = null
+            runCatching { window.view.removeJavascriptInterface(BRIDGE) }
+            window.destroy()
         }
     }
 
@@ -207,7 +195,7 @@ class WebViewScriptEngine(
             })(); 0
         """.trimIndent()
 
-        onMain { webView?.evaluateJavascript(script, null) }
+        onMain { window.view.evaluateJavascript(script, null) }
 
         if (!latch.await(timeoutMs, TimeUnit.MILLISECONDS)) {
             throw IllegalStateException("脚本执行超时（${timeoutMs}ms，$name）")

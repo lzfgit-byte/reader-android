@@ -20,6 +20,8 @@ import android.widget.Button
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.ghs.mobile.GhsApp
+import com.ghs.mobile.core.script.window.WebWindow
+import com.ghs.mobile.core.script.window.WebWindows
 
 /**
  * 人机校验窗口（F29）。
@@ -32,7 +34,7 @@ import com.ghs.mobile.GhsApp
  */
 class ChallengeActivity : Activity() {
 
-    private var webView: WebView? = null
+    private var window: WebWindow? = null
 
     /** 主框架 403/429 次数：连续两次就放弃，避免无意义等待 */
     private var httpErrorCount = 0
@@ -68,56 +70,15 @@ class ChallengeActivity : Activity() {
         }
         root.addView(hint, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
-        val view = WebView(this)
-        webView = view
-        view.settings.javaScriptEnabled = true
-        view.settings.domStorageEnabled = true
-        view.settings.userAgentString = USER_AGENT
+        val window = WebWindows.acquire(WebWindows.CHALLENGE_SPEC)
+        this.window = window
+        val view = window.view
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
         // 校验窗口与普通请求使用同一套代理规则：
         // 白名单内的地址直连，不在白名单的走代理。窗口不绕过代理。
         runCatching {
             com.ghs.mobile.core.script.WebViewProxy.apply(GhsApp.instance.proxy.rules.value)
-        }
-
-        view.webViewClient = object : WebViewClient() {
-            override fun onPageFinished(view: WebView, finishedUrl: String) {
-                android.util.Log.i("GHS", "challenge page finished: $finishedUrl")
-                scheduleDetection(POLL_INTERVAL_MS)
-            }
-
-            override fun onReceivedError(
-                view: WebView,
-                request: WebResourceRequest,
-                error: WebResourceError,
-            ) {
-                if (!request.isForMainFrame) return
-                val message = "网络错误：${error.description}（${error.errorCode}）"
-                android.util.Log.w("GHS", "challenge error $message ${request.url}")
-                scheduleDetection(POLL_INTERVAL_MS)
-            }
-
-            override fun onReceivedHttpError(
-                view: WebView,
-                request: WebResourceRequest,
-                errorResponse: WebResourceResponse,
-            ) {
-                if (!request.isForMainFrame) return
-                val code = errorResponse.statusCode
-                android.util.Log.w("GHS", "challenge http $code ${request.url}")
-                // 主框架连续 403/429：这条链路根本出不了页面（多半是代理出口被封），
-                // 让用户点「我已完成」也没意义，直接结束，避免卡在无意义的循环里。
-                if (code == 403 || code == 429) {
-                    httpErrorCount += 1
-                    if (httpErrorCount >= 2) {
-                        android.util.Log.w("GHS", "challenge 连续 $httpErrorCount 次 $code，放弃本次校验")
-                        finish()
-                        return
-                    }
-                }
-                scheduleDetection(POLL_INTERVAL_MS)
-            }
         }
         // 进度条：加载中显示，加载完自动隐藏
         val progress = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {
@@ -134,14 +95,35 @@ class ChallengeActivity : Activity() {
             }
             setPadding(3, 3, 3, 3)
         }
-        frame.addView(view, android.widget.FrameLayout.LayoutParams(MATCH_PARENT, MATCH_PARENT))
+        window.attachTo(frame)
         root.addView(frame, LinearLayout.LayoutParams(MATCH_PARENT, 0, 1f))
 
-        view.webChromeClient = object : android.webkit.WebChromeClient() {
-            override fun onProgressChanged(view: WebView?, newProgress: Int) {
-                progress.progress = newProgress
-                progress.visibility = if (newProgress >= 100) android.view.View.GONE else android.view.View.VISIBLE
+        // 兜底检测：挑战页常常不触发 onPageFinished，所以既听回调也靠定时轮询
+        window.setPageFinishedListener { _, finishedUrl ->
+            android.util.Log.i("GHS", "challenge page finished: $finishedUrl")
+            scheduleDetection(POLL_INTERVAL_MS)
+        }
+        window.setErrorListener { description, url ->
+            android.util.Log.w("GHS", "challenge error $description $url")
+            scheduleDetection(POLL_INTERVAL_MS)
+        }
+        window.setHttpErrorListener { code, url ->
+            android.util.Log.w("GHS", "challenge http $code $url")
+            // 主框架连续 403/429：这条链路根本出不了页面（多半是代理出口被封），
+            // 让用户点「我已完成」也没意义，直接结束，避免卡在无意义的循环里。
+            if (code == 403 || code == 429) {
+                httpErrorCount += 1
+                if (httpErrorCount >= 2) {
+                    android.util.Log.w("GHS", "challenge 连续 $httpErrorCount 次 $code，放弃本次校验")
+                    finish()
+                    return@setHttpErrorListener
+                }
             }
+            scheduleDetection(POLL_INTERVAL_MS)
+        }
+        window.setProgressListener { newProgress ->
+            progress.progress = newProgress
+            progress.visibility = if (newProgress >= 100) android.view.View.GONE else android.view.View.VISIBLE
         }
 
         val actions = LinearLayout(this).apply {
@@ -176,8 +158,9 @@ class ChallengeActivity : Activity() {
     override fun onDestroy() {
         pollToken += 1
         handler.removeCallbacksAndMessages(null)
-        webView?.destroy()
-        webView = null
+        // 校验窗每次用完即销毁：下次校验是一个干净的页面
+        window?.destroy()
+        window = null
         if (!finished) ChallengeGate.resolve(host, false)
         super.onDestroy()
     }
@@ -187,7 +170,7 @@ class ChallengeActivity : Activity() {
         val token = ++pollToken
         handler.postDelayed({
             if (token != pollToken || finished) return@postDelayed
-            val view = webView ?: return@postDelayed
+            val view = window?.view ?: return@postDelayed
             view.evaluateJavascript(DETECT_JS) { raw ->
                 if (finished || token != pollToken) return@evaluateJavascript
                 val text = raw?.trim()?.removeSurrounding("\"")?.replace("\\\"", "\"")

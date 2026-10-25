@@ -37,7 +37,7 @@ class AsyncBridgeInstrumentedTest {
                 body = """{"ok":true}""",
             )
 
-        override fun executePage(url: String, code: String): String = "page-result"
+        override fun executePage(url: String, code: String, show: Boolean): String = "page-result"
     }
 
     private val config = """

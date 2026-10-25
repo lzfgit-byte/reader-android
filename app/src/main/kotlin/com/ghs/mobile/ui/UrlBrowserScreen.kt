@@ -1,6 +1,6 @@
 package com.ghs.mobile.ui
 
-import android.annotation.SuppressLint
+import android.widget.FrameLayout
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,13 +30,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
-import android.webkit.WebView
-import android.webkit.WebViewClient
 import com.ghs.mobile.core.engine.net.UserAgents
 import com.ghs.mobile.core.engine.proxy.ProxyRules
 import com.ghs.mobile.core.script.WebViewProxy
+import com.ghs.mobile.core.script.window.WebWindow
+import com.ghs.mobile.core.script.window.WebWindows
 import com.ghs.mobile.settings.ProxyStore
 
 /**
@@ -55,7 +56,9 @@ fun UrlBrowserScreen(
     var url by remember { mutableStateOf("") }
     var useProxy by remember { mutableStateOf(true) }
     var loadedUrl by remember { mutableStateOf<String?>(null) }
-    var webViewRef by remember { mutableStateOf<WebView?>(null) }
+    // 浏览页自己的窗口：离开页面即销毁，不再每次进来留一个 WebView 在进程里
+    val window = remember { WebWindows.acquire(WebWindows.BROWSER_SPEC) }
+    val context = LocalContext.current
 
     // 规则随开关切换；离开本页恢复全局规则
     LaunchedEffect(useProxy, proxyState.activeId, globalRules.enabled) {
@@ -73,7 +76,10 @@ fun UrlBrowserScreen(
         WebViewProxy.apply(rules)
     }
     DisposableEffect(Unit) {
-        onDispose { WebViewProxy.apply(globalRules) }
+        onDispose {
+            WebViewProxy.apply(globalRules)
+            window.destroy()
+        }
     }
 
     Scaffold(
@@ -107,7 +113,7 @@ fun UrlBrowserScreen(
                             val target = normalizeUrl(url)
                             if (target == null) {
                                 Toast.makeText(
-                                    webViewRef?.context,
+                                    context,
                                     "网址不合法",
                                     Toast.LENGTH_SHORT,
                                 ).show()
@@ -132,7 +138,7 @@ fun UrlBrowserScreen(
                 }
 
                 loadedUrl?.let { target ->
-                    Browser(target, onCreated = { webViewRef = it })
+                    Browser(window, target)
                 } ?: Text(
                     "输入网址后点「打开」；切换开关只影响本页请求。",
                     style = MaterialTheme.typography.labelSmall,
@@ -144,26 +150,21 @@ fun UrlBrowserScreen(
     }
 }
 
-@SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun Browser(target: String, onCreated: (WebView) -> Unit) {
+private fun Browser(window: WebWindow, target: String) {
+    val headers = remember { mapOf("Accept-Language" to UserAgents.ACCEPT_LANGUAGE) }
     AndroidView(
         modifier = Modifier.fillMaxSize(),
         factory = { ctx ->
-            WebView(ctx).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.userAgentString = UserAgents.UA
-                webViewClient = WebViewClient()
-                onCreated(this)
-                loadUrl(target, mapOf("Accept-Language" to UserAgents.ACCEPT_LANGUAGE))
+            FrameLayout(ctx).also { container ->
+                window.attachTo(container)
+                window.load(target, headers)
             }
         },
-        update = { view ->
-            if (view.url != target) {
-                view.loadUrl(target, mapOf("Accept-Language" to UserAgents.ACCEPT_LANGUAGE))
-            }
+        update = { _ ->
+            if (window.url != target) window.load(target, headers)
         },
+        onRelease = { window.detachFromParent() },
     )
 }
 

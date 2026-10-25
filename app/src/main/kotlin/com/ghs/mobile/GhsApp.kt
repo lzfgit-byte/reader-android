@@ -66,6 +66,8 @@ class GhsApp : Application(), ImageLoaderFactory {
         .build()
 
     override fun onCreate() {
+        // WebView 窗口注册表：所有 WebView 都从这里取，生命周期统一收口
+        com.ghs.mobile.core.script.window.WebWindows.initialize(this)
         // 取页 WebView 的显示入口：core 模块不能依赖 Activity，这里注入
         com.ghs.mobile.core.script.WebViewMirrorLauncher.open = { context, url ->
             com.ghs.mobile.ui.WebViewMirrorActivity.start(context, url)
