@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -203,6 +204,8 @@ fun DemoApp(
     // 滚动状态只留在页面内部就再也回不来了（返回时列表跳回顶部）
     val favoritesGridState = rememberLazyGridState()
     val historyGridState = rememberLazyGridState()
+    // 首页列表同理：看视频/详情时列表被销毁，返回必须回到原来的位置
+    val homeGridState = rememberLazyGridState()
     // 当前配置：来自 files/configs（浏览器里编辑的那份）
     var configKey by remember { mutableStateOf<String?>(null) }
     var configs by remember { mutableStateOf<kotlin.collections.List<ConfigStore.StoredConfig>>(emptyList()) }
@@ -244,8 +247,9 @@ fun DemoApp(
     // 打开条目的整体等待态：解析 + 目录 + 图片全流程都显示 loading
     var opening by remember { mutableStateOf(false) }
 
-    val canGoBack = screen is Screen.ComicReader || screen is Screen.SinglePage ||
-        screen is Screen.VideoPlayer || screen is Screen.Detail ||
+    // 只要当前不是「列表页」就说明有上一级可回。这里不能只列具体 Screen 类型：
+    // 新增的界面（如分段/线路选集的详情态）一旦漏掉，按返回就会被系统当成退出应用
+    val canGoBack = screen !is Screen.List ||
         tab != DemoTab.HOME || drawerOpen || opening
     androidx.activity.compose.BackHandler(enabled = canGoBack) {
         when {
@@ -283,6 +287,11 @@ fun DemoApp(
                 tab = returnTab
             }
             tab != DemoTab.HOME -> tab = DemoTab.HOME
+            // 兜底：任何未在上面显式处理的非列表界面都退回列表，绝不把返回键放给系统
+            screen !is Screen.List -> {
+                screen = returnScreen ?: lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                tab = returnTab
+            }
         }
     }
     // 网页端改过配置后由服务端通知：在列表页立即重载，阅读中则等回到列表
@@ -1384,6 +1393,7 @@ fun DemoApp(
                         progress = progressByUrl,
                         collected = collected,
                         layout = layoutMode,
+                        gridState = homeGridState,
                         loadingMore = loadingMore,
                         noMore = noMore,
                         onOpen = { item ->
@@ -1411,6 +1421,7 @@ fun DemoApp(
                         progress = progressByUrl,
                         collected = collected,
                         layout = layoutMode,
+                        gridState = homeGridState,
                         loadingMore = loadingMore,
                         noMore = noMore,
                         onOpen = { item ->
@@ -1829,9 +1840,9 @@ private fun ListScreen(
     onOpen: (Item) -> Unit,
     onToggleCollect: (Item) -> Unit,
     onLoadMore: () -> Unit,
+    gridState: LazyGridState = rememberLazyGridState(),
 ) {
     val columns = if (layout == ItemCardLayout.LIST) 1 else 2
-    val gridState = rememberLazyGridState()
 
     // 滚到接近底部就预取下一页（留 4 个的余量，避免到底才转圈）
     LaunchedEffect(gridState, page.items.size, noMore) {
