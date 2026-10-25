@@ -13,6 +13,8 @@
 
 ### Docs
 
+- **人机校验窗口改用设备真实标识（F29）**：校验窗口不再套桌面 UA（原先 `navigator.userAgent` 声称 Windows 而 `userAgentData` 仍是 Android，Turnstile 判为伪造、永远不过），也不再复用取页窗口与桌面 Client Hints；取页侧仍用桌面 UA，凭证靠共享 Cookie 传递。
+
 - **新增 §8「验证与取证纪律」**（`AGENTS.md`）：调试与验证是代理自己的工作，**用户只做最终结果校验**。日志、截图、接口返回一律自行获取（`adb logcat` / `adb shell screencap` / 内置 Web 服务调试接口 / 应用内日志云），不得要求用户粘贴日志或"帮忙看一下 logcat"；设备不可达时先自救再说明卡点；"已修复/已验证"的结论必须附自取证据，没证据只能写"待验证"；自己没验证到的部分必须明说。同时补入 DoD 第 6 条。
 
 ### Fixed
