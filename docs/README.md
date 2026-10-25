@@ -1,6 +1,6 @@
 > **状态**：approved
-> **版本**：v1.13
-> **最后更新**：2026-10-19
+> **版本**：v1.16
+> **最后更新**：2026-10-25
 > **取代/被取代**：取代同文件 v1.12
 
 # 文档总索引
@@ -49,6 +49,16 @@ docs/
 └── 99-archive/                    # 按需创建：已废弃文档
 ```
 
+工具资产（不在 `docs/` 内，规则见 [AGENTS.md](../AGENTS.md) §1 补充规则 6）：
+
+```
+.dsh/skills/                       # 项目级代理技能
+└── ghs-site-to-config/            # 站点 → 配置
+    ├── SKILL.md                   # ★ 操作流程（侦察 / 选择器 / 详情类型 / 验证 / 交付）
+    ├── references/pitfalls.md     # 实战踩坑参考
+    └── templates/                 # inline 与 manifest 两套骨架（只读）
+```
+
 ★ 标记 = 单一事实来源（SSOT），其余文档遇到相关内容只能链接，不得复制。
 
 ## 索引
@@ -83,6 +93,7 @@ docs/
 | [04-engineering/build.md](04-engineering/build.md) | 本地构建与验证：便携工具链（JDK/Gradle）、环境变量、踩坑、当前验证基线 | draft | 2026-10-19 |
 | [04-engineering/spike-script-runtime.md](04-engineering/spike-script-runtime.md) | Spike 报告：JVM 侧脚本运行时（5 份真实配置可求值、句柄式 `$` 桥接、未验证项） | draft | 2026-10-19 |
 | [04-engineering/postmortem-2026-10-25-challenge-loop.md](04-engineering/postmortem-2026-10-25-challenge-loop.md) | 复盘：人机校验死循环（窗口未加载 / 重载作废验证 / 挑战页被当正文），含取证、修复清单与未解决项 | draft | 2026-10-25 |
+| [../.dsh/skills/ghs-site-to-config/SKILL.md](../.dsh/skills/ghs-site-to-config/SKILL.md) | 代理技能：把一个站点做成动态配置的流程（侦察取证 → 列表/分页/排序选择器 → 详情类型 → 设备验证 → 交付清单），附 15 条实战坑与两套模板 | 工具资产 | 2026-10-25 |
 
 ## 状态图例
 
@@ -93,6 +104,7 @@ docs/
 | `approved` | 已定稿，作为实施依据 | 不允许改内容；变更走新文档/新 ADR |
 | `superseded` | 已被新文档取代 | 冻结，仅留指针 |
 | `archived` | 已废弃 | 冻结 |
+| `工具资产` | 非文档（代理技能等），仅登记不适用本制度 | 见 [AGENTS.md](../AGENTS.md) §1 补充规则 6 |
 
 ## 新增文档的三步
 
@@ -134,3 +146,4 @@ docs/
 | v1.13 | 2026-10-20 | 新增 ADR-0016（异步宿主改 WebView）；索引同步 |
 | v1.14 | 2026-10-25 | 新增 ADR-0017（WebView 统一为受管窗口）；索引同步 |
 | v1.15 | 2026-10-25 | 新增 `04-engineering/postmortem-2026-10-25-challenge-loop.md`（人机校验死循环复盘）；索引同步 |
+| v1.16 | 2026-10-25 | 新增工具资产 `.dsh/skills/ghs-site-to-config/`（站点 → 配置技能）并登记索引；文档头版本号补齐到实际值（原停留在 v1.13） |

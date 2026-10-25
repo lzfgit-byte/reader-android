@@ -42,6 +42,7 @@
 | `docs/04-engineering/` | 编码规范、测试策略、发布流程 | 需求与架构 |
 | `docs/99-archive/` | 已废弃/被取代的文档 | 仍在生效的文档 |
 | 代码目录 | `app/` `core/*` `feature/*` `web/console/` | 文档、临时脚本 |
+| `.dsh/skills/` | 项目级代理技能：`SKILL.md` + `templates/` + `references/` | 产品文档、抓取产物、密钥 |
 
 补充规则：
 
@@ -50,6 +51,10 @@
 3. 不允许出现"孤儿文档"：每份文档都必须被 `docs/README.md` 索引到。
 4. 不允许出现"孤儿目录"：新建目录时必须同时在该目录放 `README.md` 或用它装文件并登记索引。
 5. 临时产物（截图、日志、试验脚本）放 `tmp/`（已在 `.gitignore` 中忽略），不得进 `docs/`。
+6. **代理技能目录** `.dsh/skills/<name>/` 是工具资产，不属文档分类：只放 `SKILL.md`、`templates/`、`references/`；
+   `SKILL.md` 用工具要求的 frontmatter 头，**不套**本文档纪律里的文档头与「变更记录」格式；
+   技能内容变更记 `CHANGELOG.md`，并在 `docs/README.md` 登记索引；`templates/` 与 `references/` 是只读资源。
+   技能只承载**操作流程**，配置格式仍以 `docs/03-api/config-spec.md` 为 SSOT。
 
 ---
 
@@ -195,7 +200,7 @@
 
 ## 7. 禁止事项
 
-- 禁止在 `docs/` 之外新增 Markdown 文档
+- 禁止在 `docs/` 之外新增 Markdown 文档（唯一例外：`.dsh/skills/` 下的 `SKILL.md` 与 `references/*.md`，见 §1 补充规则 6）
 - 禁止在文档中引用其他项目的名称、路径、包名或实现细节（见 §2.5）
 - 禁止复制粘贴形成第二份事实来源
 - 禁止在未更新 `design.md` 的情况下提交功能变更

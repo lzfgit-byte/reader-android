@@ -1,0 +1,26 @@
+{
+  "key": "example-site",
+  "name": "示例站点",
+  "version": "1.0.0",
+  "homeUrl": "https://example.com/list",
+  "favicon": "",
+  "searchUrl": "",
+  "description": "",
+  "requiresApi": 1,
+  "render": {
+    "imgWidth": "180px",
+    "imgHeight": "240px",
+    "cardStyle": "cover-title",
+    "readerMode": "auto",
+    "textMode": "scroll",
+    "setTags": ["标签", "收藏", "历史"]
+  },
+  "behavior": {
+    "requestTimeoutMs": 20000,
+    "concurrency": 2,
+    "retry": 1,
+    "cacheHtml": true,
+    "useWebView": false,
+    "headers": {}
+  }
+}

@@ -13,6 +13,8 @@
 
 ### Docs
 
+- **新增项目级技能 `ghs-site-to-config`**（`.dsh/skills/ghs-site-to-config/`）：把「一个站点」做成动态配置的完整流程——先侦察取证（含需要代理时的出口核对），再写列表 / 分页 / 排序 / 详情选择器，最后在设备上验证条目与媒体，交付时逐项标明已验证与未验证。附 `references/pitfalls.md`（15 条实战坑：Cloudflare 挑战、懒加载封面、AJAX 假分页、`127.0.0.1` 代理陷阱、调试接口只吃单行等）与 inline / manifest 两套模板。配套把 `AGENTS.md` §1 增加 `.dsh/skills/` 目录行与补充规则 6、§7 放开唯一例外（`SKILL.md` 与 `references/*.md`），`docs/README.md` 与 `docs/00-process/document-policy.md` 登记该目录定位——技能只承载**操作流程**，配置格式仍以 `docs/03-api/config-spec.md` 为 SSOT。
+
 - **人机校验复盘按新证据重写（F29）**：13:55–15:57 的连续抓包把原来的「窗口白屏」结论改写成 4 个可修缺陷——① 不带 CF 标记的拦截页被判成「校验通过」（开窗后 2.5 s 自动放行，重放请求仍被挡）；② `403` 两连击把正在进行的校验窗掐死（挑战页自身就是 403，首次加载即计 1，第二次 403 就关窗）；③ 闸门 5 分钟到点判死后没人接收迟到的成功（两次都是超时 300.0 s、页面在 1.4–2.0 s 后才完成）；④ 兜底 WebView 在 `documentElement` 为 null 时抛错。详见 `docs/04-engineering/postmortem-2026-10-25-challenge-loop.md` §5。
 
 - **新增复盘文档**（`docs/04-engineering/postmortem-2026-10-25-challenge-loop.md`）：记录人机校验死循环的现象、三条根因（窗口 `loadUrl` 被注释吞掉 / 验证期间反复重载 / 挑战页被当正文缓存）、取证日志与截图口径、已修复清单，以及仍未解决的部分（Challenge 页在应用内仍白屏）与下一步验证假设。
