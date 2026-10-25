@@ -443,6 +443,11 @@ fun ComicReaderScreen(
     }
 
     if (showChapters) {
+        // 打开目录就停在当前话：几十上百话的作品从头开始翻，等于每次都要自己找位置。
+        // 状态随 sheet 一起创建/销毁，所以每次打开都会重新按当前话定位。
+        val chapterListState = rememberLazyListState(
+            initialFirstVisibleItemIndex = chapterIndex.coerceIn(0, (chapters.size - 1).coerceAtLeast(0)),
+        )
         ModalBottomSheet(onDismissRequest = { showChapters = false }, sheetState = sheetState) {
             // 预加载下一话开关：放在目录顶部
             Row(
@@ -460,7 +465,7 @@ fun ComicReaderScreen(
                 Switch(checked = preloadNext, onCheckedChange = onPreloadNextChange)
             }
             HorizontalDivider()
-            LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
+            LazyColumn(state = chapterListState, contentPadding = PaddingValues(bottom = 24.dp)) {
                 itemsIndexed(chapters) { index, chapter ->
                     val isCurrent = index == chapterIndex
                     Row(
