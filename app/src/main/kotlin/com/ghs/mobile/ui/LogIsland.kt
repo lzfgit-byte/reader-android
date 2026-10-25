@@ -6,8 +6,11 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.CircleShape
@@ -66,9 +69,15 @@ fun LogIsland(
         label = "islandPulse",
     )
 
+    // 贴在内容区顶部（状态栏正下方）：Popup 的坐标原点已经在状态栏之下，
+    // 再叠加一次状态栏高度会让它落到标题栏上，看着"太靠下"
+    val topOffset = with(androidx.compose.ui.platform.LocalDensity.current) {
+        6.dp.roundToPx()
+    }
+
     Popup(
         alignment = Alignment.TopCenter,
-        offset = IntOffset(0, 120),
+        offset = IntOffset(0, topOffset),
         properties = PopupProperties(
             focusable = false,
             dismissOnBackPress = false,
