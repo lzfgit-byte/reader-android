@@ -876,11 +876,16 @@ fun DemoApp(
         }
 
         is Screen.SinglePage -> {
+            // 单图里读到的位置：返回漫画阅读时要跳到这里，否则外面还停在进入时的第一张
+            var singleIndex by remember(reader.startIndex) {
+                androidx.compose.runtime.mutableIntStateOf(reader.startIndex)
+            }
             SinglePageReaderScreen(
                 title = reader.item.title,
                 pages = reader.pages,
                 startIndex = reader.startIndex,
                 onProgress = { index ->
+                    singleIndex = index
                     scope.launch {
                         repository.saveProgress(
                             ReadingProgress(
@@ -902,7 +907,8 @@ fun DemoApp(
                         screen = Screen.ComicReader(
                             item = reader.item,
                             pages = reader.pages,
-                            startIndex = reader.startIndex,
+                            // 回到单图里最后看到的那一张（阅读器要跟着滚过去）
+                            startIndex = singleIndex.coerceIn(0, (reader.pages.size - 1).coerceAtLeast(0)),
                             chapters = reader.chapters,
                             chapterIndex = reader.chapterIndex,
                             preloadNext = reader.preloadNext,

@@ -2,8 +2,11 @@ package com.ghs.mobile.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
+import androidx.compose.foundation.gestures.calculatePan
+import androidx.compose.foundation.gestures.calculateZoom
 import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -93,19 +96,37 @@ fun SinglePageReaderScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .pointerInput(index) {
-                        detectTransformGestures { _, delta, zoom, _ ->
-                            val next = (scale * zoom).coerceIn(1f, 5f)
-                            scale = next
-                            pan = if (next > 1.001f) {
-                                // 放大后跟着手指平移，并按放大倍数限制不要拖出画面
-                                val limitX = size.width * (next - 1f) / 2f
-                                val limitY = size.height * (next - 1f) / 2f
-                                Offset(
-                                    (pan.x + delta.x).coerceIn(-limitX, limitX),
-                                    (pan.y + delta.y).coerceIn(-limitY, limitY),
-                                )
-                            } else {
-                                Offset.Zero
+                        // 只接管「双指缩放」与「已放大后的单指平移」，
+                        // 1x 下的单指横向拖动必须放行给 Pager —— 否则右滑翻页会失效
+                        awaitPointerEventScope {
+                            while (true) {
+                                awaitFirstDown(requireUnconsumed = false)
+                                var multiTouch = false
+                                var event = awaitPointerEvent()
+                                while (event.changes.any { it.pressed }) {
+                                    if (event.changes.count { change -> change.pressed } >= 2) {
+                                        multiTouch = true
+                                    }
+                                    if (multiTouch || scale > 1.001f) {
+                                        val zoomChange = event.calculateZoom()
+                                        val panChange = event.calculatePan()
+                                        val next = (scale * zoomChange).coerceIn(1f, 5f)
+                                        scale = next
+                                        pan = if (next > 1.001f) {
+                                            // 放大后跟着手指平移，并按放大倍数限制不要拖出画面
+                                            val limitX = size.width * (next - 1f) / 2f
+                                            val limitY = size.height * (next - 1f) / 2f
+                                            Offset(
+                                                (pan.x + panChange.x).coerceIn(-limitX, limitX),
+                                                (pan.y + panChange.y).coerceIn(-limitY, limitY),
+                                            )
+                                        } else {
+                                            Offset.Zero
+                                        }
+                                        event.changes.forEach { change -> change.consume() }
+                                    }
+                                    event = awaitPointerEvent()
+                                }
                             }
                         }
                     }
