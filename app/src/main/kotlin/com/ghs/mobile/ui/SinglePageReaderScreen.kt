@@ -2,6 +2,11 @@ package com.ghs.mobile.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -75,11 +80,55 @@ fun SinglePageReaderScreen(
         HorizontalPager(
             state = pagerState,
             modifier = Modifier.fillMaxSize(),
+            // 放大状态下拖动手势用于平移图片，不能同时翻页
+            userScrollEnabled = !zoomed,
         ) { index ->
             val full = chosen[index] == true && !pages[index].fullUrl.isNullOrBlank()
             val url = if (full) pages[index].fullUrl.orEmpty() else pages[index].url
+            // 每张图各自记住缩放与位移：翻页回来还是刚才放大的地方
+            var scale by remember(index) { mutableStateOf(1f) }
+            var pan by remember(index) { mutableStateOf(Offset.Zero) }
+            if (index == current) androidx.compose.runtime.SideEffect { zoomed = scale > 1.001f }
             Box(
-                modifier = Modifier.fillMaxSize().clickable { chromeVisible = !chromeVisible },
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(index) {
+                        detectTransformGestures { _, delta, zoom, _ ->
+                            val next = (scale * zoom).coerceIn(1f, 5f)
+                            scale = next
+                            pan = if (next > 1.001f) {
+                                // 放大后跟着手指平移，并按放大倍数限制不要拖出画面
+                                val limitX = size.width * (next - 1f) / 2f
+                                val limitY = size.height * (next - 1f) / 2f
+                                Offset(
+                                    (pan.x + delta.x).coerceIn(-limitX, limitX),
+                                    (pan.y + delta.y).coerceIn(-limitY, limitY),
+                                )
+                            } else {
+                                Offset.Zero
+                            }
+                        }
+                    }
+                    .pointerInput(index) {
+                        // 双击：在 1x 与 2.5x 之间切换（双击点作为放大中心）
+                        detectTapGestures(
+                            onTap = { chromeVisible = !chromeVisible },
+                            onDoubleTap = { tap ->
+                                if (scale > 1.001f) {
+                                    scale = 1f
+                                    pan = Offset.Zero
+                                } else {
+                                    scale = 2.5f
+                                    val limitX = size.width * 0.75f
+                                    val limitY = size.height * 0.75f
+                                    pan = Offset(
+                                        ((size.width / 2f - tap.x) * 1.5f).coerceIn(-limitX, limitX),
+                                        ((size.height / 2f - tap.y) * 1.5f).coerceIn(-limitY, limitY),
+                                    )
+                                }
+                            },
+                        )
+                    },
                 contentAlignment = Alignment.Center,
             ) {
                 var failed by remember(url) { mutableStateOf(false) }
@@ -90,7 +139,14 @@ fun SinglePageReaderScreen(
                         .build(),
                     contentDescription = "第 ${index + 1} 页",
                     contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .graphicsLayer {
+                            scaleX = scale
+                            scaleY = scale
+                            translationX = pan.x
+                            translationY = pan.y
+                        },
                     onState = { state ->
                         failed = state is AsyncImagePainter.State.Error
                     },
