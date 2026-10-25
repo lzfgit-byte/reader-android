@@ -206,6 +206,16 @@ fun DemoApp(
     val historyGridState = rememberLazyGridState()
     // 首页列表同理：看视频/详情时列表被销毁，返回必须回到原来的位置
     val homeGridState = rememberLazyGridState()
+    // 列表被「换掉」而不是「追加」时回到顶部：标签跳转、页码跳转、刷新、筛选、换站点
+    // 都算换页；从详情/播放器返回不算换页，否则"返回保持位置"就失效了。
+    // pending 是"待执行的一次回顶"：列表应用一次后清零——否则列表每次重新进入组合
+    // （返回上一级、切 tab 回来）都会再回一次顶。
+    var listScrollEpoch by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    var listScrollPending by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    fun resetListScroll() {
+        listScrollEpoch += 1
+        listScrollPending = listScrollEpoch
+    }
     // 当前配置：来自 files/configs（浏览器里编辑的那份）
     var configKey by remember { mutableStateOf<String?>(null) }
     var configs by remember { mutableStateOf<kotlin.collections.List<ConfigStore.StoredConfig>>(emptyList()) }
@@ -391,6 +401,8 @@ fun DemoApp(
                         searchError = null
                         searchOpen = false
                         screen = Screen.SearchResults(trimmed, matched.second)
+                        // 新的一次搜索：结果从顶部开始
+                        resetListScroll()
                     }
                 }
                 .onFailure { searchError = it.message ?: it.toString() }
@@ -425,6 +437,8 @@ fun DemoApp(
                 activeTagTitle = title
                 lastPage = page
                 screen = Screen.List(page)
+                // 换了一批内容：从顶部开始看
+                resetListScroll()
             }
             refreshing = false
         }
@@ -445,6 +459,8 @@ fun DemoApp(
                 currentListUrl = url
                 lastPage = page
                 screen = Screen.List(page)
+                // 刷新等于重看第一页：回到顶部
+                resetListScroll()
             }
             refreshing = false
         }
@@ -478,6 +494,8 @@ fun DemoApp(
                 currentListUrl = target
                 lastPage = page
                 screen = Screen.List(page)
+                // 筛选后是另一批结果：回到顶部
+                resetListScroll()
             }
             filterLoading = false
             showFilterSheet = false
@@ -589,6 +607,8 @@ fun DemoApp(
                 currentListUrl = created.homeUrl
                 lastPage = it
                 screen = Screen.List(it)
+                // 换站点：新站点从第一页顶部开始
+                resetListScroll()
             }
             .onFailure { screen = Screen.Failed(it.message ?: it.toString()) }
     }
@@ -1413,6 +1433,8 @@ fun DemoApp(
                         collected = collected,
                         layout = layoutMode,
                         gridState = homeGridState,
+                        scrollReset = listScrollPending,
+                        onScrollResetApplied = { listScrollPending = 0 },
                         loadingMore = loadingMore,
                         noMore = noMore,
                         onOpen = { item ->
@@ -1441,6 +1463,8 @@ fun DemoApp(
                         collected = collected,
                         layout = layoutMode,
                         gridState = homeGridState,
+                        scrollReset = listScrollPending,
+                        onScrollResetApplied = { listScrollPending = 0 },
                         loadingMore = loadingMore,
                         noMore = noMore,
                         onOpen = { item ->
@@ -1774,6 +1798,8 @@ fun DemoApp(
                             if (page != null) {
                                 noMore = false
                                 screen = Screen.SearchResults(search.keyword, page)
+                                // 搜索结果翻页：同样回到顶部
+                                resetListScroll()
                             }
                         }
                     }
@@ -1860,8 +1886,27 @@ private fun ListScreen(
     onToggleCollect: (Item) -> Unit,
     onLoadMore: () -> Unit,
     gridState: LazyGridState = rememberLazyGridState(),
+    scrollReset: Int = 0,
+    onScrollResetApplied: () -> Unit = {},
 ) {
     val columns = if (layout == ItemCardLayout.LIST) 1 else 2
+
+    // 列表被换掉（标签 / 页码 / 刷新 / 筛选 / 换站点）后回到顶部。
+    // 只是从详情、播放器返回时不换页，滚动位置保持原样。
+    LaunchedEffect(scrollReset) {
+        if (scrollReset > 0) {
+            runCatching { gridState.scrollToItem(0) }
+                .onSuccess {
+                    android.util.Log.i(
+                        "GHS",
+                        "list scroll reset first=${gridState.firstVisibleItemIndex} epoch=$scrollReset",
+                    )
+                }
+                .onFailure { android.util.Log.w("GHS", "list scroll reset failed: ${it.message}") }
+            // 用掉这次回顶：之后再进入组合（返回上一级、切 tab）不会再回顶
+            onScrollResetApplied()
+        }
+    }
 
     // 滚到接近底部就预取下一页（留 4 个的余量，避免到底才转圈）
     LaunchedEffect(gridState, page.items.size, noMore) {
