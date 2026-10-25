@@ -1,5 +1,5 @@
 > **状态**：approved
-> **版本**：v1.16
+> **版本**：v1.17
 > **最后更新**：2026-10-25
 > **取代/被取代**：取代同文件 v1.12
 
@@ -93,7 +93,7 @@ docs/
 | [04-engineering/build.md](04-engineering/build.md) | 本地构建与验证：便携工具链（JDK/Gradle）、环境变量、踩坑、当前验证基线 | draft | 2026-10-19 |
 | [04-engineering/spike-script-runtime.md](04-engineering/spike-script-runtime.md) | Spike 报告：JVM 侧脚本运行时（5 份真实配置可求值、句柄式 `$` 桥接、未验证项） | draft | 2026-10-19 |
 | [04-engineering/postmortem-2026-10-25-challenge-loop.md](04-engineering/postmortem-2026-10-25-challenge-loop.md) | 复盘：人机校验死循环（窗口未加载 / 重载作废验证 / 挑战页被当正文），含取证、修复清单与未解决项 | draft | 2026-10-25 |
-| [../.dsh/skills/ghs-site-to-config/SKILL.md](../.dsh/skills/ghs-site-to-config/SKILL.md) | 代理技能：把一个站点做成动态配置的流程（侦察取证 → 列表/分页/排序选择器 → 详情类型 → 设备验证 → 交付清单），附 15 条实战坑与两套模板 | 工具资产 | 2026-10-25 |
+| [../.dsh/skills/ghs-site-to-config/SKILL.md](../.dsh/skills/ghs-site-to-config/SKILL.md) | 代理技能：把一个站点做成动态配置的流程（侦察取证 → 列表/分页/排序选择器 → 详情类型 → 设备验证 → 交付清单），附 16 条实战坑与两套模板 | 工具资产 | 2026-10-25 |
 
 ## 状态图例
 
@@ -147,3 +147,4 @@ docs/
 | v1.14 | 2026-10-25 | 新增 ADR-0017（WebView 统一为受管窗口）；索引同步 |
 | v1.15 | 2026-10-25 | 新增 `04-engineering/postmortem-2026-10-25-challenge-loop.md`（人机校验死循环复盘）；索引同步 |
 | v1.16 | 2026-10-25 | 新增工具资产 `.dsh/skills/ghs-site-to-config/`（站点 → 配置技能）并登记索引；文档头版本号补齐到实际值（原停留在 v1.13） |
+| v1.17 | 2026-10-25 | 技能补充第 16 条坑（同一站点搜索页与列表页是两个列表块：id、页码参数、翻页路由各不相同）；索引描述同步 |

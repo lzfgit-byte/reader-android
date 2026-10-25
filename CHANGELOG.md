@@ -13,6 +13,8 @@
 
 ### Docs
 
+- **技能补第 16 条坑：同一站点里搜索页与列表页是两个列表块**（`.dsh/skills/ghs-site-to-config/`）：某站点的搜索结果单独渲染成 `#list_videos_videos_list_search_result_*`，页码参数是 `from_videos+from_albums:N`；分类页/标签页才是 `#list_videos_common_videos_list_*` + `from:N`。分页选择器只写后者时，搜索结果页分页全空（列表有 24 条、但没有下一页）。一并记下三个连带事实：搜索页翻页没有路由（`/search/<kw>/2/` 返回 404，`?page=` 被忽略，只有 `?from_videos=N` 有效）、末页的"下一页"是 `--disabled` 的假链接（值比总页数大 1，顺着用就是 404）、canonical 在该页是解码后的中文（要重新编码，但不能整串 `encodeURI`，否则 `%E5` 变 `%25E5`）。`SKILL.md` §1 侦察清单同步要求「搜索页/筛选页分别抓一次、分别验证」。
+
 - **新增项目级技能 `ghs-site-to-config`**（`.dsh/skills/ghs-site-to-config/`）：把「一个站点」做成动态配置的完整流程——先侦察取证（含需要代理时的出口核对），再写列表 / 分页 / 排序 / 详情选择器，最后在设备上验证条目与媒体，交付时逐项标明已验证与未验证。附 `references/pitfalls.md`（15 条实战坑：Cloudflare 挑战、懒加载封面、AJAX 假分页、`127.0.0.1` 代理陷阱、调试接口只吃单行等）与 inline / manifest 两套模板。配套把 `AGENTS.md` §1 增加 `.dsh/skills/` 目录行与补充规则 6、§7 放开唯一例外（`SKILL.md` 与 `references/*.md`），`docs/README.md` 与 `docs/00-process/document-policy.md` 登记该目录定位——技能只承载**操作流程**，配置格式仍以 `docs/03-api/config-spec.md` 为 SSOT。
 
 - **人机校验复盘按新证据重写（F29）**：13:55–15:57 的连续抓包把原来的「窗口白屏」结论改写成 4 个可修缺陷——① 不带 CF 标记的拦截页被判成「校验通过」（开窗后 2.5 s 自动放行，重放请求仍被挡）；② `403` 两连击把正在进行的校验窗掐死（挑战页自身就是 403，首次加载即计 1，第二次 403 就关窗）；③ 闸门 5 分钟到点判死后没人接收迟到的成功（两次都是超时 300.0 s、页面在 1.4–2.0 s 后才完成）；④ 兜底 WebView 在 `documentElement` 为 null 时抛错。详见 `docs/04-engineering/postmortem-2026-10-25-challenge-loop.md` §5。

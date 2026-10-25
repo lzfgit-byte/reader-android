@@ -36,7 +36,8 @@ whenToUse: 用户给出一个站点地址要求「做成配置 / 加个来源 / 
    - 详情链接在 `href` 还是 `data-href`；
    - 标题在 `h2` / `.title` / `img[alt]`；
    - 封面：`img.src` 常是占位图，真地址多在 `data-src` / `data-original` / `data-webp` / `srcset`；
-   - 分页：`?page=N`、「下一页」、「加载更多」接口；
+   - 分页：`?page=N`、「下一页」、「加载更多」接口；**搜索页/筛选页常常是另一套列表块**（id 与页码参数都不同，
+     见 `references/pitfalls.md` 第 16 条），要分别抓一次、分别验证；
    - 标签云、排序/筛选（`urlReplace`）；
    - 详情页形态：直链视频 / m3u8 / 一组图片 / 目录 + 多话。
 4. **先只写 `getItems` 跑通**：条数与标题对得上，再写详情。一次验证一件事。
