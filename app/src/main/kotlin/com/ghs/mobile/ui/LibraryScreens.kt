@@ -7,6 +7,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -40,6 +41,8 @@ fun FavoritesScreen(
     progress: Map<String, ReadingProgress>,
     collected: Set<String>,
     layout: ItemCardLayout,
+    /** 由外层持有：进播放器时本页会被销毁，滚动位置必须活在上一层 */
+    gridState: LazyGridState,
     onOpen: (Item) -> Unit,
     onToggleCollect: (Item) -> Unit,
 ) {
@@ -50,12 +53,13 @@ fun FavoritesScreen(
     val columns = if (layout == ItemCardLayout.LIST) 1 else 2
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
+        state = gridState,
         contentPadding = PaddingValues(4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        itemsIndexed(items, key = { index, item -> "${index}#${item.jumpUrl}" }) { _, item ->
+        items(items, key = { item -> item.jumpUrl }) { item ->
             ItemCard(
                 item = item,
                 progress = progress[item.jumpUrl],
@@ -76,6 +80,7 @@ fun HistoryScreen(
     collected: Set<String>,
     progress: Map<String, ReadingProgress>,
     layout: ItemCardLayout,
+    gridState: LazyGridState,
     onOpen: (Item) -> Unit,
     onToggleCollect: (Item) -> Unit,
 ) {
@@ -88,12 +93,13 @@ fun HistoryScreen(
 
     LazyVerticalGrid(
         columns = GridCells.Fixed(columns),
+        state = gridState,
         contentPadding = PaddingValues(4.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp),
         verticalArrangement = Arrangement.spacedBy(6.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
-        itemsIndexed(entries, key = { index, entry -> "${index}#${entry.item.jumpUrl}" }) { _, entry ->
+        items(entries, key = { entry -> entry.item.jumpUrl }) { entry ->
             ItemCard(
                 item = entry.item,
                 progress = progress[entry.item.jumpUrl],

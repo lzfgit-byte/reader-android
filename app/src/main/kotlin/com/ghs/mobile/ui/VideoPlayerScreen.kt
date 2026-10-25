@@ -157,7 +157,6 @@ fun VideoPlayerScreen(
     var menuOpen by remember(currentUrl) { mutableStateOf(false) }
     var sheet by remember(currentUrl) { mutableStateOf(PlayerSheet.NONE) }
     var locked by remember(currentUrl) { mutableStateOf(false) }
-    var lockButtonVisible by remember(currentUrl) { mutableStateOf(true) }
     var fullscreen by remember(currentUrl) { mutableStateOf(false) }
     var controlsVisible by remember(currentUrl) { mutableStateOf(true) }
     var resumeMs by remember(currentUrl) { mutableLongStateOf(startPositionMs) }
@@ -192,6 +191,8 @@ fun VideoPlayerScreen(
     var buffering by remember(currentUrl) { mutableStateOf(true) }
     var dragging by remember(currentUrl) { mutableStateOf(false) }
     var dragPosition by remember(currentUrl) { mutableLongStateOf(0L) }
+    // 双击中央的瞬时反馈：true=刚切到播放（闪 ▶）/ false=刚暂停（闪 ⏸）/ null=不显示
+    var centerFlash by remember(currentUrl) { mutableStateOf<Boolean?>(null) }
 
 
     // 硬件返回键：全屏先退全屏，锁屏先解锁，最后才退出播放器
@@ -199,7 +200,9 @@ fun VideoPlayerScreen(
         if (fullscreen) {
             fullscreen = false
         } else if (locked) {
+            // 锁定时唯一的退路：解锁并把控制层亮出来
             locked = false
+            controlsVisible = true
         } else {
             onBack()
         }
@@ -248,9 +251,21 @@ fun VideoPlayerScreen(
                 // mp4 直链在应用内解不了时交给系统播放器，避免只剩一张错误页
                 val path = currentUrl.substringBefore("?").lowercase()
                 if (path.endsWith(".mp4")) openExternally()
-                if (path.endsWith(".mp4")) openExternally()
             }
 
+            // 播放状态必须由播放器回调即时驱动：靠 500ms 轮询镜像会让按钮和图标滞后、连点还会切反
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                playing = isPlaying
+            }
+
+            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                if (!playWhenReady) playing = false
+            }
+
+            override fun onPlaybackStateChanged(playbackState: Int) {
+                buffering = playbackState == Player.STATE_BUFFERING
+                if (playbackState == Player.STATE_ENDED) playing = false
+            }
         }
         player.addListener(listener)
         onDispose {
@@ -335,6 +350,32 @@ fun VideoPlayerScreen(
         }
     }
 
+    // 双击中央的图标只闪 700ms
+    LaunchedEffect(centerFlash) {
+        if (centerFlash != null) {
+            delay(700)
+            centerFlash = null
+        }
+    }
+
+    /** 播放 / 暂停：按播放器的真实意图（playWhenReady）判断，不用 500ms 轮询出来的镜像值 */
+    fun togglePlayPause() {
+        if (player.playbackState == Player.STATE_ENDED) {
+            reachedEnd = false
+            player.seekTo(0)
+            player.play()
+            centerFlash = true
+            return
+        }
+        if (player.playWhenReady) {
+            player.pause()
+            centerFlash = false
+        } else {
+            player.play()
+            centerFlash = true
+        }
+    }
+
     /** 快进/快退：900ms 内同方向连续双击按步长累加 */
     fun smartSeek(direction: Int) {
         val duration = player.duration.takeIf { it > 0 } ?: durationMs
@@ -376,31 +417,26 @@ fun VideoPlayerScreen(
                     var lastSeekAt = 0L
                     var lastSeekDir = 0
                     detectTapGestures(
-                        onTap = {
-                            if (locked) {
-                                lockButtonVisible = !lockButtonVisible
-                            } else {
-                                controlsVisible = !controlsVisible
-                            }
-                        },
+                        // 单击只做一件事：显隐控制层。锁定后同样保留，否则控制层一隐藏就点不到解锁
+                        onTap = { controlsVisible = !controlsVisible },
                         onDoubleTap = { offset ->
-                            if (!locked) {
-                                val width = size.width
-                                val dir = when {
-                                    offset.x < width * EDGE_TAP_THRESHOLD -> -1
-                                    offset.x > width * (1f - EDGE_TAP_THRESHOLD) -> 1
-                                    else -> 0
-                                }
-                                if (dir == 0) {
-                                    if (player.isPlaying) player.pause() else player.play()
-                                    controlsVisible = true
-                                } else {
-                                    val now = System.currentTimeMillis()
-                                    val continued = dir == lastSeekDir && now - lastSeekAt <= SMART_SEEK_WINDOW_MS
-                                    lastSeekDir = dir
-                                    lastSeekAt = now
-                                    smartSeek(dir * if (continued) 2 else 1)
-                                }
+                            // 锁定 = 全禁：除「点锁解锁」外，任何触摸都不改变播放
+                            if (locked) return@detectTapGestures
+                            val width = size.width
+                            val dir = when {
+                                offset.x < width * EDGE_TAP_THRESHOLD -> -1
+                                offset.x > width * (1f - EDGE_TAP_THRESHOLD) -> 1
+                                else -> 0
+                            }
+                            if (dir == 0) {
+                                // 中间 20%：暂停 / 播放，并在屏幕中央闪一下对应图标
+                                togglePlayPause()
+                            } else {
+                                val now = System.currentTimeMillis()
+                                val continued = dir == lastSeekDir && now - lastSeekAt <= SMART_SEEK_WINDOW_MS
+                                lastSeekDir = dir
+                                lastSeekAt = now
+                                smartSeek(dir * if (continued) 2 else 1)
                             }
                         },
                         // 长按 2x 倍速：按住生效，松手恢复
@@ -477,29 +513,60 @@ fun VideoPlayerScreen(
             )
         }
 
-        // 锁按钮：左侧边缘垂直居中
-        // 锁按钮：只随控制层一起出现（控制层隐藏后不该留着一个图标）
-        if (!locked && controlsVisible) {
-            IconButton(
-                onClick = { locked = true; controlsVisible = false },
+        // 锁按钮：控制层的一部分，控制层隐藏时一起隐藏。
+        // 锁定后它是屏幕上唯一可点的控件（全禁），所以锁定态额外给一个「已锁定」提示。
+        if (controlsVisible) {
+            Row(
                 modifier = Modifier
                     .align(Alignment.CenterStart)
-                    .padding(start = 4.dp)
-                    .size(40.dp)
-                    .background(Color(0x66000000), CircleShape),
+                    // 离屏幕左缘 24dp：手势导航的系统返回热区会吞掉贴着边缘的点击
+                    .padding(start = 24.dp),
+                verticalAlignment = Alignment.CenterVertically,
             ) {
-                LockIcon(locked = false, tint = Color.White)
+                IconButton(
+                    onClick = {
+                        locked = !locked
+                        controlsVisible = true
+                    },
+                    modifier = Modifier
+                        .size(40.dp)
+                        .background(Color(0x66000000), CircleShape),
+                ) {
+                    LockIcon(locked = locked, tint = Color.White)
+                }
+                if (locked) {
+                    Text(
+                        "已锁定",
+                        color = Color(0xFFE6E6EA),
+                        style = MaterialTheme.typography.labelSmall,
+                        modifier = Modifier
+                            .padding(start = 6.dp)
+                            .background(Color(0x88000000), RoundedCornerShape(9.dp))
+                            .padding(horizontal = 8.dp, vertical = 3.dp),
+                    )
+                }
             }
-        } else if (lockButtonVisible) {
-            IconButton(
-                onClick = { locked = false },
+        }
+
+        // 双击中央的即时反馈：闪一下 ▶ / ⏸
+        centerFlash?.let { playingNow ->
+            Box(
                 modifier = Modifier
-                    .align(Alignment.CenterStart)
-                    .padding(start = 4.dp)
-                    .size(40.dp)
-                    .background(Color(0x66000000), CircleShape),
+                    .align(Alignment.Center)
+                    .size(68.dp)
+                    .background(Color(0x88000000), CircleShape),
+                contentAlignment = Alignment.Center,
             ) {
-                LockIcon(locked = true, tint = Color.White)
+                if (playingNow) {
+                    Icon(
+                        Icons.Default.PlayArrow,
+                        contentDescription = null,
+                        tint = Color.White,
+                        modifier = Modifier.size(40.dp),
+                    )
+                } else {
+                    PauseIcon(tint = Color.White, boxSize = 32.dp)
+                }
             }
         }
 
@@ -619,7 +686,7 @@ fun VideoPlayerScreen(
                         if (onPrevEpisode != null) {
                             TextButton(onClick = { onPrevEpisode() }) { Text("上一集") }
                         }
-                        IconButton(onClick = { if (playing) player.pause() else player.play() }) {
+                        IconButton(onClick = { togglePlayPause() }) {
                             if (playing) {
                                 PauseIcon(tint = Color.White)
                             } else {

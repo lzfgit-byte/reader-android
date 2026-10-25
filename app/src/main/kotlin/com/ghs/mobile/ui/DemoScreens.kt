@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -198,6 +199,10 @@ fun DemoApp(
     val scope = rememberCoroutineScope()
 
     var tab by remember { mutableStateOf(DemoTab.HOME) }
+    // 收藏 / 历史的滚动位置提到这里：进播放器或阅读器时整屏 return 会把列表整棵销毁，
+    // 滚动状态只留在页面内部就再也回不来了（返回时列表跳回顶部）
+    val favoritesGridState = rememberLazyGridState()
+    val historyGridState = rememberLazyGridState()
     // 当前配置：来自 files/configs（浏览器里编辑的那份）
     var configKey by remember { mutableStateOf<String?>(null) }
     var configs by remember { mutableStateOf<kotlin.collections.List<ConfigStore.StoredConfig>>(emptyList()) }
@@ -206,36 +211,7 @@ fun DemoApp(
     // 左侧菜单（设置 / 引擎自检）
     var drawerOpen by remember { mutableStateOf(false) }
     // 系统返回键：按「阅读器/播放器 → 列表 → 首页 → 抽屉 → 退出」逐级回退
-    val canGoBack = screen is Screen.ComicReader || screen is Screen.SinglePage ||
-        screen is Screen.VideoPlayer || screen is Screen.Detail ||
-        tab != DemoTab.HOME || drawerOpen
-    androidx.activity.compose.BackHandler(enabled = canGoBack) {
-        when {
-            drawerOpen -> drawerOpen = false
-            // 单图阅读：退回漫画阅读（双击进来的位置）
-            screen is Screen.SinglePage -> {
-                val single = screen as Screen.SinglePage
-                screen = if (single.fromComic) {
-                    Screen.ComicReader(
-                        item = single.item,
-                        pages = single.pages,
-                        startIndex = single.startIndex,
-                        chapters = single.chapters,
-                        chapterIndex = single.chapterIndex,
-                        preloadNext = single.preloadNext,
-                    )
-                } else {
-                    lastPage?.let { Screen.List(it) } ?: Screen.Loading
-                }
-            }
-            // 详情 / 播放 / 漫画：回到点进来的那个界面（搜索结果要保留搜索态）
-            screen is Screen.ComicReader || screen is Screen.VideoPlayer || screen is Screen.Detail -> {
-                screen = returnScreen ?: lastPage?.let { Screen.List(it) } ?: Screen.Loading
-                tab = returnTab
-            }
-            tab != DemoTab.HOME -> tab = DemoTab.HOME
-        }
-    }
+    // 具体处理放在 parseTarget / opening 声明之后（解析中按返回要能取消这次解析）
     // 配置日志（LogMsgUtil / console.log）→ 应用内「日志云」
     var logEntries by remember { mutableStateOf<List<String>>(emptyList()) }
     DisposableEffect(Unit) {
@@ -267,6 +243,48 @@ fun DemoApp(
     var parseTarget by remember { mutableStateOf<Item?>(null) }
     // 打开条目的整体等待态：解析 + 目录 + 图片全流程都显示 loading
     var opening by remember { mutableStateOf(false) }
+
+    val canGoBack = screen is Screen.ComicReader || screen is Screen.SinglePage ||
+        screen is Screen.VideoPlayer || screen is Screen.Detail ||
+        tab != DemoTab.HOME || drawerOpen || opening
+    androidx.activity.compose.BackHandler(enabled = canGoBack) {
+        when {
+            drawerOpen -> drawerOpen = false
+            // 解析中：返回就是取消这次打开，别把用户甩回首页
+            opening -> {
+                detailCancelled = true
+                session?.cancelPending()
+                detailJob?.cancel()
+                detailJob = null
+                detailError = null
+                parseTarget = null
+                opening = false
+                detailElapsedSec = 0
+            }
+            // 单图阅读：退回漫画阅读（双击进来的位置）
+            screen is Screen.SinglePage -> {
+                val single = screen as Screen.SinglePage
+                screen = if (single.fromComic) {
+                    Screen.ComicReader(
+                        item = single.item,
+                        pages = single.pages,
+                        startIndex = single.startIndex,
+                        chapters = single.chapters,
+                        chapterIndex = single.chapterIndex,
+                        preloadNext = single.preloadNext,
+                    )
+                } else {
+                    lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                }
+            }
+            // 详情 / 播放 / 漫画：回到点进来的那个界面（搜索结果要保留搜索态）
+            screen is Screen.ComicReader || screen is Screen.VideoPlayer || screen is Screen.Detail -> {
+                screen = returnScreen ?: lastPage?.let { Screen.List(it) } ?: Screen.Loading
+                tab = returnTab
+            }
+            tab != DemoTab.HOME -> tab = DemoTab.HOME
+        }
+    }
     // 网页端改过配置后由服务端通知：在列表页立即重载，阅读中则等回到列表
     var reloadRequest by remember { mutableStateOf(0) }
     // 当前列表地址：刷新按钮用它重新取数据
@@ -1120,12 +1138,17 @@ fun DemoApp(
         topBar = {
             TopAppBar(
                 title = {
+                    // 详情页可以从收藏/历史里打开：标题跟着内容走，不然会顶着「收藏」两个字看详情
                     Text(
-                        when (tab) {
-                            DemoTab.HOME -> ""
-                            DemoTab.FAVORITES -> "收藏"
-                            DemoTab.HISTORY -> "历史"
-                            DemoTab.TAGS -> "标签"
+                        if (screen is Screen.Detail) {
+                            titleFor(screen)
+                        } else {
+                            when (tab) {
+                                DemoTab.HOME -> ""
+                                DemoTab.FAVORITES -> "收藏"
+                                DemoTab.HISTORY -> "历史"
+                                DemoTab.TAGS -> "标签"
+                            }
                         },
                     )
                 },
@@ -1184,8 +1207,9 @@ fun DemoApp(
                     }
                 },
                 navigationIcon = {
-                    // 详情/搜索页只显示「返回」；其余页面只显示「菜单」——两者不叠加
-                    val showBack = tab == DemoTab.HOME && (screen is Screen.Detail || screen is Screen.SearchResults)
+                    // 详情 / 搜索结果只显示「返回」；其余页面只显示「菜单」——两者不叠加
+                    val showBack = screen is Screen.Detail ||
+                        (tab == DemoTab.HOME && screen is Screen.SearchResults)
                     if (showBack) {
                         IconButton(onClick = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading }) {
                             Icon(Icons.Default.ArrowBack, contentDescription = "返回")
@@ -1240,14 +1264,17 @@ fun DemoApp(
         },
     ) { padding ->
         Surface(modifier = Modifier.fillMaxSize().padding(padding)) {
-            if (tab == DemoTab.FAVORITES) {
+            // 收藏 / 历史：只在当前 tab 上原地打开，不切回首页
+            // （切 tab 会把收藏页整棵销毁 → 先看见首页、返回后滚动位置也没了）
+            val libraryOnTop = tab != DemoTab.HOME && screen !is Screen.Detail
+            if (tab == DemoTab.FAVORITES && libraryOnTop) {
                 FavoritesScreen(
                     items = favoriteItems,
                     progress = progressByUrl,
                     collected = collected,
                     layout = layoutMode,
+                    gridState = favoritesGridState,
                     onOpen = { item ->
-                        tab = DemoTab.HOME
                         returnTab = DemoTab.FAVORITES
                         returnScreen = null
                         parseTarget = item
@@ -1256,14 +1283,14 @@ fun DemoApp(
                 )
                 return@Surface
             }
-            if (tab == DemoTab.HISTORY) {
+            if (tab == DemoTab.HISTORY && libraryOnTop) {
                 HistoryScreen(
                     entries = historyEntries,
                     collected = collected,
                     progress = progressByUrl,
                     layout = layoutMode,
+                    gridState = historyGridState,
                     onOpen = { item ->
-                        tab = DemoTab.HOME
                         returnTab = DemoTab.HISTORY
                         returnScreen = null
                         parseTarget = item
@@ -1273,7 +1300,7 @@ fun DemoApp(
                 return@Surface
             }
 
-            if (tab == DemoTab.TAGS) {
+            if (tab == DemoTab.TAGS && libraryOnTop) {
                 TagsScreen(
                     tags = lastPage?.tags.orEmpty(),
                     onOpen = { tag -> if (tag.url.isNotBlank()) openFromUrl(tag.url, tag.title) },
