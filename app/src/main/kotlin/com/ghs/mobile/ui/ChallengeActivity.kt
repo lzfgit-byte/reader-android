@@ -36,6 +36,9 @@ class ChallengeActivity : Activity() {
 
     private var window: WebWindow? = null
 
+    /** 复用取页窗口时不能销毁它：请求还要在同一个窗口里继续 */
+    private var destroyOnClose = true
+
     /** 主框架 403/429 次数：连续两次就放弃，避免无意义等待 */
     private var httpErrorCount = 0
 
@@ -70,8 +73,13 @@ class ChallengeActivity : Activity() {
         }
         root.addView(hint, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
-        val window = WebWindows.acquire(WebWindows.CHALLENGE_SPEC)
+        // 优先复用「正在取页」的那个窗口：验证必须在发起请求的同一个页面上完成。
+        // 新开一个窗口重新加载，等于让站点把验证重新发一遍（点击 → 刷新 → 再验证），
+        // 而且验证通过后拿到的凭证也不在这条请求的上下文里。
+        val fetchWindow = WebWindows.current(WebWindows.FETCH)?.takeIf { !it.isClosed }
+        val window = fetchWindow ?: WebWindows.acquire(WebWindows.CHALLENGE_SPEC)
         this.window = window
+        this.destroyOnClose = fetchWindow == null
         val view = window.view
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
@@ -150,7 +158,14 @@ class ChallengeActivity : Activity() {
         root.addView(actions, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
         setContentView(root)
-        // 桌面页面：UA 已在 settings 里设置，这里补中文与桌面 Client Hints         val pageHeaders = mutableMapOf("Accept-Language" to com.ghs.mobile.core.engine.net.UserAgents.ACCEPT_LANGUAGE)         pageHeaders.putAll(com.ghs.mobile.core.engine.net.UserAgents.clientHints())         view.loadUrl(url, pageHeaders)
+        // 桌面页面：UA 已在 settings 里设置，这里补中文与桌面 Client Hints
+        val pageHeaders = mutableMapOf(
+            "Accept-Language" to com.ghs.mobile.core.engine.net.UserAgents.ACCEPT_LANGUAGE,
+        )
+        pageHeaders.putAll(com.ghs.mobile.core.engine.net.UserAgents.clientHints())
+        // 复用的取页窗口通常已经停在验证页上：再 loadUrl 一次就是"刷新重新验证"
+        val alreadyThere = window.url.orEmpty().startsWith(url, ignoreCase = true)
+        if (!alreadyThere) view.loadUrl(url, pageHeaders)
         // 兜底：即使页面不回调，也要开始检测（403/挑战页常见）
         scheduleDetection(FIRST_CHECK_DELAY_MS)
     }
@@ -158,9 +173,22 @@ class ChallengeActivity : Activity() {
     override fun onDestroy() {
         pollToken += 1
         handler.removeCallbacksAndMessages(null)
-        // 校验窗每次用完即销毁：下次校验是一个干净的页面
-        window?.destroy()
-        window = null
+        val window = this.window
+        if (window != null) {
+            // 回调都指向这个 Activity：不摘掉的话窗口后续的事件会打到已经销毁的界面
+            window.setPageFinishedListener(null)
+            window.setErrorListener(null)
+            window.setHttpErrorListener(null)
+            window.setProgressListener(null)
+            if (destroyOnClose) {
+                // 独立校验窗每次用完即销毁：下次校验是一个干净的页面
+                window.destroy()
+            } else {
+                // 取页窗口要留着：原请求还要在它身上继续
+                window.detachFromParent()
+            }
+        }
+        this.window = null
         if (!finished) ChallengeGate.resolve(host, false)
         super.onDestroy()
     }
@@ -202,12 +230,19 @@ class ChallengeActivity : Activity() {
         val DETECT_JS = """
             (function() {
               try {
-                // 与 checkBoot 一致：先看标题是否命中挑战特征
+                // 与 checkBoot 一致：先看标题是否命中挑战特征（挑战页标题会本地化：
+                // 英文 "Just a moment..."、中文「请稍候…」都要算未通过）
                 var title = (document.title || '').trim();
-                var marks = ['Just a moment', 'CAPTCHA', 'Checking your Browser',
-                             'Attention Required', '安全验证', '人机验证'];
+                var marks = ['Just a moment', 'Please wait', 'CAPTCHA', 'Checking your Browser',
+                             'Attention Required', 'Verify you are human',
+                             '请稍候', '請稍候', '正在进行安全验证', '正在验证您是否',
+                             '安全验证', '人机验证'];
                 for (var i = 0; i < marks.length; i++) {
                   if (title.indexOf(marks[i]) >= 0) return 'WAIT';
+                }
+                var html = document.documentElement ? document.documentElement.outerHTML : '';
+                if (html.indexOf('_cf_chl_opt') >= 0 || html.indexOf('challenge-platform') >= 0) {
+                  return 'WAIT';
                 }
                 var body = document.body ? (document.body.innerText || '') : '';
                 if (body.trim().length < 200) return 'WAIT';

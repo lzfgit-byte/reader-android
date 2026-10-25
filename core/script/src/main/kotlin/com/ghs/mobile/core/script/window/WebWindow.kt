@@ -7,6 +7,7 @@ import android.os.Handler
 import android.os.Looper
 import android.view.ViewGroup
 import android.webkit.JavascriptInterface
+import android.webkit.CookieManager
 import android.webkit.WebChromeClient
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -228,6 +229,9 @@ class WebWindow internal constructor(
         settings.javaScriptEnabled = spec.javaScript
         settings.domStorageEnabled = spec.domStorage
         if (spec.desktopUa) settings.userAgentString = UserAgents.UA
+        // Cookie 统一交给 CookieManager（与 OkHttp 共用一个存储），但不开第三方 Cookie：
+        // 开了之后 Cloudflare 的挑战页反而白屏（实测 2026-10-25，18comic）
+        runCatching { CookieManager.getInstance().setAcceptCookie(true) }
         webViewClient = Client()
         webChromeClient = Chrome()
         if (spec.evalBridge) addJavascriptInterface(EvalBridge(), BRIDGE)
@@ -272,6 +276,20 @@ class WebWindow internal constructor(
     private inner class Chrome : WebChromeClient() {
         override fun onProgressChanged(view: WebView?, newProgress: Int) {
             progress?.invoke(newProgress)
+        }
+
+        /**
+         * 挑战页（Cloudflare / Turnstile 一类）不把失败原因显示给用户，只写在控制台里。
+         * 不接管这个回调，logcat 里就一条都看不到，问题只能靠猜。
+         */
+        override fun onConsoleMessage(message: android.webkit.ConsoleMessage?): Boolean {
+            message ?: return true
+            android.util.Log.i(
+                "GHS",
+                "console[${message.messageLevel()}]: ${message.message()} " +
+                    "(${message.sourceId()}:${message.lineNumber()})",
+            )
+            return true
         }
     }
 

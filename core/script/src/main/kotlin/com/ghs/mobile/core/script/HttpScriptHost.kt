@@ -111,7 +111,10 @@ class HttpScriptHost(
                             // 只有拿回的仍是挑战页/空页时，才把窗口弹给用户手动完成。
                             if (blocked) {
                                 android.util.Log.w("GHS", "fetchHtml ${response.code} → webview fallback $url")
-                                val html = fetchWithWebView(url, expectChallenge = challenge)
+                                // 需要人点一下的挑战页（Cloudflare 托管挑战）等它自己过没用，
+                                // 等只会让界面白转两分钟；只有会自算的（工作量验证）才值得等
+                                val selfSolving = challenge && !isInteractiveChallenge(peek)
+                                val html = fetchWithWebView(url, expectChallenge = selfSolving)
                                 if (html.isNotBlank() && !isChallengePage(html)) {
                                     htmlCache?.put(url, html)
                                     return html
@@ -124,14 +127,17 @@ class HttpScriptHost(
                                         if (handler(url)) {
                                             android.util.Log.i("GHS", "人机校验完成，重试 $url")
                                             val retried = retryOnce(request)
-                                            if (retried != null) {
-                                                if (!isChallengePage(retried)) htmlCache?.put(url, retried)
+                                            // 校验后仍拿回挑战页：说明这次校验没换来通行凭证，
+                                            // 不能把挑战页当正文交出去（否则界面就"没有更多了"）
+                                            if (retried != null && !isChallengePage(retried)) {
+                                                htmlCache?.put(url, retried)
                                                 return retried
                                             }
+                                            android.util.Log.w("GHS", "人机校验后仍被挡（挑战页） $url")
                                         }
                                     }
                                 }
-                                if (html.isNotBlank()) return html
+                                throw IllegalStateException("取页失败：站点要求人机校验且未通过 $url")
                             }
                             throw IllegalStateException("取页失败：HTTP ${response.code} $url")
                         }
@@ -166,11 +172,13 @@ class HttpScriptHost(
                 android.util.Log.w("GHS", "fetchHtml 回退仍是校验页 → 展示校验窗口 $url")
                 if (handler(url)) {
                     val retried = retryOnce(request)
-                    if (retried != null) return retried
+                    if (retried != null && !isChallengePage(retried)) {
+                        htmlCache?.put(url, retried)
+                        return retried
+                    }
                 }
             }
-            if (viaWebView.isNotBlank()) return viaWebView
-            throw lastError ?: IllegalStateException("取页失败：$url")
+            throw lastError ?: IllegalStateException("取页失败：站点要求人机校验且未通过 $url")
         } finally {
             logDone(url, started)
         }
@@ -180,28 +188,35 @@ class HttpScriptHost(
      * 判断拿回来的是不是「挑战页 / 拦截页」。
      *
      * 这类页面不能当成内容：不能缓存，也不能直接解析，需要弹窗口给用户完成。
+     * 只按标题判断是不够的：Cloudflare 的挑战页会按浏览器语言本地化标题
+     * （中文环境是「请稍候…」而不是 "Just a moment..."），漏判的后果是把
+     * 挑战页当成正文缓存下来，界面就一直是"没有更多了"。
      */
     private fun isChallengePage(html: String): Boolean {
         if (html.length < 512) return true
-        // 与 checkBoot 一致：看 <title> 是否命中挑战标题
         return looksLikeChallenge(html)
     }
 
     /**
-     * 只看标题是否命中挑战特征。
+     * 标题或结构标记任一命中即视为挑战页。
      *
      * 用于非 2xx 的拒绝页：这类页面可能很短，但"短"本身不能作为挑战判据
      * （否则一个空的 404 也会被当成挑战，被当成正文缓存下来）。
      */
     private fun looksLikeChallenge(html: String): Boolean {
         if (html.isBlank()) return false
-        return looksLikeChallengeTitle(titleOf(html))
+        if (looksLikeChallengeTitle(titleOf(html))) return true
+        return CHALLENGE_MARKERS.any { html.contains(it, ignoreCase = true) }
     }
 
     private fun looksLikeChallengeTitle(title: String): Boolean {
         if (title.isEmpty()) return false
         return CHALLENGE_TITLES.any { title.contains(it, ignoreCase = true) }
     }
+
+    /** Cloudflare「托管挑战」需要人点一下（Turnstile 组件），等它自己过是白等 */
+    private fun isInteractiveChallenge(html: String): Boolean =
+        html.isNotBlank() && CF_INTERACTIVE_MARKERS.any { html.contains(it, ignoreCase = true) }
 
     private fun titleOf(html: String): String =
         TITLE_REGEX.find(html)?.groupValues?.getOrNull(1)?.trim().orEmpty()
@@ -254,33 +269,36 @@ class HttpScriptHost(
      * 失败返回空串，由调用方回落到原错误。
      */
     private fun fetchWithWebView(url: String, expectChallenge: Boolean = false): String {
-        // 挑战页（尤其"工作量验证"）执行脚本后会自己跳转或种下 Cookie：
-        // - 已知是验证页时：先等它通过（否则求值会被验证脚本堵住）
-        // - 取回的仍是验证页时：隔几秒重新加载一次，此时验证用的 Cookie 一般已经落地
-        var last = ""
-        repeat(WEBVIEW_FALLBACK_ATTEMPTS) { attempt ->
-            last = try {
-                executePageInternal(url, OUTER_HTML_JS, show = false, waitRedirect = expectChallenge)
-            } catch (error: Throwable) {
-                android.util.Log.w("GHS", "webview fallback failed ${error.javaClass.simpleName}: ${error.message}")
-                ""
-            }
-            if (last.isNotBlank() && !isChallengePage(last)) {
-                android.util.Log.i(
-                    "GHS",
-                    "webview html len=${last.length} title=${titleOf(last)} url=$url",
-                )
-                return last
-            }
-            if (attempt < WEBVIEW_FALLBACK_ATTEMPTS - 1) {
-                android.util.Log.i(
-                    "GHS",
-                    "webview 仍取回验证页，${WEBVIEW_RETRY_DELAY_MS}ms 后重试 ${attempt + 2}/$WEBVIEW_FALLBACK_ATTEMPTS $url",
-                )
-                runCatching { Thread.sleep(WEBVIEW_RETRY_DELAY_MS) }
-            }
+        var last = try {
+            executePageInternal(url, OUTER_HTML_JS, show = false, waitRedirect = expectChallenge)
+        } catch (error: Throwable) {
+            android.util.Log.w("GHS", "webview fallback failed ${error.javaClass.simpleName}: ${error.message}")
+            ""
         }
-        return last
+        if (last.isNotBlank() && !isChallengePage(last)) {
+            android.util.Log.i(
+                "GHS",
+                "webview html len=${last.length} title=${titleOf(last)} url=$url",
+            )
+            return last
+        }
+        if (last.isBlank()) return last
+
+        // 取回的是验证页。**不能重载**：重载会把用户刚完成的验证清掉，表现就是
+        // "点了人机验证 → 页面又刷新回验证页"，永远走不出来。
+        // 需要人点选的（Cloudflare 托管挑战）等也没有用，直接交给上层弹可见窗口；
+        // 会自己算完的（工作量验证）才在原地等它离开验证态。
+        if (isInteractiveChallenge(last)) {
+            android.util.Log.w("GHS", "webview 取回需人工验证的页面（title=${titleOf(last)}），交给校验窗口 $url")
+            return last
+        }
+        android.util.Log.i("GHS", "webview 仍取回验证页（title=${titleOf(last)}），原地等它通过 $url")
+        waitChallengeGone()
+        // 等完之后重新读同一个文档（不重新加载）
+        val refreshed = runCatching {
+            executePageInternal(url, OUTER_HTML_JS, show = false, waitRedirect = false, reload = false)
+        }.getOrNull().orEmpty()
+        return if (refreshed.isNotBlank()) refreshed else last
     }
 
     override fun request(
@@ -344,21 +362,25 @@ class HttpScriptHost(
      *
      * [waitRedirect] 用于「工作量验证」这类拦截页：它先返回一段自己执行脚本的页面，
      * 算完后**跳转**或**种 Cookie**，此时求值会被验证脚本堵住，必须等它通过。
+     *
+     * [reload] 为 false 时**不重新加载**，只在当前文档里求值：验证页通过后要读正文，
+     * 此时重载会把刚拿到的通行 Cookie 和页面状态一起清掉。
      */
     private fun executePageInternal(
         url: String,
         code: String,
         show: Boolean,
         waitRedirect: Boolean,
+        reload: Boolean = true,
     ): String {
         // 只要在用 WebView 取页，就让 UI 出现「显示 webview」入口
-        WebViewFallbackHub.start(url)
+        if (reload) WebViewFallbackHub.start(url)
         try {
             // 记住本次调用的代号：只有这之后发生的「取消」才作数
-            return runInFetchWindow(url, code, show, cancelEpoch.get(), waitRedirect)
+            return runInFetchWindow(url, code, show, cancelEpoch.get(), waitRedirect, reload)
         } finally {
             // 撤掉入口：失败分支会 throw，放在其后就永远不执行
-            WebViewFallbackHub.stop()
+            if (reload) WebViewFallbackHub.stop()
         }
     }
 
@@ -369,49 +391,57 @@ class HttpScriptHost(
         show: Boolean,
         epoch: Long,
         waitRedirect: Boolean,
+        reload: Boolean,
     ): String {
-        val window = WebWindows.acquire(WebWindows.FETCH_SPEC)
+        // 只读当前文档时不新建窗口：没有窗口说明页面已经不在了
+        val window = if (reload) {
+            WebWindows.acquire(WebWindows.FETCH_SPEC)
+        } else {
+            WebWindows.current(WebWindows.FETCH) ?: return ""
+        }
         if (!fetchLock.tryLock(FETCH_LOCK_WAIT_MS, TimeUnit.MILLISECONDS)) {
             throw IllegalStateException("取页窗口正忙，请稍后再试")
         }
         try {
             val task = FetchTask()
-            // 桥与回调都指向「当前任务」：窗口复用后不会把结果写进上一个任务的槽位
-            window.setBridge(
-                done = { value -> task.finish(value) },
-                error = { message -> task.fail("页面脚本出错：$message") },
-            )
-            window.setPageFinishedListener { _, _ ->
-                task.finishes.incrementAndGet()
-                task.loaded.countDown()
-            }
-            // 403 这类主框架错误不会触发 onPageFinished：也要让等待方继续，
-            // 否则取页会一直挂到用户手动取消
-            window.setHttpErrorListener { _, _ -> task.loaded.countDown() }
-            window.setErrorListener { _, _ -> task.loaded.countDown() }
+            if (reload) {
+                // 桥与回调都指向「当前任务」：窗口复用后不会把结果写进上一个任务的槽位
+                window.setBridge(
+                    done = { value -> task.finish(value) },
+                    error = { message -> task.fail("页面脚本出错：$message") },
+                )
+                window.setPageFinishedListener { _, _ ->
+                    task.finishes.incrementAndGet()
+                    task.loaded.countDown()
+                }
+                // 403 这类主框架错误不会触发 onPageFinished：也要让等待方继续，
+                // 否则取页会一直挂到用户手动取消
+                window.setHttpErrorListener { _, _ -> task.loaded.countDown() }
+                window.setErrorListener { _, _ -> task.loaded.countDown() }
 
-            onMain {
-                // WebView 兜底也必须走代理，否则直连会被站点挡掉
-                applyWebViewProxy()
-                val view = window.view
-                runCatching { view.stopLoading() }
-                runCatching { view.clearHistory() }
-                // 登记实例：用户点「显示 webview」时把它直接挂到窗口上
-                WebViewFallbackHub.attach(view)
-                // 配置要求显示（executeJs show=true）：自动打开显示窗口
-                if (show) WebViewMirrorLauncher.open(context, url)
-                // WebView 也要桌面页面：中文 + 桌面 Client Hints 一起附上
-                val pageHeaders = mutableMapOf("Accept-Language" to LANGUAGE)
-                pageHeaders.putAll(com.ghs.mobile.core.engine.net.UserAgents.clientHints())
-                view.loadUrl(url, pageHeaders)
-            }
+                onMain {
+                    // WebView 兜底也必须走代理，否则直连会被站点挡掉
+                    applyWebViewProxy()
+                    val view = window.view
+                    runCatching { view.stopLoading() }
+                    runCatching { view.clearHistory() }
+                    // 登记实例：用户点「显示 webview」时把它直接挂到窗口上
+                    WebViewFallbackHub.attach(view)
+                    // 配置要求显示（executeJs show=true）：自动打开显示窗口
+                    if (show) WebViewMirrorLauncher.open(context, url)
+                    // WebView 也要桌面页面：中文 + 桌面 Client Hints 一起附上
+                    val pageHeaders = mutableMapOf("Accept-Language" to LANGUAGE)
+                    pageHeaders.putAll(com.ghs.mobile.core.engine.net.UserAgents.clientHints())
+                    view.loadUrl(url, pageHeaders)
+                }
 
-            // 桌面页资源多、广告脚本常卡住 onPageFinished（实测 25s 都不来）：
-            // 并行轮询 DOM 就绪，正文出现就取，不再干等"页面彻底加载完"
-            startDomPoll(window, task, epoch)
-            awaitLoaded(task, epoch)
-            // 验证页会自己跳转或需要重载：等它通过再求值，否则会被验证脚本堵住
-            if (waitRedirect && task.failure == null) awaitChallengeCleared(window, task, epoch)
+                // 桌面页资源多、广告脚本常卡住 onPageFinished（实测 25s 都不来）：
+                // 并行轮询 DOM 就绪，正文出现就取，不再干等"页面彻底加载完"
+                startDomPoll(window, task, epoch)
+                awaitLoaded(task, epoch)
+                // 验证页会自己跳转或需要重载：等它通过再求值，否则会被验证脚本堵住
+                if (waitRedirect && task.failure == null) waitChallengeGone()
+            }
 
             if (task.failure == null) {
                 val raw = runCatching { window.eval(executeJs(code), EVAL_TIMEOUT_MS) }.getOrNull()
@@ -453,11 +483,21 @@ class HttpScriptHost(
         }.start()
     }
 
-    /** 等页面就绪：不设上限，只响应「取消」 */
+    /**
+     * 等页面就绪：响应「取消」，也设上限。
+     *
+     * 不设上限时，一个卡在验证脚本里的页面会把取页线程拖到几分钟，
+     * 界面表现就是"一直转圈，永远不结束"。
+     */
     private fun awaitLoaded(task: FetchTask, epoch: Long) {
+        val deadline = System.currentTimeMillis() + PAGE_WAIT_MS
         while (!task.loaded.await(200, TimeUnit.MILLISECONDS)) {
             if (cancelEpoch.get() != epoch) {
                 task.fail("已取消")
+                return
+            }
+            if (System.currentTimeMillis() > deadline) {
+                android.util.Log.w("GHS", "页面 ${PAGE_WAIT_MS}ms 内未就绪，按当前 DOM 处理")
                 return
             }
         }
@@ -471,44 +511,38 @@ class HttpScriptHost(
     }
 
     /**
-     * 等「验证页」通过。
+     * 等「验证页」自己离开验证态。
      *
-     * 工作量验证页有两个特点：
-     * 1. 验证脚本会占满渲染线程 —— 这期间 `evaluateJavascript` 只会超时，不能求值正文；
-     * 2. 算完后有的站点自己跳转，有的只是种下 Cookie 需要重新加载。
+     * **只探测、不重载**：工作量验证算完后自己会跳转或种 Cookie，重载反而把页面状态
+     * 清掉；对需要人点击的挑战页，重载更是把用户刚过的验证直接作废
+     * （现场表现就是"点了人机验证 → 又刷新回验证页"）。
      *
-     * 所以这里用**短超时探标题**：能读到标题说明渲染线程已空，标题不再是验证特征就可
-     * 开始求值；仍是验证页则隔几秒重载一次（此时 Cookie 通常已经落地）。
+     * 返回 true 表示已离开验证态；false 表示等到上限仍未通过。
      */
-    private fun awaitChallengeCleared(window: WebWindow, task: FetchTask, epoch: Long) {
+    private fun waitChallengeGone(): Boolean {
+        val window = WebWindows.current(WebWindows.FETCH) ?: return false
         val started = System.currentTimeMillis()
         val deadline = started + CHALLENGE_WAIT_MS
-        var lastReload = 0L
         while (System.currentTimeMillis() < deadline) {
-            if (cancelEpoch.get() != epoch) return
             // 2s 超时：验证脚本没跑完时这里返回 null，正好当作"还没好"
-            val rawTitle = runCatching { window.eval("document.title", 2_000) }.getOrNull()
-            if (rawTitle != null) {
-                val title = normalize(rawTitle)
-                if (!looksLikeChallengeTitle(title)) {
+            val raw = runCatching { window.eval(CHALLENGE_PROBE_JS, 2_000) }.getOrNull()
+            if (raw != null) {
+                val probe = normalize(raw)
+                val title = probe.substringBefore(SEP)
+                val bodyLength = probe.substringAfter(SEP, "0").substringBefore(SEP).toIntOrNull() ?: 0
+                val marker = probe.substringAfterLast(SEP, "0") == "1"
+                if (!marker && !looksLikeChallengeTitle(title) && bodyLength > 200) {
                     android.util.Log.i(
                         "GHS",
-                        "验证页已通过（${System.currentTimeMillis() - started}ms, title=$title），开始求值",
+                        "验证页已通过（${System.currentTimeMillis() - started}ms, title=$title, body=$bodyLength）",
                     )
-                    return
-                }
-                if (System.currentTimeMillis() - lastReload > RELOAD_INTERVAL_MS) {
-                    lastReload = System.currentTimeMillis()
-                    android.util.Log.i("GHS", "验证页仍在（title=$title），重载一次")
-                    onMain { runCatching { window.view.reload() } }
+                    return true
                 }
             }
             runCatching { Thread.sleep(CHALLENGE_POLL_MS) }
         }
-        android.util.Log.w(
-            "GHS",
-            "验证页 ${CHALLENGE_WAIT_MS}ms 内未通过（finishes=${task.finishes.get()}），按当前页面处理",
-        )
+        android.util.Log.w("GHS", "验证页 ${CHALLENGE_WAIT_MS}ms 内未通过，按当前页面处理")
+        return false
     }
 
     /** 在页面里执行配置给的表达式；Promise 结果经 `__ghsWin` 桥回传 */
@@ -619,21 +653,39 @@ class HttpScriptHost(
         /** 等别的取页任务让出窗口的上限 */
         private const val FETCH_LOCK_WAIT_MS = 15_000L
 
-        /** 无头 WebView 取回验证页时的重试：工作量验证通常几十秒内自己完成 */
-        private const val WEBVIEW_FALLBACK_ATTEMPTS = 3
-        private const val WEBVIEW_RETRY_DELAY_MS = 2_500L
+        /** 等页面就绪的上限：卡在验证脚本里的页面不能无限拖住取页 */
+        private const val PAGE_WAIT_MS = 45_000L
 
         /** 等验证页通过的上限：手机算工作量验证实测要 1~2 分钟，留足余量 */
-        private const val CHALLENGE_WAIT_MS = 180_000L
+        private const val CHALLENGE_WAIT_MS = 120_000L
 
-        /** 验证页轮询间隔与重载间隔 */
+        /** 验证页轮询间隔 */
         private const val CHALLENGE_POLL_MS = 800L
-        private const val RELOAD_INTERVAL_MS = 10_000L
+
+        /** 探测串里的分隔符（\u0001 不会出现在标题与正文里） */
+        private const val SEP = "\u0001"
+
+        /**
+         * 验证页探测：一次求值同时拿「标题 / 正文长度 / 是否仍是验证页」。
+         *
+         * 只看标题会漏：挑战页按语言本地化标题，中文环境是「请稍候…」；
+         * 结构标记 `_cf_chl_opt` / `challenge-platform` 是 Cloudflare 挑战页的固有特征。
+         */
+        private val CHALLENGE_PROBE_JS = """
+            (function(){
+              try{
+                var t=((document.title||'')).trim();
+                var b=document.body?(document.body.innerText||''):'';
+                var h=document.documentElement?document.documentElement.outerHTML:'';
+                var m=(h.indexOf('_cf_chl_opt')>=0||h.indexOf('challenge-platform')>=0)?1:0;
+                return t+'$SEP'+b.length+'$SEP'+m;
+              }catch(e){return '$SEP'+0+'$SEP'+0;}
+            })()
+        """.trimIndent()
 
         /** 取回整页 HTML 的表达式（配置里的 getHtml 走的就是它） */
         private const val OUTER_HTML_JS = "document.documentElement.outerHTML"
-        /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
-        /** DOM 就绪轮询：每 500ms 探一次，最多 80 次（约 40s） */
+        /** DOM 就绪轮询：每 800ms 探一次，最多 16 次（约 13s） */
         private const val DOM_POLL_INTERVAL_MS = 800L
         private const val DOM_POLL_ATTEMPTS = 16
 
@@ -643,16 +695,26 @@ class HttpScriptHost(
                 "&&!!document.body&&document.body.innerHTML.length>200"
 
         /** 这些状态码说明直连被挡（Cloudflare / 校验页），值得用无头 WebView 再试一次 */
-        private val WEBVIEW_FALLBACK_CODES = setOf(403, 429, 503)
+        private val WEBVIEW_FALLBACK_CODES = setOf(403, 492, 429, 503)
 
-        /** 挑战页标题特征：命中即视为需要人机校验（与参考实现的 checkBoot 一致） */
+        /** 挑战页标题特征：命中即视为需要人机校验 */
         private val CHALLENGE_TITLES = listOf(
-            "just a moment", "captcha", "checking your browser",
-            "attention required", "verify you are human",
-            "安全验证", "人机验证",
+            // Cloudflare 一类：标题按浏览器语言本地化，英文、中文都要覆盖
+            "just a moment", "checking your browser", "attention required",
+            "please wait", "captcha", "verify you are human",
+            "请稍候", "請稍候", "正在进行安全验证", "正在验证您是否", "安全验证",
+            "人机验证", "人机校验",
             // 工作量验证（proof-of-work）类拦截页：标题常见「安全防御 - 工作量验证」
             "工作量验证", "安全防御",
         )
+
+        /** 挑战页结构标记：标题被改掉也认得出（只取挑战页独有、正文页不会出现的） */
+        private val CHALLENGE_MARKERS = listOf(
+            "_cf_chl_opt", "cf-chl-", "challenge-platform", "cf-browser-verification",
+        )
+
+        /** 需要人点一下的挑战页（Cloudflare 托管挑战 / Turnstile）：等它自己过没用 */
+        private val CF_INTERACTIVE_MARKERS = listOf("_cf_chl_opt", "challenge-platform")
         private val TITLE_REGEX =
             Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
