@@ -78,6 +78,9 @@ whenToUse: 用户给出一个站点地址要求「做成配置 / 加个来源 / 
 - 沙箱里**没有** `fetch` / `document` / `window` / `Buffer` / `require`。取页用 `getHtml`，同源请求用 `net.request`，需要页面上下文用 `executeJs` / `adapterImageCode`。
 - 选择器是**本项目方言**：`$`、`.find` `.eq` `.each` `.attr` `.text` `.html` `.hasClass` `.map` `.toArray` `.toString`；取属性优先 `helpElAttr(el, ElementAttr.dataSrc)`、取文本 `helpElText(el)`；常量 `ElementAttr`、`ElementTypes`。
 - 相对地址可以直接返回：`//x` 沿用协议、`/x` 拼 origin、`x/y` 相对 `homeUrl`；`data:` 不补全。
+- **但 `jumpUrl` / 分页 `url` / 目录 `url` 在 `getItems` 里就写成绝对地址**：详情方法内部还要拿它调
+  `getHtml` / `getComicImages`，那时引擎**不会**补全，相对路径会报 `Expected URL scheme 'http' or 'https'`
+  （见 `references/pitfalls.md` 第 17 条）。
 - `jumpUrl` 必须唯一稳定（收藏、历史、进度都以它为键）；引擎**不去重、不排序**，判重是脚本的事。
 
 ## 4. 详情按类型写（`detailType` 决定跳哪个渲染器）

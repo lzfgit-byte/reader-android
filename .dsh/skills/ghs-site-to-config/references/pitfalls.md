@@ -106,3 +106,15 @@
   3. 搜索页的 `link[rel=canonical]` 是**解码后**的中文（`/search/娜娜/`）。拿它当 base 要把非 ASCII 重新编码，
      但别整串 `encodeURI`/`encodeURIComponent`——会把已有的 `%E5` 二次编码成 `%25E5`。
 
+## 17. 配置里调用 `getHtml` 拿到的还是相对地址
+
+- 现象：列表、封面一切正常，**一点条目就失败**，`/api/state` 的 `detailError` 是
+  `脚本错误：Error: Expected URL scheme 'http' or 'https' but /readbooks/… was passed in`。
+- 原因：站点给的 `href` 都是站内相对路径。引擎只在**条目入库时**补全 `jumpUrl`，
+  配置自己调用 `getHtml(url)` / `getComicImages(url)` 时拿到的是原样字符串，OkHttp 直接抛 scheme 错误。
+- 正确做法：`getItems` 里就把 `jumpUrl`、分页 `url`、目录 `url` 全部拼成绝对地址
+  （`origin + href`，`origin` 取 `homeUrl` 去掉结尾斜杠）；相对地址只在"交给引擎"的返回值里才安全，
+  在"配置内部再取页"的路上不安全。
+- 判断技巧：`detailError` 出现这条，先看 `getItems` 返回的 `jumpUrl` 是否以 `/` 开头——是就别再查选择器了。
+
+

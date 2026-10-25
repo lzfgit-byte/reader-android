@@ -13,6 +13,8 @@
 
 ### Docs
 
+- **技能补第 17 条坑：配置里调用 `getHtml` 拿到的还是相对地址**（`.dsh/skills/ghs-site-to-config/`）：站点给的 `href` 都是站内相对路径，引擎只在条目入库时补全 `jumpUrl`；配置自己在 `getDetailInfo` / `getContents` / `getComicImages` 里再取页时拿到的是原样字符串，OkHttp 直接抛 `Expected URL scheme 'http' or 'https'`，表现为「列表正常、一点条目就失败」。现在 `SKILL.md` §3 硬约束要求 `jumpUrl` / 分页 `url` / 目录 `url` 一律在 `getItems` 里拼成绝对地址，坑列表也记下了这条的判据（先看 `jumpUrl` 是不是以 `/` 开头，别急着查选择器）。
+
 - **技能补第 16 条坑：同一站点里搜索页与列表页是两个列表块**（`.dsh/skills/ghs-site-to-config/`）：某站点的搜索结果单独渲染成 `#list_videos_videos_list_search_result_*`，页码参数是 `from_videos+from_albums:N`；分类页/标签页才是 `#list_videos_common_videos_list_*` + `from:N`。分页选择器只写后者时，搜索结果页分页全空（列表有 24 条、但没有下一页）。一并记下三个连带事实：搜索页翻页没有路由（`/search/<kw>/2/` 返回 404，`?page=` 被忽略，只有 `?from_videos=N` 有效）、末页的"下一页"是 `--disabled` 的假链接（值比总页数大 1，顺着用就是 404）、canonical 在该页是解码后的中文（要重新编码，但不能整串 `encodeURI`，否则 `%E5` 变 `%25E5`）。`SKILL.md` §1 侦察清单同步要求「搜索页/筛选页分别抓一次、分别验证」。
 
 - **新增项目级技能 `ghs-site-to-config`**（`.dsh/skills/ghs-site-to-config/`）：把「一个站点」做成动态配置的完整流程——先侦察取证（含需要代理时的出口核对），再写列表 / 分页 / 排序 / 详情选择器，最后在设备上验证条目与媒体，交付时逐项标明已验证与未验证。附 `references/pitfalls.md`（15 条实战坑：Cloudflare 挑战、懒加载封面、AJAX 假分页、`127.0.0.1` 代理陷阱、调试接口只吃单行等）与 inline / manifest 两套模板。配套把 `AGENTS.md` §1 增加 `.dsh/skills/` 目录行与补充规则 6、§7 放开唯一例外（`SKILL.md` 与 `references/*.md`），`docs/README.md` 与 `docs/00-process/document-policy.md` 登记该目录定位——技能只承载**操作流程**，配置格式仍以 `docs/03-api/config-spec.md` 为 SSOT。
