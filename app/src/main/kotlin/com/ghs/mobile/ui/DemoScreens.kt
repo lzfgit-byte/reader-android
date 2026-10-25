@@ -846,6 +846,19 @@ fun DemoApp(
                 preloadNext = reader.preloadNext,
                 onPreloadNextChange = { enabled -> screen = reader.copy(preloadNext = enabled) },
                 onChapterSelected = { index -> openChapter(index) },
+                preloadChapterPages = { index ->
+                    val chapter = reader.chapters.getOrNull(index)
+                    if (chapter == null || chapter.url.isBlank()) {
+                        emptyList()
+                    } else {
+                        withContext(Dispatchers.IO) {
+                            runCatching { session?.comicPages(chapter.url) }
+                                .getOrNull()
+                                .orEmpty()
+                                .map { it.url }
+                        }
+                    }
+                },
                 onNextChapter = { openChapter(reader.chapterIndex + 1) },
                 onOpenSinglePage = { index ->
                     screen = Screen.SinglePage(

@@ -119,6 +119,8 @@ fun ComicReaderScreen(
     preloadNext: Boolean = false,
     onPreloadNextChange: (Boolean) -> Unit = {},
     onChapterSelected: (Int) -> Unit = {},
+    /** 取下一话的图片地址（用于预加载，不切话）；失败返回空列表 */
+    preloadChapterPages: suspend (Int) -> kotlin.collections.List<String> = { emptyList() },
     onNextChapter: (() -> Unit)? = null,
     /** 双击某张图：进入单图阅读（独立模式） */
     onOpenSinglePage: (Int) -> Unit = {},
@@ -167,15 +169,26 @@ fun ComicReaderScreen(
         }
     }
 
-    // 预加载下一话：滚动到后段时提前把下一话图片拉一遍（只做一次）
+    // 预加载下一话：读到后段时把**下一话的图片**先拉进缓存，但**不切话**。
+    // 之前这里直接调 onChapterSelected(chapterIndex + 1)，等于"预加载完就跳走"，
+    // 用户还在看当前话就被切到下一话首页。真正的切话只由用户操作触发。
     var preloadFired by remember(chapterIndex) { mutableStateOf(false) }
     LaunchedEffect(preloadNext, current, pages.size) {
         if (!preloadNext || preloadFired || pages.isEmpty()) return@LaunchedEffect
-        if (current >= pages.size * 6 / 10) {
-            preloadFired = true
-            val next = chapters.getOrNull(chapterIndex + 1) ?: return@LaunchedEffect
-            android.util.Log.i("GHS", "preload next chapter: ${next.title}")
-            onChapterSelected(chapterIndex + 1)
+        if (current < pages.size * 6 / 10) return@LaunchedEffect
+        preloadFired = true
+        val nextUrls = runCatching { preloadChapterPages(chapterIndex + 1) }
+            .getOrDefault(emptyList())
+        if (nextUrls.isEmpty()) return@LaunchedEffect
+        android.util.Log.i("GHS", "preload next chapter: ${nextUrls.size} images")
+        val loader = context.imageLoader
+        nextUrls.forEach { url ->
+            loader.enqueue(
+                ImageRequest.Builder(context)
+                    .data(url)
+                    .size(coil.size.Size.ORIGINAL)
+                    .build(),
+            )
         }
     }
 
