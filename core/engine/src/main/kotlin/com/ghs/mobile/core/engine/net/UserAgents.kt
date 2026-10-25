@@ -28,8 +28,14 @@ object UserAgents {
     var UA: String = desktopChrome(FALLBACK_VERSION)
         private set
 
+    /** 设备真实 UA（不做任何伪装）：人机校验窗口必须与它保持一致 */
+    @Volatile
+    var DEVICE_UA: String = desktopChrome(FALLBACK_VERSION)
+        private set
+
     /** 用设备默认 UA 重建桌面 UA（保留其 Chrome 版本号） */
     fun initFromSystemDefault(defaultUa: String?) {
+        if (!defaultUa.isNullOrBlank()) DEVICE_UA = defaultUa
         val version = Regex("Chrome/([0-9.]+)").find(defaultUa.orEmpty())
             ?.groupValues?.getOrNull(1)
             ?.takeIf { it.isNotBlank() }

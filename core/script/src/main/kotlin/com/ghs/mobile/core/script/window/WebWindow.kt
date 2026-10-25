@@ -228,7 +228,13 @@ class WebWindow internal constructor(
     private fun buildView(context: Context): WebView = WebView(context).apply {
         settings.javaScriptEnabled = spec.javaScript
         settings.domStorageEnabled = spec.domStorage
-        if (spec.desktopUa) settings.userAgentString = UserAgents.UA
+        if (spec.desktopUa) {
+            settings.userAgentString = UserAgents.UA
+        } else {
+            // 真实设备标识：JS 侧的 platform / userAgentData 与 UA 一致，
+            // 人机校验（Turnstile 一类）靠一致性才判得过
+            settings.userAgentString = UserAgents.DEVICE_UA
+        }
         // Cookie 统一交给 CookieManager（与 OkHttp 共用一个存储），但不开第三方 Cookie：
         // 开了之后 Cloudflare 的挑战页反而白屏（实测 2026-10-25，18comic）
         runCatching { CookieManager.getInstance().setAcceptCookie(true) }

@@ -73,13 +73,12 @@ class ChallengeActivity : Activity() {
         }
         root.addView(hint, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
-        // 优先复用「正在取页」的那个窗口：验证必须在发起请求的同一个页面上完成。
-        // 新开一个窗口重新加载，等于让站点把验证重新发一遍（点击 → 刷新 → 再验证），
-        // 而且验证通过后拿到的凭证也不在这条请求的上下文里。
-        val fetchWindow = WebWindows.current(WebWindows.FETCH)?.takeIf { !it.isClosed }
-        val window = fetchWindow ?: WebWindows.acquire(WebWindows.CHALLENGE_SPEC)
+        // 校验用**真实设备标识**的独立窗口：Turnstile 会比对 UA 与 JS 侧的
+        // platform / userAgentData，套桌面 UA 会被判成伪造而一直不过。
+        // 通过后的凭证落在共享 CookieManager 上，取页仍可用桌面 UA。
+        val window = WebWindows.acquire(WebWindows.CHALLENGE_SPEC)
         this.window = window
-        this.destroyOnClose = fetchWindow == null
+        this.destroyOnClose = true
         val view = window.view
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
@@ -158,14 +157,15 @@ class ChallengeActivity : Activity() {
         root.addView(actions, LinearLayout.LayoutParams(MATCH_PARENT, WRAP_CONTENT))
 
         setContentView(root)
-        // 桌面页面：UA 已在 settings 里设置，这里补中文与桌面 Client Hints
+        // 只带语言：套桌面 Client Hints 会和真实 UA 冲突（校验页正是靠这个判伪造）
         val pageHeaders = mutableMapOf(
             "Accept-Language" to com.ghs.mobile.core.engine.net.UserAgents.ACCEPT_LANGUAGE,
         )
-        pageHeaders.putAll(com.ghs.mobile.core.engine.net.UserAgents.clientHints())
-        // 复用的取页窗口通常已经停在验证页上：再 loadUrl 一次就是"刷新重新验证"
-        val alreadyThere = window.url.orEmpty().startsWith(url, ignoreCase = true)
-        if (!alreadyThere) view.loadUrl(url, pageHeaders)
+        android.util.Log.i(
+            "GHS",
+            "challenge window ua=${com.ghs.mobile.core.engine.net.UserAgents.DEVICE_UA}",
+        )
+        view.loadUrl(url, pageHeaders)
         // 兜底：即使页面不回调，也要开始检测（403/挑战页常见）
         scheduleDetection(FIRST_CHECK_DELAY_MS)
     }

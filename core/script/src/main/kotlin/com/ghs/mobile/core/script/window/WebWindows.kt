@@ -35,8 +35,14 @@ object WebWindows {
     /** 网页浏览：可见窗口，离开页面即销毁 */
     val BROWSER_SPEC = WindowSpec(BROWSER, WindowReuse.SINGLETON)
 
-    /** 人机校验：可见窗口，每次校验一个新的（对齐 Electron 的 win_open），结束即销毁 */
-    val CHALLENGE_SPEC = WindowSpec(CHALLENGE, WindowReuse.PER_TASK)
+    /**
+     * 人机校验：可见窗口，每次校验一个新的（对齐 Electron 的 win_open），结束即销毁。
+     *
+     * **不伪装桌面 UA**：校验页要判断"这是不是一个真浏览器"，UA 与 JS 侧
+     * platform / userAgentData 不一致会被直接判失败（表现为点完验证又刷新回验证页）。
+     * 通过后拿到的凭证落在共享 CookieManager 上，取页仍可用桌面 UA。
+     */
+    val CHALLENGE_SPEC = WindowSpec(CHALLENGE, WindowReuse.PER_TASK, desktopUa = false)
 
     /** 图片兜底：池化，至少保活 1 个、最多 3 个 */
     val IMAGE_SPEC = WindowSpec(
