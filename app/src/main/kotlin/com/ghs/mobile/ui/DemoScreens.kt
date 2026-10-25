@@ -53,6 +53,9 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.runtime.CompositionLocalProvider
 import com.ghs.mobile.GhsApp
 import com.ghs.mobile.core.data.LocalRepository
 import com.ghs.mobile.core.data.SettingScope
@@ -1186,71 +1189,101 @@ fun DemoApp(
         topBar = {
             TopAppBar(
                 title = {
-                    // 详情页可以从收藏/历史里打开：标题跟着内容走，不然会顶着「收藏」两个字看详情
-                    Text(
-                        if (screen is Screen.Detail) {
-                            titleFor(screen)
-                        } else {
-                            when (tab) {
-                                DemoTab.HOME -> ""
-                                DemoTab.FAVORITES -> "收藏"
-                                DemoTab.HISTORY -> "历史"
-                                DemoTab.TAGS -> "标签"
-                            }
-                        },
-                    )
-                },
-                actions = {
-                    // 站点名：点开抽屉切换站点（对应参考的"选择站点"）
-                    TextButton(onClick = {
-                        showSiteSheet = true
-                        scope.launch { configs = withContext(Dispatchers.IO) { app.configs.list() } }
-                    }) {
-                        val favicon = configs.firstOrNull { it.key == configKey }?.let { siteFavicon(it) }
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            if (!favicon.isNullOrBlank()) {
-                                AsyncImage(
-                                    model = favicon,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(18.dp).clip(RoundedCornerShape(4.dp)),
-                                    contentScale = ContentScale.Crop,
+                    // 顶栏一行排完：左边是来源（详情页换成内容标题），右边是页面级操作。
+                    // 一律用「宽度随内容」的紧凑按钮——Material 的 TextButton 有 64dp 最小宽度，
+                    // 一行放四个就会把元素摊到整屏，看着全是空隙。
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Box(modifier = Modifier.weight(1f)) {
+                            if (screen is Screen.Detail) {
+                                // 详情页可以从收藏/历史里打开：标题跟着内容走
+                                Text(
+                                    text = titleFor(screen),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
                                 )
-                                Spacer(Modifier.width(6.dp))
+                            } else {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    // 站点名（来源）：点开切换站点
+                                    TopBarAction(
+                                        onClick = {
+                                            showSiteSheet = true
+                                            scope.launch {
+                                                configs = withContext(Dispatchers.IO) { app.configs.list() }
+                                            }
+                                        },
+                                    ) {
+                                        val favicon = configs.firstOrNull { it.key == configKey }?.let { siteFavicon(it) }
+                                        Row(verticalAlignment = Alignment.CenterVertically) {
+                                            if (!favicon.isNullOrBlank()) {
+                                                AsyncImage(
+                                                    model = favicon,
+                                                    contentDescription = null,
+                                                    modifier = Modifier.size(18.dp).clip(RoundedCornerShape(4.dp)),
+                                                    contentScale = ContentScale.Crop,
+                                                )
+                                                Spacer(Modifier.width(6.dp))
+                                            }
+                                            Text(
+                                                text = siteLabel(),
+                                                style = MaterialTheme.typography.titleSmall,
+                                                maxLines = 1,
+                                                overflow = TextOverflow.Ellipsis,
+                                            )
+                                        }
+                                    }
+                                    // 当前 Tab：底栏已经高亮，这里只作次要提示，不抢标题的位置
+                                    val tabName = when (tab) {
+                                        DemoTab.HOME -> ""
+                                        DemoTab.FAVORITES -> "收藏"
+                                        DemoTab.HISTORY -> "历史"
+                                        DemoTab.TAGS -> "标签"
+                                    }
+                                    if (tabName.isNotEmpty()) {
+                                        Text(
+                                            text = tabName,
+                                            style = MaterialTheme.typography.labelMedium,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                        )
+                                    }
+                                }
                             }
-                            Text(siteLabel())
                         }
-                    }
 
-                    // 筛选：仅当配置返回了 urlReplace 分组时出现
-                    val filterGroups = (screen as? Screen.List)?.page?.urlReplace.orEmpty()
-                    if (filterGroups.isNotEmpty()) {
-                        TextButton(onClick = { showFilterSheet = true }) {
-                            Text(if (filterLoading) "筛选中…" else "筛选")
-                        }
-                    }
-                    // 页码：右上角，点开抽屉选页
-                    if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
-                        val pages = ((screen as? Screen.List)?.page
-                            ?: (screen as? Screen.SearchResults)?.page)?.pagination.orEmpty()
-                        if (pages.isNotEmpty()) {
-                            TextButton(onClick = { showPageSheet = true }) {
-                                Text(pages.firstOrNull { it.isCurrent }?.title?.ifEmpty { "1" } ?: "1")
+                        // 筛选：仅当配置返回了 urlReplace 分组时出现
+                        val filterGroups = (screen as? Screen.List)?.page?.urlReplace.orEmpty()
+                        if (filterGroups.isNotEmpty()) {
+                            TopBarAction(onClick = { showFilterSheet = true }) {
+                                Text(if (filterLoading) "筛选中…" else "筛选")
                             }
                         }
-                    }
-                    // 布局切换：单列 / 双列
-                    TextButton(onClick = {
-                        layoutMode = if (layoutMode == ItemCardLayout.GRID) {
-                            ItemCardLayout.LIST
-                        } else {
-                            ItemCardLayout.GRID
+                        // 页码：点开选页
+                        if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
+                            val pages = ((screen as? Screen.List)?.page
+                                ?: (screen as? Screen.SearchResults)?.page)?.pagination.orEmpty()
+                            if (pages.isNotEmpty()) {
+                                TopBarAction(onClick = { showPageSheet = true }) {
+                                    Text(pages.firstOrNull { it.isCurrent }?.title?.ifEmpty { "1" } ?: "1")
+                                }
+                            }
                         }
-                    }) {
-                        Text(if (layoutMode == ItemCardLayout.GRID) "双列" else "单列")
-                    }
-                    if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
-                        IconButton(onClick = { searchOpen = !searchOpen }) {
-                            Icon(Icons.Default.Search, contentDescription = "搜索")
+                        // 布局切换：单列 / 双列
+                        TopBarAction(onClick = {
+                            layoutMode = if (layoutMode == ItemCardLayout.GRID) {
+                                ItemCardLayout.LIST
+                            } else {
+                                ItemCardLayout.GRID
+                            }
+                        }) {
+                            Text(if (layoutMode == ItemCardLayout.GRID) "双列" else "单列")
+                        }
+                        if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
+                            IconButton(onClick = { searchOpen = !searchOpen }) {
+                                Icon(Icons.Default.Search, contentDescription = "搜索")
+                            }
                         }
                     }
                 },
@@ -2132,6 +2165,32 @@ private fun DemoSearchBar(
                 color = MaterialTheme.colorScheme.error,
                 modifier = Modifier.padding(top = 4.dp),
             )
+        }
+    }
+}
+
+/**
+ * 顶栏紧凑按钮：宽度随内容，不占 Material 的 64dp 最小宽度。
+ *
+ * `TextButton` 的最小宽度是 64dp，一个「1」或「筛选」都会撑成一整格，
+ * 四个操作并排就会把顶栏摊满、处处是空隙。这里只保留 6dp 内边距，
+ * 高度仍留 48dp（触控目标下限，见 ui-implementation.md §2.3）。
+ */
+@Composable
+private fun TopBarAction(
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(8.dp))
+            .clickable(onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 6.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        CompositionLocalProvider(LocalTextStyle provides MaterialTheme.typography.labelLarge) {
+            content()
         }
     }
 }
