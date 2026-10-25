@@ -96,11 +96,22 @@ class HttpScriptHost(
                 try {
                     client.newCall(request).execute().use { response ->
                         if (!response.isSuccessful) {
+                            // 站点的拒绝页常常就是「挑战 / 验证」页（例如 Cloudflare 的
+                            // 工作量验证：HTTP 492 + 一段会自动执行的脚本）。只看状态码会把它
+                            // 当成普通失败直接抛出，所以这里读一次正文再判断。
+                            val peek = runCatching { response.peekBody(64 * 1024).string() }.getOrDefault("")
+                            val challenge = looksLikeChallenge(peek)
+                            val blocked = response.code in WEBVIEW_FALLBACK_CODES || challenge
+                            android.util.Log.w(
+                                "GHS",
+                                "fetchHtml ${response.code} $url server=${response.header("server")} " +
+                                    "blocked=$blocked body=${peek.replace("\n", " ").take(160)}",
+                            )
                             // 顺序：先用无头 WebView 试一次（它能执行 JS 过掉多数挑战），
                             // 只有拿回的仍是挑战页/空页时，才把窗口弹给用户手动完成。
-                            if (response.code in WEBVIEW_FALLBACK_CODES) {
+                            if (blocked) {
                                 android.util.Log.w("GHS", "fetchHtml ${response.code} → webview fallback $url")
-                                val html = fetchWithWebView(url)
+                                val html = fetchWithWebView(url, expectChallenge = challenge)
                                 if (html.isNotBlank() && !isChallengePage(html)) {
                                     htmlCache?.put(url, html)
                                     return html
@@ -173,9 +184,27 @@ class HttpScriptHost(
     private fun isChallengePage(html: String): Boolean {
         if (html.length < 512) return true
         // 与 checkBoot 一致：看 <title> 是否命中挑战标题
-        val title = TITLE_REGEX.find(html)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+        return looksLikeChallenge(html)
+    }
+
+    /**
+     * 只看标题是否命中挑战特征。
+     *
+     * 用于非 2xx 的拒绝页：这类页面可能很短，但"短"本身不能作为挑战判据
+     * （否则一个空的 404 也会被当成挑战，被当成正文缓存下来）。
+     */
+    private fun looksLikeChallenge(html: String): Boolean {
+        if (html.isBlank()) return false
+        return looksLikeChallengeTitle(titleOf(html))
+    }
+
+    private fun looksLikeChallengeTitle(title: String): Boolean {
+        if (title.isEmpty()) return false
         return CHALLENGE_TITLES.any { title.contains(it, ignoreCase = true) }
     }
+
+    private fun titleOf(html: String): String =
+        TITLE_REGEX.find(html)?.groupValues?.getOrNull(1)?.trim().orEmpty()
 
     /** 校验完成后重放一次原请求；仍失败则返回 null 交给上层兜底 */
     private fun retryOnce(request: Request): String? = runCatching {
@@ -224,15 +253,34 @@ class HttpScriptHost(
      * 超时只会把「还能救」的页面判死。要放弃由用户点「取消」（cancelPending）。
      * 失败返回空串，由调用方回落到原错误。
      */
-    private fun fetchWithWebView(url: String): String {
-        // 告诉 UI：正在用 WebView 取这个地址，方便提供「显示 webview」入口
-        return try {
-            executePage(url, "document.documentElement.outerHTML")
-        } catch (error: Throwable) {
-            android.util.Log.w("GHS", "webview fallback failed ${error.javaClass.simpleName}: ${error.message}")
-            ""
-        } finally {
+    private fun fetchWithWebView(url: String, expectChallenge: Boolean = false): String {
+        // 挑战页（尤其"工作量验证"）执行脚本后会自己跳转或种下 Cookie：
+        // - 已知是验证页时：先等它通过（否则求值会被验证脚本堵住）
+        // - 取回的仍是验证页时：隔几秒重新加载一次，此时验证用的 Cookie 一般已经落地
+        var last = ""
+        repeat(WEBVIEW_FALLBACK_ATTEMPTS) { attempt ->
+            last = try {
+                executePageInternal(url, OUTER_HTML_JS, show = false, waitRedirect = expectChallenge)
+            } catch (error: Throwable) {
+                android.util.Log.w("GHS", "webview fallback failed ${error.javaClass.simpleName}: ${error.message}")
+                ""
+            }
+            if (last.isNotBlank() && !isChallengePage(last)) {
+                android.util.Log.i(
+                    "GHS",
+                    "webview html len=${last.length} title=${titleOf(last)} url=$url",
+                )
+                return last
+            }
+            if (attempt < WEBVIEW_FALLBACK_ATTEMPTS - 1) {
+                android.util.Log.i(
+                    "GHS",
+                    "webview 仍取回验证页，${WEBVIEW_RETRY_DELAY_MS}ms 后重试 ${attempt + 2}/$WEBVIEW_FALLBACK_ATTEMPTS $url",
+                )
+                runCatching { Thread.sleep(WEBVIEW_RETRY_DELAY_MS) }
+            }
         }
+        return last
     }
 
     override fun request(
@@ -288,12 +336,26 @@ class HttpScriptHost(
      * 容器用常驻的 [WebWindows.FETCH_SPEC] 窗口（对齐"单例隐藏窗口"的用法）：
      * 第一次建，之后每次只换文档，省掉 1.5–3s 的 WebView 冷启动。
      */
-    override fun executePage(url: String, code: String, show: Boolean): String {
+    override fun executePage(url: String, code: String, show: Boolean): String =
+        executePageInternal(url, code, show, waitRedirect = false)
+
+    /**
+     * 无头页面执行（真实实现）。
+     *
+     * [waitRedirect] 用于「工作量验证」这类拦截页：它先返回一段自己执行脚本的页面，
+     * 算完后**跳转**或**种 Cookie**，此时求值会被验证脚本堵住，必须等它通过。
+     */
+    private fun executePageInternal(
+        url: String,
+        code: String,
+        show: Boolean,
+        waitRedirect: Boolean,
+    ): String {
         // 只要在用 WebView 取页，就让 UI 出现「显示 webview」入口
         WebViewFallbackHub.start(url)
         try {
             // 记住本次调用的代号：只有这之后发生的「取消」才作数
-            return runInFetchWindow(url, code, show, cancelEpoch.get())
+            return runInFetchWindow(url, code, show, cancelEpoch.get(), waitRedirect)
         } finally {
             // 撤掉入口：失败分支会 throw，放在其后就永远不执行
             WebViewFallbackHub.stop()
@@ -301,7 +363,13 @@ class HttpScriptHost(
     }
 
     /** 同一时刻只允许一个取页任务占着这个窗口 */
-    private fun runInFetchWindow(url: String, code: String, show: Boolean, epoch: Long): String {
+    private fun runInFetchWindow(
+        url: String,
+        code: String,
+        show: Boolean,
+        epoch: Long,
+        waitRedirect: Boolean,
+    ): String {
         val window = WebWindows.acquire(WebWindows.FETCH_SPEC)
         if (!fetchLock.tryLock(FETCH_LOCK_WAIT_MS, TimeUnit.MILLISECONDS)) {
             throw IllegalStateException("取页窗口正忙，请稍后再试")
@@ -313,7 +381,10 @@ class HttpScriptHost(
                 done = { value -> task.finish(value) },
                 error = { message -> task.fail("页面脚本出错：$message") },
             )
-            window.setPageFinishedListener { _, _ -> task.loaded.countDown() }
+            window.setPageFinishedListener { _, _ ->
+                task.finishes.incrementAndGet()
+                task.loaded.countDown()
+            }
             // 403 这类主框架错误不会触发 onPageFinished：也要让等待方继续，
             // 否则取页会一直挂到用户手动取消
             window.setHttpErrorListener { _, _ -> task.loaded.countDown() }
@@ -339,6 +410,8 @@ class HttpScriptHost(
             // 并行轮询 DOM 就绪，正文出现就取，不再干等"页面彻底加载完"
             startDomPoll(window, task, epoch)
             awaitLoaded(task, epoch)
+            // 验证页会自己跳转或需要重载：等它通过再求值，否则会被验证脚本堵住
+            if (waitRedirect && task.failure == null) awaitChallengeCleared(window, task, epoch)
 
             if (task.failure == null) {
                 val raw = runCatching { window.eval(executeJs(code), EVAL_TIMEOUT_MS) }.getOrNull()
@@ -397,6 +470,47 @@ class HttpScriptHost(
         }
     }
 
+    /**
+     * 等「验证页」通过。
+     *
+     * 工作量验证页有两个特点：
+     * 1. 验证脚本会占满渲染线程 —— 这期间 `evaluateJavascript` 只会超时，不能求值正文；
+     * 2. 算完后有的站点自己跳转，有的只是种下 Cookie 需要重新加载。
+     *
+     * 所以这里用**短超时探标题**：能读到标题说明渲染线程已空，标题不再是验证特征就可
+     * 开始求值；仍是验证页则隔几秒重载一次（此时 Cookie 通常已经落地）。
+     */
+    private fun awaitChallengeCleared(window: WebWindow, task: FetchTask, epoch: Long) {
+        val started = System.currentTimeMillis()
+        val deadline = started + CHALLENGE_WAIT_MS
+        var lastReload = 0L
+        while (System.currentTimeMillis() < deadline) {
+            if (cancelEpoch.get() != epoch) return
+            // 2s 超时：验证脚本没跑完时这里返回 null，正好当作"还没好"
+            val rawTitle = runCatching { window.eval("document.title", 2_000) }.getOrNull()
+            if (rawTitle != null) {
+                val title = normalize(rawTitle)
+                if (!looksLikeChallengeTitle(title)) {
+                    android.util.Log.i(
+                        "GHS",
+                        "验证页已通过（${System.currentTimeMillis() - started}ms, title=$title），开始求值",
+                    )
+                    return
+                }
+                if (System.currentTimeMillis() - lastReload > RELOAD_INTERVAL_MS) {
+                    lastReload = System.currentTimeMillis()
+                    android.util.Log.i("GHS", "验证页仍在（title=$title），重载一次")
+                    onMain { runCatching { window.view.reload() } }
+                }
+            }
+            runCatching { Thread.sleep(CHALLENGE_POLL_MS) }
+        }
+        android.util.Log.w(
+            "GHS",
+            "验证页 ${CHALLENGE_WAIT_MS}ms 内未通过（finishes=${task.finishes.get()}），按当前页面处理",
+        )
+    }
+
     /** 在页面里执行配置给的表达式；Promise 结果经 `__ghsWin` 桥回传 */
     private fun executeJs(code: String): String =
         "(function(){" +
@@ -421,6 +535,9 @@ class HttpScriptHost(
 
         val loaded = CountDownLatch(1)
         val result = CountDownLatch(1)
+
+        /** 第几次 onPageFinished：验证页 → 正文通常是两次 */
+        val finishes = java.util.concurrent.atomic.AtomicInteger(0)
 
         fun finish(value: String) {
             output = value
@@ -447,15 +564,26 @@ class HttpScriptHost(
         runCatching { manager.flush() }
     }
 
+    /**
+     * 还原 `evaluateJavascript` 的返回值。
+     *
+     * 回传的是 JSON 编码值：字符串带引号，且 Android 的序列化会把 `<` `>` `&` `'`
+     * 转成 `\u003C` 这类转义。只做 `\"` / `\\n` 的替换是不够的——
+     * 取回来的整页 HTML 会变成 `\u003Chtml ...`，交给 jsoup 解析直接是 0 个节点。
+     */
     private fun normalize(raw: String?): String {
         if (raw == null || raw == "null") return ""
-        // evaluateJavascript 回传的是 JSON 编码值：字符串会带引号，需要还原
         val trimmed = raw.trim()
         if (trimmed.length >= 2 && trimmed.startsWith("\"") && trimmed.endsWith("\"")) {
-            return trimmed.substring(1, trimmed.length - 1)
-                .replace("\\\"", "\"")
-                .replace("\\n", "\n")
-                .replace("\\\\", "\\")
+            // 用 JSON 解析器完整还原转义（\uXXXX / \" / \\ / \n ...）
+            return runCatching {
+                org.json.JSONTokener(trimmed).nextValue() as? String ?: ""
+            }.getOrElse {
+                trimmed.substring(1, trimmed.length - 1)
+                    .replace("\\\"", "\"")
+                    .replace("\\n", "\n")
+                    .replace("\\\\", "\\")
+            }
         }
         return trimmed
     }
@@ -490,6 +618,20 @@ class HttpScriptHost(
 
         /** 等别的取页任务让出窗口的上限 */
         private const val FETCH_LOCK_WAIT_MS = 15_000L
+
+        /** 无头 WebView 取回验证页时的重试：工作量验证通常几十秒内自己完成 */
+        private const val WEBVIEW_FALLBACK_ATTEMPTS = 3
+        private const val WEBVIEW_RETRY_DELAY_MS = 2_500L
+
+        /** 等验证页通过的上限：手机算工作量验证实测要 1~2 分钟，留足余量 */
+        private const val CHALLENGE_WAIT_MS = 180_000L
+
+        /** 验证页轮询间隔与重载间隔 */
+        private const val CHALLENGE_POLL_MS = 800L
+        private const val RELOAD_INTERVAL_MS = 10_000L
+
+        /** 取回整页 HTML 的表达式（配置里的 getHtml 走的就是它） */
+        private const val OUTER_HTML_JS = "document.documentElement.outerHTML"
         /** WebView 兜底总上限：校验页可能永不结束，不能让它拖住整次请求 */
         /** DOM 就绪轮询：每 500ms 探一次，最多 80 次（约 40s） */
         private const val DOM_POLL_INTERVAL_MS = 800L
@@ -508,6 +650,8 @@ class HttpScriptHost(
             "just a moment", "captcha", "checking your browser",
             "attention required", "verify you are human",
             "安全验证", "人机验证",
+            // 工作量验证（proof-of-work）类拦截页：标题常见「安全防御 - 工作量验证」
+            "工作量验证", "安全防御",
         )
         private val TITLE_REGEX =
             Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
