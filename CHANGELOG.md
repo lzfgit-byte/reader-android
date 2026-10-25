@@ -13,6 +13,8 @@
 
 ### Docs
 
+- **人机校验复盘按新证据重写（F29）**：13:55–15:57 的连续抓包把原来的「窗口白屏」结论改写成 4 个可修缺陷——① 不带 CF 标记的拦截页被判成「校验通过」（开窗后 2.5 s 自动放行，重放请求仍被挡）；② `403` 两连击把正在进行的校验窗掐死（挑战页自身就是 403，首次加载即计 1，第二次 403 就关窗）；③ 闸门 5 分钟到点判死后没人接收迟到的成功（两次都是超时 300.0 s、页面在 1.4–2.0 s 后才完成）；④ 兜底 WebView 在 `documentElement` 为 null 时抛错。详见 `docs/04-engineering/postmortem-2026-10-25-challenge-loop.md` §5。
+
 - **新增复盘文档**（`docs/04-engineering/postmortem-2026-10-25-challenge-loop.md`）：记录人机校验死循环的现象、三条根因（窗口 `loadUrl` 被注释吞掉 / 验证期间反复重载 / 挑战页被当正文缓存）、取证日志与截图口径、已修复清单，以及仍未解决的部分（Challenge 页在应用内仍白屏）与下一步验证假设。
 
 - **人机校验窗口改用设备真实标识（F29）**：校验窗口不再套桌面 UA（原先 `navigator.userAgent` 声称 Windows 而 `userAgentData` 仍是 Android，Turnstile 判为伪造、永远不过），也不再复用取页窗口与桌面 Client Hints；取页侧仍用桌面 UA，凭证靠共享 Cookie 传递。
