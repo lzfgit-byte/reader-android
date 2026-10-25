@@ -103,6 +103,9 @@ enum class ImageQuality { ORIGINAL, PREVIEW }
 /** 顺序加载：同时最多两张在飞 */
 private const val LOAD_CONCURRENCY = 2
 
+/** 预取窗口：当前页之后连续多少页提前入队（不要求已进入视窗） */
+private const val PREFETCH_AHEAD = 12
+
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun ComicReaderScreen(
@@ -149,23 +152,24 @@ fun ComicReaderScreen(
         snapshotFlow { listState.firstVisibleItemIndex }.collect { index -> onProgress(index) }
     }
 
-    // 预取后续几页：连续滚动时不用等下载
+    // 预取：从当前页开始，按「从上到下」的顺序把后面 PREFETCH_AHEAD 页都排进队列。
+    // LazyColumn 只会组合视窗内的 item，等滚到才加载就永远慢半拍——所以这里主动
+    // 入队，不依赖是否可见。已经在位图缓存里的页跳过（滚回来不用重复请求）。
     val context = LocalContext.current
     LaunchedEffect(current, quality, pages) {
         val loader = context.imageLoader
-        (1..3).forEach { delta ->
+        (1..PREFETCH_AHEAD).forEach { delta ->
             val i = current + delta
             val page = pages.getOrNull(i) ?: return@forEach
             val url = page.preferQuality(quality)
-            if (url.isNotEmpty()) {
-                android.util.Log.i("GHS", "prefetch page ${i + 1} $url")
-                loader.enqueue(
-                    ImageRequest.Builder(context)
-                        .data(url)
-                        .size(coil.size.Size.ORIGINAL)
-                        .build(),
-                )
-            }
+            if (url.isEmpty() || ImageCache.bitmap(url) != null) return@forEach
+            android.util.Log.i("GHS", "prefetch page ${i + 1} $url")
+            loader.enqueue(
+                ImageRequest.Builder(context)
+                    .data(url)
+                    .size(coil.size.Size.ORIGINAL)
+                    .build(),
+            )
         }
     }
 
