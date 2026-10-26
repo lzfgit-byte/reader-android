@@ -117,4 +117,24 @@
   在"配置内部再取页"的路上不安全。
 - 判断技巧：`detailError` 出现这条，先看 `getItems` 返回的 `jumpUrl` 是否以 `/` 开头——是就别再查选择器了。
 
+## 18. 换语言前缀（`/cn`、`/zh-tw`）后，绝对地址正则全部落空
+
+- 现象：把 `homeUrl` 从 `https://mycomic.com/` 换成 `https://mycomic.com/cn` 之后，列表变 **0 条**，
+  但页面本身正常（`/api/state` 里 `url` 对、`tags` 还有 20 个，只有 `items: 0`）。
+- 原因：语言前缀会出现在**所有链接**上（`https://mycomic.com/cn/comics/1128`），而 `getItems` 里用
+  `^https?://site\.com/comics/\d+$` 这种精确正则过滤 href，一条都匹配不上，整页卡片被 `return` 掉。
+- 正确做法：正则留可选前缀 `^https?://site\.com(/[a-z]{2})?/comics/\d+$`，或只判断 path 里含 `/comics/<id>`。
+  另外，配置里**手工拼**的地址（章节、资料库、排行、搜索）也要跟着前缀走——用 `this.homeUrl` 去算，
+  别写死域名，否则列表是简体、点进去又变回繁體。
+- 判断技巧：`items: 0` 但 `tags` 正常、页面在浏览器里能开，先看卡片链接长什么样，再看正则要不要前缀。
+
+## 19. `src` 是 1x1 透明占位、真地址在 `data-src`（lozad）
+
+- 现象：列表**第一张封面正常，第二张起全是空白灰块**；`items` 数量却完全正确。
+- 原因：列表用 lozad 懒加载，非首屏卡片的 `src` 是 `data:image/png;base64,…`（1x1 透明占位），真地址在 `data-src`。
+  只读 `src` 等于把占位图当封面，界面渲染出来就是一块灰。
+- 正确做法：`coverImg = data-src || src`，且**丢掉 `data:` 开头的值**（宁可空着让 UI 出首字占位，也别渲染 1x1）；
+  页图（`getComicImages`）同理，常见形态就是"前几张给 src、其余给 data-src"。
+
+
 

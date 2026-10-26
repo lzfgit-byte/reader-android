@@ -13,6 +13,8 @@
 
 ### Docs
 
+- **技能补第 18、19 条坑：语言前缀把绝对地址正则打空 / lozad 的 1x1 占位封面**（`.dsh/skills/ghs-site-to-config/`）：① 站点把首页从 `/` 换成 `/cn` 后，所有链接都带上语言前缀（`https://site.com/cn/comics/1128`），`getItems` 里 `^https?://site\.com/comics/\d+$` 这种精确正则一条都匹配不上，整页变 0 条（`tags` 还正常，最容易误判成选择器坏了）；正确做法是正则留可选前缀、或只判 path，且配置里手工拼的地址一律用 `this.homeUrl` 算。② 列表用 lozad 懒加载时，非首屏卡片的 `src` 是 `data:image/png;base64,…` 的 1x1 透明占位、真地址在 `data-src`，只读 `src` 就会「第一张有封面、其余全灰」；要 `data-src || src` 并丢掉 `data:` 开头的值。`SKILL.md` §1 侦察清单与 §3 `homeUrl` 约束已加指针。
+
 - **技能补第 17 条坑：配置里调用 `getHtml` 拿到的还是相对地址**（`.dsh/skills/ghs-site-to-config/`）：站点给的 `href` 都是站内相对路径，引擎只在条目入库时补全 `jumpUrl`；配置自己在 `getDetailInfo` / `getContents` / `getComicImages` 里再取页时拿到的是原样字符串，OkHttp 直接抛 `Expected URL scheme 'http' or 'https'`，表现为「列表正常、一点条目就失败」。现在 `SKILL.md` §3 硬约束要求 `jumpUrl` / 分页 `url` / 目录 `url` 一律在 `getItems` 里拼成绝对地址，坑列表也记下了这条的判据（先看 `jumpUrl` 是不是以 `/` 开头，别急着查选择器）。
 
 - **技能补第 16 条坑：同一站点里搜索页与列表页是两个列表块**（`.dsh/skills/ghs-site-to-config/`）：某站点的搜索结果单独渲染成 `#list_videos_videos_list_search_result_*`，页码参数是 `from_videos+from_albums:N`；分类页/标签页才是 `#list_videos_common_videos_list_*` + `from:N`。分页选择器只写后者时，搜索结果页分页全空（列表有 24 条、但没有下一页）。一并记下三个连带事实：搜索页翻页没有路由（`/search/<kw>/2/` 返回 404，`?page=` 被忽略，只有 `?from_videos=N` 有效）、末页的"下一页"是 `--disabled` 的假链接（值比总页数大 1，顺着用就是 404）、canonical 在该页是解码后的中文（要重新编码，但不能整串 `encodeURI`，否则 `%E5` 变 `%25E5`）。`SKILL.md` §1 侦察清单同步要求「搜索页/筛选页分别抓一次、分别验证」。

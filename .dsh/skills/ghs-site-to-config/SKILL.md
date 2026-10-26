@@ -35,7 +35,8 @@ whenToUse: 用户给出一个站点地址要求「做成配置 / 加个来源 / 
    - 条目容器选择器（`li` / `article` / `div.card`…）与每页条数；
    - 详情链接在 `href` 还是 `data-href`；
    - 标题在 `h2` / `.title` / `img[alt]`；
-   - 封面：`img.src` 常是占位图，真地址多在 `data-src` / `data-original` / `data-webp` / `srcset`；
+   - 封面：`img.src` 常是占位图，真地址多在 `data-src` / `data-original` / `data-webp` / `srcset`
+     （lozad 那种 1x1 透明占位最常见，见 `references/pitfalls.md` 第 19 条）；
    - 分页：`?page=N`、「下一页」、「加载更多」接口；**搜索页/筛选页常常是另一套列表块**（id 与页码参数都不同，
      见 `references/pitfalls.md` 第 16 条），要分别抓一次、分别验证；
    - 标签云、排序/筛选（`urlReplace`）；
@@ -71,7 +72,8 @@ whenToUse: 用户给出一个站点地址要求「做成配置 / 加个来源 / 
 ## 3. 写配置的硬约束
 
 - `key`：`^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$`，大小写敏感，**上线后别改**（收藏/历史按它分组）。
-- `homeUrl`：必填，同时是**相对 URL 的解析基准**。
+- `homeUrl`：必填，同时是**相对 URL 的解析基准**。带语言/地区前缀的站点（`/cn`、`/zh-tw`）链接会全带前缀，
+  精确正则过滤 href 会一条都匹配不上（见 `references/pitfalls.md` 第 18 条）。
 - **7 个必需方法**：`getItems` `getPagination` `getTags` `getUrlReplace` `getDetailInfo` `adapterLoadUrl` `adapterSearchUrl`，少一个即 `E-CFG-005`。
 - `adapterSearchUrl` 返回**空串** = 不支持搜索（入口隐藏）；`searchUrl` 只是给作者用的前缀变量。
 - `this` 绑定配置对象，方法里可用 `this.homeUrl`。
