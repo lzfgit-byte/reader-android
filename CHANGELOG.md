@@ -13,6 +13,8 @@
 
 ### Docs
 
+- **技能补第 20 条坑：目录被拆成多段（单话 / 单行本 / 番外），别只抓第一个数组**（`.dsh/skills/ghs-site-to-config/`）：书目页把目录拆成多个 `<div x-data='{ … chapters: [...] … }'>`，每段标题紧跟在属性后面的 `data-flux-subheading` 里；只 `indexOf('chapters: [')` 取第一个就只拿到一段（番外全丢），全拼上又会混进「第N卷」整卷合集。正确做法是遍历所有数组、按"数组之后最近的段标题"归类，再按站点语义取舍排序（本例：单话 + 番外，跳过单行本，番外排最后）。
+
 - **技能补第 18、19 条坑：语言前缀把绝对地址正则打空 / lozad 的 1x1 占位封面**（`.dsh/skills/ghs-site-to-config/`）：① 站点把首页从 `/` 换成 `/cn` 后，所有链接都带上语言前缀（`https://site.com/cn/comics/1128`），`getItems` 里 `^https?://site\.com/comics/\d+$` 这种精确正则一条都匹配不上，整页变 0 条（`tags` 还正常，最容易误判成选择器坏了）；正确做法是正则留可选前缀、或只判 path，且配置里手工拼的地址一律用 `this.homeUrl` 算。② 列表用 lozad 懒加载时，非首屏卡片的 `src` 是 `data:image/png;base64,…` 的 1x1 透明占位、真地址在 `data-src`，只读 `src` 就会「第一张有封面、其余全灰」；要 `data-src || src` 并丢掉 `data:` 开头的值。`SKILL.md` §1 侦察清单与 §3 `homeUrl` 约束已加指针。
 
 - **技能补第 17 条坑：配置里调用 `getHtml` 拿到的还是相对地址**（`.dsh/skills/ghs-site-to-config/`）：站点给的 `href` 都是站内相对路径，引擎只在条目入库时补全 `jumpUrl`；配置自己在 `getDetailInfo` / `getContents` / `getComicImages` 里再取页时拿到的是原样字符串，OkHttp 直接抛 `Expected URL scheme 'http' or 'https'`，表现为「列表正常、一点条目就失败」。现在 `SKILL.md` §3 硬约束要求 `jumpUrl` / 分页 `url` / 目录 `url` 一律在 `getItems` 里拼成绝对地址，坑列表也记下了这条的判据（先看 `jumpUrl` 是不是以 `/` 开头，别急着查选择器）。
