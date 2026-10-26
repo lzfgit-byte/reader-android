@@ -123,7 +123,3 @@ class DecodedImageFetcher(
         val USER_AGENT: String get() = com.ghs.mobile.core.engine.net.UserAgents.UA
     }
 }
-
-/** 给 ImageLoader 挂上解图链路 */
-fun ImageLoader.Builder.withImageDecoding(context: Context): ImageLoader.Builder =
-    components { add(DecodedImageFetcher.Factory(context)) }

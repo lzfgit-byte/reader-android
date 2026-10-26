@@ -110,29 +110,22 @@ fun SitePickerSheet(
                             .padding(horizontal = 12.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 站点图标：优先配置里的 favicon，取不到时退回首字色块
+                        // 站点图标：优先配置里的 favicon；没配/取不到/解不开时露出下面的首字色块
                         val favicon = siteFavicon(site)
-                        if (favicon.isNotEmpty()) {
-                            AsyncImage(
-                                model = favicon,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .clip(RoundedCornerShape(8.dp)),
-                                contentScale = ContentScale.Crop,
-                            )
-                        } else {
-                            Box(
-                                modifier = Modifier
-                                    .size(34.dp)
-                                    .background(siteColor(site.key), RoundedCornerShape(8.dp)),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text(
-                                    siteName(site).take(1),
-                                    color = Color.White,
-                                    fontWeight = FontWeight.Bold,
-                                    style = MaterialTheme.typography.titleMedium,
+                        Box(
+                            modifier = Modifier
+                                .size(34.dp)
+                                .clip(RoundedCornerShape(8.dp)),
+                        ) {
+                            SiteLetter(site)
+                            if (favicon.isNotEmpty()) {
+                                // 注意：必须交给 AsyncImage 自己画（它会驱动加载），
+                                // 用 painter.state 在外层分支会让加载永远停在 Loading
+                                AsyncImage(
+                                    model = favicon,
+                                    contentDescription = null,
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
                                 )
                             }
                         }
@@ -224,4 +217,22 @@ private fun siteColor(key: String): Color {
     val palette = listOf(Color(0xFF5B7F95), Color(0xFF8A6E9B), Color(0xFF9B7E6E), Color(0xFF6E9B88))
     val hash = key.hashCode()
     return palette[(if (hash < 0) -hash else hash) % palette.size]
+}
+
+/** 站点首字色块：没有配图标、或图标取不到/解不开时的占位 */
+@Composable
+private fun SiteLetter(site: ConfigStore.StoredConfig) {
+    Box(
+        modifier = Modifier
+            .size(34.dp)
+            .background(siteColor(site.key), RoundedCornerShape(8.dp)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Text(
+            siteName(site).take(1),
+            color = Color.White,
+            fontWeight = FontWeight.Bold,
+            style = MaterialTheme.typography.titleMedium,
+        )
+    }
 }

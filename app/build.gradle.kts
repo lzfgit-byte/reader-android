@@ -58,6 +58,8 @@ dependencies {
     implementation("androidx.compose.material:material-icons-extended")
     implementation("androidx.activity:activity-compose:1.9.2")
     implementation("io.coil-kt:coil-compose:2.7.0")
+    // 矢量图标：配置里的 favicon 常见 svg（coil 核心不自带 svg 解码器）
+    implementation("io.coil-kt:coil-svg:2.7.0")
 
     // 视频播放（HLS 需要单独引入）
     implementation("androidx.media3:media3-exoplayer:1.4.1")

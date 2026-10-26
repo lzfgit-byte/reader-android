@@ -3,8 +3,10 @@ package com.ghs.mobile
 import android.app.Application
 import coil.ImageLoader
 import coil.ImageLoaderFactory
-import com.ghs.mobile.ui.withWebViewFallback
-import com.ghs.mobile.ui.withImageDecoding
+import coil.decode.SvgDecoder
+import com.ghs.mobile.ui.DataUriFetcher
+import com.ghs.mobile.ui.DecodedImageFetcher
+import com.ghs.mobile.ui.WebViewImageFallbackInterceptor
 import com.ghs.mobile.core.data.GhsDatabase
 import com.ghs.mobile.core.data.LocalRepository
 import com.ghs.mobile.core.engine.proxy.RulesProxySelector
@@ -58,11 +60,28 @@ class GhsApp : Application(), ImageLoaderFactory {
         .callTimeout(120, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
+    /**
+     * 图片加载器。
+     *
+     * 自定义组件必须写在**同一个** `components {}` 里：Coil 2 的 `components {}`
+     * 是整体替换注册表而不是追加，连写三个会互相覆盖（svg 解码器曾被后一个调用吃掉）。
+     *
+     * 注册表里自定义项排在 Coil 内置项之前，所以这里的解码器/取值器优先命中。
+     */
     override fun newImageLoader(): ImageLoader = ImageLoader.Builder(this)
         .okHttpClient { imageClient() }
-        // OkHttp 取图失败时改用 WebView 渲染（防盗链 / 连接被断 / 403）
-        .withWebViewFallback(this)
-        .withImageDecoding(this)
+        // 仅调试包把取图失败打到 logcat：release 包不该刷屏
+        .apply { if (BuildConfig.DEBUG) logger(coil.util.DebugLogger()) }
+        .components {
+            // 解码器：站点图标可能是矢量图（favicon 写成 svg）
+            add(SvgDecoder.Factory())
+            // 取值器：favicon 的 `data:` 内联图（Coil 自带 fetcher 不认这个 scheme）
+            add(DataUriFetcher.Factory())
+            // 取值器：配置给了解图参数的图片（adapterImageCode）
+            add(DecodedImageFetcher.Factory(this@GhsApp))
+            // 拦截器：OkHttp 取图失败时改用 WebView 渲染（防盗链 / 连接被断 / 403）
+            add(WebViewImageFallbackInterceptor(this@GhsApp))
+        }
         .build()
 
     override fun onCreate() {

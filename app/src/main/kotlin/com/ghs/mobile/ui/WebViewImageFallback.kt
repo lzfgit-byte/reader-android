@@ -198,7 +198,3 @@ object WebViewImageLoader {
         return output
     }
 }
-
-/** 便捷入口：给 `ImageLoader.Builder` 挂上兜底 */
-fun ImageLoader.Builder.withWebViewFallback(context: Context): ImageLoader.Builder =
-    components { add(WebViewImageFallbackInterceptor(context)) }
