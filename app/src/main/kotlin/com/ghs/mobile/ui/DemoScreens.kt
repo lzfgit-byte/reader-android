@@ -1,4 +1,4 @@
-﻿package com.ghs.mobile.ui
+package com.ghs.mobile.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
@@ -605,6 +605,8 @@ fun DemoApp(
         session = created
         // 进度按相对地址存：记录当前站点，供 ProgressKeys 剥/拼域名
         ProgressKeys.homeUrl = created.homeUrl
+        // 图片 Referer 跟着当前站点走：图床按它判盗链（缺了封面/页图 403）
+        ImageReferer.setSite(created.homeUrl)
         // 调试台（F25）：把求值器挂到当前会话上
         com.ghs.mobile.web.DebugHub.evaluator = { code -> created.eval(code) }
         // 图片解码（F05）：图集打散图交给当前配置的 adapterImageCode 还原

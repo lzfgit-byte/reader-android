@@ -52,8 +52,20 @@ class GhsApp : Application(), ImageLoaderFactory {
     /**
      * 图片专用客户端：图集是原始尺寸 webp，单张常常几 MB，
      * OkHttp 默认 10s 读超时会把它误判成失败（浏览器能开、App 打不开）。
+     *
+     * 顺带补 `Referer`：图床按它判盗链，缺了直接 403（mycomic 的 CDN 就是这样）。
+     * 规则与浏览器一致——用**当前站点的首页地址**，已经在请求里显式指定时不动。
      */
     fun imageClient(): OkHttpClient = proxiedClient().newBuilder()
+        .addInterceptor { chain ->
+            val request = chain.request()
+            val referer = request.header("Referer") ?: com.ghs.mobile.ui.ImageReferer.siteOrigin()
+            if (referer.isNullOrBlank()) {
+                chain.proceed(request)
+            } else {
+                chain.proceed(request.newBuilder().header("Referer", referer).build())
+            }
+        }
         .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
         .readTimeout(90, java.util.concurrent.TimeUnit.SECONDS)
         .writeTimeout(20, java.util.concurrent.TimeUnit.SECONDS)

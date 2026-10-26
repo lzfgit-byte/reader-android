@@ -163,7 +163,17 @@ object WebViewImageLoader {
             }
         }
 
-        main.post { runCatching { window.view.loadUrl(url) } }
+        val referer = ImageReferer.siteOrigin()
+        main.post {
+            runCatching {
+                if (referer.isNullOrBlank()) {
+                    window.view.loadUrl(url)
+                } else {
+                    // 图床按 Referer 判盗链：兜底这条路径也得带上，否则取回来还是 403 页
+                    window.view.loadUrl(url, mapOf("Referer" to referer))
+                }
+            }
+        }
 
         Thread {
             val deadline = System.currentTimeMillis() + TIMEOUT_MS

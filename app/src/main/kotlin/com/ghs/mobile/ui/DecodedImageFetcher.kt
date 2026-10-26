@@ -90,7 +90,8 @@ class DecodedImageFetcher(
         val request = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
-            .header("Referer", originOf(url))
+            // 优先用站点首页当 Referer（图床认的是站点，不是图床自己）
+            .header("Referer", ImageReferer.siteOrigin() ?: originOf(url))
             .build()
         client.newCall(request).execute().use { response ->
             if (!response.isSuccessful) error("HTTP ${response.code}")
