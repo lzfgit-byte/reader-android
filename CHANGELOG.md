@@ -11,7 +11,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **视频播放补上 Referer（F06）：详情页直连播放的 m3u8 一律 403**：`Screen.VideoPlayer` 早就有 `referer` 参数、剧集播放也传了，但**条目直接进播放器那条路径没传**，`HttpDataSource` 因此不带 `Referer`；视频 CDN（如 `surrit.com`）缺它整站 403，表现成"m3u8 地址解析成功、播放器报 `ERROR_CODE_IO_BAD_HTTP_STATUS`"，很容易被误判成出口 IP 被封。现在按设计文档 §5.6「媒体请求带站点 Referer」补齐：新增 `playbackReferer()`，优先用条目来源页 `jumpUrl`（与站点自己的播放器一致），非绝对地址时退回站点 origin；Referer 挂在 DataSource 的默认请求头上，所以 playlist 之后返回的子播放列表与分片也带同一个头。实测 `https://missav.ws/cn/caribbeancom-102626-001`：`00:20 / 1:07:06` 正常出画面并推进，A/B 对照（`net.request` 带 Referer=200 返回 `#EXTM3U`、不带=403）见 `.dsh/skills/ghs-site-to-config/references/pitfalls.md` 第 23 条。
+
 ### Docs
+
+- **技能补第 23 条坑：视频 m3u8 报 403 是缺 Referer，别急着判「IP 被封」**（`.dsh/skills/ghs-site-to-config/`）：视频 CDN 按 Referer 放行，缺了整站 403（连根路径也 403，很像 IP 封禁）；而用 `curl` 复现时它自己的 TLS 指纹本来就会被挡，带不带 Referer 都是 403，证明不了任何事。取证要用应用内 `net.request` 做 A/B（同一条 m3u8 带 / 不带 Referer 各请求一次，期望 200 / 403），并注意 playlist 之后返回的子列表与分片也要带同一个 Referer——应用侧靠播放器 DataSource 的默认请求头覆盖。
 
 - **技能补第 21、22 条坑：播放地址藏在 eval-packer 里 / 改配置时 JSON body 写坏会伪装成站点 404**（`.dsh/skills/ghs-site-to-config/`）：① 有站点的详情页只给一个没有 `src` 的 `<video class="player">`，真正的 m3u8 压在 Dean Edwards packer（`eval(function(p,a,c,k,e,d){…}('…',16,16,'词表'.split('|'),0,{}))`）里，解包后是 `source` / `source842` / `source1280` 三条赋值；解码要先把打包串里的 `\'` 还原成 `'`，再按 base36 token 替换词表，取地址的正则必须带 `\s*=`（否则 `source` 会吃掉 `source1280`），且没有 1080p 的片子会让 `source1280` 指向 `720p/video.m3u8`——要按 URL 判重、按路径定清晰度，别信变量名。② 用 shell 拼 `{"config": "…"}` body 更新配置时，一旦引号/反斜杠没转义对，存进去的源码会变成 `{"value":"…"}` 或被 JSON 二次转义（`/` → `\/`），扫描器取出的 `homeUrl` 带反斜杠，取页 path 变成 `\/path`，站点如实回 404——现象是「首页 404，但调试接口 `getHtml` 同一个 URL 返回 200」，极易误判成镜像/节点问题。正确做法是用脚本生成 UTF-8 JSON（`json.dumps`）再 `curl --data-binary @body.json`，改完立刻用 `GET /api/configs/<key>/raw` 核对原文长度与 `homeUrl` 是否全斜杠。
 

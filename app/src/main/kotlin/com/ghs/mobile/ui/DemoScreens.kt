@@ -674,6 +674,8 @@ fun DemoApp(
                     startIndex = 0,
                     // 默认从 0 开始播；历史进度只作为「继续观看」提示（2 秒内可点）
                     startMs = 0L,
+                    // 媒体 CDN 普遍校验 Referer（缺了直接 403）：用详情页地址，取不到退回站点 origin
+                    referer = playbackReferer(session, item),
                     resumePositionMs = saved?.positionMs ?: 0L,
                 )
                 finish()
@@ -2260,6 +2262,19 @@ private fun deviceReferer(session: ReaderSession?, item: Item): String? {
         val uri = java.net.URI(base)
         "${uri.scheme}://${uri.host}/"
     }.getOrNull()
+}
+
+/**
+ * 视频播放用的 Referer。
+ *
+ * 优先用**详情页地址**：站点自己的播放器就是从这个页面发起 m3u8 请求的，CDN 按页面地址放行；
+ * `jumpUrl` 不是绝对地址（或没有来源会话）时退回站点 origin。
+ * 该值挂在 DataSource 的默认请求头上，所以 playlist 里后续的子列表 / 分片请求也带同一个 Referer。
+ */
+private fun playbackReferer(session: ReaderSession?, item: Item): String? {
+    val page = item.jumpUrl.trim()
+    if (page.startsWith("http://") || page.startsWith("https://")) return page
+    return deviceReferer(session, item)
 }
 /**
  * 把绝对地址转成「相对 homeUrl」的地址（保留 path/query/fragment）。
