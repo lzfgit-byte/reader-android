@@ -44,7 +44,9 @@ import com.ghs.mobile.core.model.Pagination
 import com.ghs.mobile.web.ConfigStore
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
+import androidx.compose.ui.platform.LocalContext
+import coil.compose.SubcomposeAsyncImage
+import coil.request.ImageRequest
 
 /**
  * 站点选择抽屉：标题 + 搜索 + 两列站点卡片，当前项打勾。
@@ -110,24 +112,22 @@ fun SitePickerSheet(
                             .padding(horizontal = 12.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        // 站点图标：优先配置里的 favicon；没配/取不到/解不开时露出下面的首字色块
-                        val favicon = siteFavicon(site)
-                        Box(
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(8.dp)),
-                        ) {
+                        // 站点图标：优先配置里的 favicon；没配/取不到/解不开时才画首字色块。
+                        // 色块不能垫在图标下面——图标（ico/png/svg）常有透明背景，会透出字母。
+                        val faviconModel = rememberSiteFaviconModel(site)
+                        if (faviconModel == null) {
                             SiteLetter(site)
-                            if (favicon.isNotEmpty()) {
-                                // 注意：必须交给 AsyncImage 自己画（它会驱动加载），
-                                // 用 painter.state 在外层分支会让加载永远停在 Loading
-                                AsyncImage(
-                                    model = favicon,
-                                    contentDescription = null,
-                                    modifier = Modifier.fillMaxSize(),
-                                    contentScale = ContentScale.Crop,
-                                )
-                            }
+                        } else {
+                            SubcomposeAsyncImage(
+                                model = faviconModel,
+                                contentDescription = null,
+                                modifier = Modifier
+                                    .size(34.dp)
+                                    .clip(RoundedCornerShape(8.dp)),
+                                contentScale = ContentScale.Crop,
+                                loading = { SiteLetter(site) },
+                                error = { SiteLetter(site) },
+                            )
                         }
                         Text(
                             siteName(site),
@@ -212,6 +212,32 @@ private fun siteName(store: ConfigStore.StoredConfig): String {
 internal fun siteFavicon(store: ConfigStore.StoredConfig): String =
     Regex("""\bfavicon\s*:\s*['"]([^'"]+)['"]""")
         .find(store.source)?.groupValues?.get(1)?.trim().orEmpty()
+
+/** 站点首页 origin：图标请求拿它当 Referer（站点常按 Referer 拦静态资源） */
+private fun siteOrigin(store: ConfigStore.StoredConfig): String? =
+    Regex("""\bhomeUrl\s*:\s*['"]([^'"]+)['"]""")
+        .find(store.source)?.groupValues?.get(1)?.trim()
+        ?.let { ImageReferer.originOf(it) }
+
+/**
+ * 站点图标的 Coil 请求。
+ *
+ * Referer 用**这个站点自己的**首页地址，而不是当前站点的：站点选择器里会同时加载
+ * 十几个站点的图标，用当前站点的 Referer 会被目标站点的防盗链拦掉。
+ */
+@Composable
+internal fun rememberSiteFaviconModel(store: ConfigStore.StoredConfig): ImageRequest? {
+    val url = siteFavicon(store)
+    if (url.isEmpty()) return null
+    val context = LocalContext.current
+    val referer = siteOrigin(store)
+    return remember(url, referer, context) {
+        ImageRequest.Builder(context)
+            .data(url)
+            .apply { if (!referer.isNullOrBlank()) setHeader("Referer", referer) }
+            .build()
+    }
+}
 
 private fun siteColor(key: String): Color {
     val palette = listOf(Color(0xFF5B7F95), Color(0xFF8A6E9B), Color(0xFF9B7E6E), Color(0xFF6E9B88))

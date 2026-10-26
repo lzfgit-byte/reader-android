@@ -1223,11 +1223,13 @@ fun DemoApp(
                                             }
                                         },
                                     ) {
-                                        val favicon = configs.firstOrNull { it.key == configKey }?.let { siteFavicon(it) }
+                                        // 图标请求带该站点自己的 Referer（见 rememberSiteFaviconModel）
+                                        val faviconModel = configs.firstOrNull { it.key == configKey }
+                                            ?.let { rememberSiteFaviconModel(it) }
                                         Row(verticalAlignment = Alignment.CenterVertically) {
-                                            if (!favicon.isNullOrBlank()) {
+                                            if (faviconModel != null) {
                                                 AsyncImage(
-                                                    model = favicon,
+                                                    model = faviconModel,
                                                     contentDescription = null,
                                                     modifier = Modifier.size(18.dp).clip(RoundedCornerShape(4.dp)),
                                                     contentScale = ContentScale.Crop,

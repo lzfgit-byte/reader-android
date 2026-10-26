@@ -163,17 +163,10 @@ object WebViewImageLoader {
             }
         }
 
-        val referer = ImageReferer.siteOrigin()
-        main.post {
-            runCatching {
-                if (referer.isNullOrBlank()) {
-                    window.view.loadUrl(url)
-                } else {
-                    // 图床按 Referer 判盗链：兜底这条路径也得带上，否则取回来还是 403 页
-                    window.view.loadUrl(url, mapOf("Referer" to referer))
-                }
-            }
-        }
+        // 这里不加 Referer：Android WebView 对程序化 loadUrl 只会带上自己算的 Referer，
+        // 额外传进去的 Referer 会被丢掉（实测服务端收到的就是空）。需要 Referer 的图床
+        // 在 OkHttp 那一层就已经带上了，兜底只负责"连接层面取不回来"的情况。
+        main.post { runCatching { window.view.loadUrl(url) } }
 
         Thread {
             val deadline = System.currentTimeMillis() + TIMEOUT_MS
