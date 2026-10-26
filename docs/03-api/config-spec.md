@@ -147,7 +147,7 @@ my-source/
 | `retry` | integer | 否 | `1` | 失败重试次数，范围 0–3 |
 | `cacheHtml` | boolean | 否 | `true` | 是否缓存页面 HTML |
 | `useWebView` | boolean | 否 | `false` | 强制走无头浏览器通道（JS 渲染页面/需要浏览器环境时） |
-| `headers` | object | 否 | `{}` | 附加请求头，如 `{"Referer": "https://example.com/"}`；`User-Agent` 可覆盖。**当前引擎尚未实现该字段**（写入不生效）：Referer 由引擎按 `homeUrl` 自动派生，取页、图片（OkHttp / 解图 / WebView 兜底三条路径）都一样 |
+| `headers` | object | 否 | `{}` | 附加请求头，如 `{"Referer": "https://example.com/"}`；`User-Agent` 可覆盖。**当前引擎尚未实现该字段**（写入不生效）：Referer 由引擎按 `homeUrl` 派生——取页、OkHttp 图片请求、`adapterImageCode` 解图请求都已带上（站点图标用**该站点自己**的 `homeUrl`）；WebView 兜底那条路发不出程序化的 Referer，不依赖它 |
 | `challengeMarkers` | string[] | 否 | `[]` | 追加的人机校验特征（HTML 关键词），与内置特征合并后判定；命中即触发顶层校验窗口（§7、设计文档 §8.14） |
 | `ifWinExecCode` | string | 否 | 空 | **JS 片段**：当取页必须降级到无头浏览器通道时，先注入执行这段代码（常用于在窗口里直接改写 DOM 或提示"不支持"），再取 `outerHTML` |
 
