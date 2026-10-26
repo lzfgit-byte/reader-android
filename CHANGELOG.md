@@ -17,6 +17,8 @@
 
 ### Docs
 
+- **技能补第 24、25 条坑：页图地址加密（`data-locked`）+ S3 预签名 60 秒 / 图床按请求速率拦**（`.dsh/skills/ghs-site-to-config/`）：① 有站点的阅读页 `<img>` 全是空 `src`，真地址在 `data-locked="JCOMIC_TRAPS_<base64>"`，站点自己的 JS 是「去前缀 → 整串反转 → `atob`」（沙箱里 `atob` 可用），解出来是 `images.` 主机的 S3 预签名地址、`X-Amz-Expires=60`——60 秒后必然 403，是站点设计不是配置错。② 这类图床的 Cloudflare 规则对请求速率敏感：同一出口、同一签名地址，只带 `Referer` 单发是 200，紧接着连发 3 个就全 403 挑战，阅读器一次预取十几张必被拦；且该主机直连是 `ERR_CONNECTION_CLOSED`，只能走代理。取证要用 `net.request` 做「单发 vs 连发」对照，`curl` 的 TLS 指纹本来就会被挡，结论不可信。
+
 - **技能补第 23 条坑：视频 m3u8 报 403 是缺 Referer，别急着判「IP 被封」**（`.dsh/skills/ghs-site-to-config/`）：视频 CDN 按 Referer 放行，缺了整站 403（连根路径也 403，很像 IP 封禁）；而用 `curl` 复现时它自己的 TLS 指纹本来就会被挡，带不带 Referer 都是 403，证明不了任何事。取证要用应用内 `net.request` 做 A/B（同一条 m3u8 带 / 不带 Referer 各请求一次，期望 200 / 403），并注意 playlist 之后返回的子列表与分片也要带同一个 Referer——应用侧靠播放器 DataSource 的默认请求头覆盖。
 
 - **技能补第 21、22 条坑：播放地址藏在 eval-packer 里 / 改配置时 JSON body 写坏会伪装成站点 404**（`.dsh/skills/ghs-site-to-config/`）：① 有站点的详情页只给一个没有 `src` 的 `<video class="player">`，真正的 m3u8 压在 Dean Edwards packer（`eval(function(p,a,c,k,e,d){…}('…',16,16,'词表'.split('|'),0,{}))`）里，解包后是 `source` / `source842` / `source1280` 三条赋值；解码要先把打包串里的 `\'` 还原成 `'`，再按 base36 token 替换词表，取地址的正则必须带 `\s*=`（否则 `source` 会吃掉 `source1280`），且没有 1080p 的片子会让 `source1280` 指向 `720p/video.m3u8`——要按 URL 判重、按路径定清晰度，别信变量名。② 用 shell 拼 `{"config": "…"}` body 更新配置时，一旦引号/反斜杠没转义对，存进去的源码会变成 `{"value":"…"}` 或被 JSON 二次转义（`/` → `\/`），扫描器取出的 `homeUrl` 带反斜杠，取页 path 变成 `\/path`，站点如实回 404——现象是「首页 404，但调试接口 `getHtml` 同一个 URL 返回 200」，极易误判成镜像/节点问题。正确做法是用脚本生成 UTF-8 JSON（`json.dumps`）再 `curl --data-binary @body.json`，改完立刻用 `GET /api/configs/<key>/raw` 核对原文长度与 `homeUrl` 是否全斜杠。
