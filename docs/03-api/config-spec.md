@@ -1,5 +1,5 @@
 > **状态**：draft
-> **版本**：v1.11
+> **版本**：v1.12
 > **最后更新**：2026-10-26
 > **取代/被取代**：取代同文件 v1.10
 
@@ -147,7 +147,7 @@ my-source/
 | `retry` | integer | 否 | `1` | 失败重试次数，范围 0–3 |
 | `cacheHtml` | boolean | 否 | `true` | 是否缓存页面 HTML |
 | `useWebView` | boolean | 否 | `false` | 强制走无头浏览器通道（JS 渲染页面/需要浏览器环境时） |
-| `headers` | object | 否 | `{}` | 附加请求头，如 `{"Referer": "https://example.com/"}`；`User-Agent` 可覆盖 |
+| `headers` | object | 否 | `{}` | 附加请求头，如 `{"Referer": "https://example.com/"}`；`User-Agent` 可覆盖。**当前引擎尚未实现该字段**（写入不生效）：Referer 由引擎按 `homeUrl` 自动派生，取页、图片（OkHttp / 解图 / WebView 兜底三条路径）都一样 |
 | `challengeMarkers` | string[] | 否 | `[]` | 追加的人机校验特征（HTML 关键词），与内置特征合并后判定；命中即触发顶层校验窗口（§7、设计文档 §8.14） |
 | `ifWinExecCode` | string | 否 | 空 | **JS 片段**：当取页必须降级到无头浏览器通道时，先注入执行这段代码（常用于在窗口里直接改写 DOM 或提示"不支持"），再取 `outerHTML` |
 
@@ -656,3 +656,4 @@ Web 管理界面的源码编辑器（Monaco）通过注入一份 `config-api.d.t
 | v1.9 | 2026-10-19 | **实现期回流修正**：`key` 正则放宽为允许大小写（3 份真实配置因大写被判非法）；§9.2 新增第 32 条核对记录 |
 | v1.10 | 2026-10-20 | 新增 §8.2 异步语义：`getHtml`/`net.request`/`executeJs` 为同步宿主实现，`await` 语义不变；QuickJS 通道仅支持同步，异步由 WebView 承担（ADR-0016） |
 | v1.11 | 2026-10-26 | `favicon` 明确支持的格式：位图（png / jpg / gif / webp / ico）、矢量图 **svg**（AndroidSVG 解码，尺寸取 `viewBox` 其次 `width`/`height`）、`data:` 内联图（base64 / URL 编码）；取不到或解码失败一律按"无图标"处理 |
+| v1.12 | 2026-10-26 | 修正 §3.3 `headers` 的说明：该字段**引擎尚未实现**（写入不生效），并写明 Referer 实际由引擎按 `homeUrl` 派生（图片请求同样适用，修 mycomic 等图床的 403） |
