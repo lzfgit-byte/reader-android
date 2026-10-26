@@ -1,4 +1,4 @@
-package com.ghs.mobile
+﻿package com.ghs.mobile
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -21,9 +21,10 @@ import androidx.compose.ui.Modifier
 import com.ghs.mobile.settings.ThemeMode
 import com.ghs.mobile.ui.DemoApp
 import com.ghs.mobile.ui.ProbeScreen
-import com.ghs.mobile.ui.SettingsScreen
+import com.ghs.mobile.ui.AppearanceScreen
+import com.ghs.mobile.ui.ReadingScreen
+import com.ghs.mobile.ui.WebAdminScreen
 import kotlinx.coroutines.launch
-import com.ghs.mobile.ui.SettingsContent
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.Alignment
@@ -49,7 +50,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Page { MAIN, PROBE, SETTINGS, PROXY, BROWSER }
+private enum class Page { MAIN, PROBE, APPEARANCE, WEB, PROXY, READING, BROWSER }
 
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -118,26 +119,32 @@ private fun AppRoot() {
             Box(modifier = Modifier.fillMaxSize()) {
                 when (page) {
                 Page.MAIN -> DemoApp(
-                    drawerSettings = {
-                        SettingsContent(
-                            settings = settings,
-                            scrollable = false,
-                            web = webState,
-                            onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
-                            onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
-                            onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
-                            onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
-                            onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
-                            onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },
-                        )
-                    },
                     onOpenProbe = { page = Page.PROBE },
-                    onOpenSettings = { page = Page.SETTINGS },
-                    onOpenProxy = { page = Page.PROXY },
                     onOpenBrowser = { page = Page.BROWSER },
+                    onOpenAppearance = { page = Page.APPEARANCE },
+                    onOpenWeb = { page = Page.WEB },
+                    onOpenProxy = { page = Page.PROXY },
+                    onOpenReading = { page = Page.READING },
                 )
 
                 Page.PROBE -> ProbeScreen(onBack = { page = Page.MAIN })
+
+                // 外观：主题 / 字号
+                Page.APPEARANCE -> AppearanceScreen(
+                    settings = settings,
+                    onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
+                    onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
+                    onBack = { page = Page.MAIN },
+                )
+
+                // Web 管理：开关 / 端口 / 局域网地址
+                Page.WEB -> WebAdminScreen(
+                    web = webState,
+                    onToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
+                    onPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
+                    onBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },
+                    onBack = { page = Page.MAIN },
+                )
 
                 // 网络代理：开关与列表切换即时生效，白名单/强制名单由「应用」保存
                 Page.PROXY -> com.ghs.mobile.ui.ProxyScreen(
@@ -153,21 +160,16 @@ private fun AppRoot() {
                     onBack = { page = Page.MAIN },
                 )
 
-                Page.BROWSER -> com.ghs.mobile.ui.UrlBrowserScreen(
-                    proxyState = proxyState,
-                    globalRules = proxyRules,
+                // 阅读：默认阅读模式
+                Page.READING -> ReadingScreen(
+                    settings = settings,
+                    onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
                     onBack = { page = Page.MAIN },
                 )
 
-                Page.SETTINGS -> SettingsScreen(
-                    settings = settings,
-                    web = webState,
-                    onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
-                    onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
-                    onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
-                    onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
-                    onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
-                    onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },
+                Page.BROWSER -> com.ghs.mobile.ui.UrlBrowserScreen(
+                    proxyState = proxyState,
+                    globalRules = proxyRules,
                     onBack = { page = Page.MAIN },
                 )
             }

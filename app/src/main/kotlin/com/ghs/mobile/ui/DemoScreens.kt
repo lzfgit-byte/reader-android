@@ -1,4 +1,4 @@
-package com.ghs.mobile.ui
+﻿package com.ghs.mobile.ui
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
@@ -83,6 +83,9 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.TextButton
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Lock
+import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -181,11 +184,11 @@ private const val CONFIG_KEY = "demo"
 fun DemoApp(
     onOpenProbe: () -> Unit = {},
     onOpenBrowser: () -> Unit = {},
-    onOpenSettings: () -> Unit = {},
-    /** 「网络代理」独立页（开关与列表切换即时生效，白名单/强制名单单独保存） */
+    /** 设置类二级页：外观 / Web 管理 / 网络代理 / 阅读（返回键各自退回主界面） */
+    onOpenAppearance: () -> Unit = {},
+    onOpenWeb: () -> Unit = {},
     onOpenProxy: () -> Unit = {},
-    /** 左侧抽屉里直接展开的设置内容（由外层提供，避免二级菜单） */
-    drawerSettings: @Composable () -> Unit = {},
+    onOpenReading: () -> Unit = {},
 ) {
     val app = GhsApp.instance
     val repository = app.repository
@@ -1698,7 +1701,48 @@ fun DemoApp(
                         // 整块一起滚动：引擎日志 / 自检 / 清缓存也跟随滚动，不再钉在底部
                         .verticalScroll(rememberScrollState()),
                 ) {
-                    drawerSettings()
+                    // 设置类：一项一页（外观 / Web 管理 / 网络代理 / 阅读），
+                    // 都从抽屉进入、返回键退回主界面（ui-implementation.md §4.3 §4.4）
+                    NavigationDrawerItem(
+                        label = { Text("外观") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            onOpenAppearance()
+                        },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("Web 管理") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            onOpenWeb()
+                        },
+                        icon = { Icon(Icons.Default.Share, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("网络代理") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            onOpenProxy()
+                        },
+                        icon = { Icon(Icons.Default.Lock, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("阅读") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            onOpenReading()
+                        },
+                        icon = { Icon(Icons.Default.Star, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
                     NavigationDrawerItem(
                         label = {
                             Text(
@@ -1722,16 +1766,6 @@ fun DemoApp(
                             onOpenProbe()
                         },
                         icon = { Icon(Icons.Default.Info, contentDescription = null) },
-                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
-                    )
-                    NavigationDrawerItem(
-                        label = { Text("网络代理") },
-                        selected = false,
-                        onClick = {
-                            drawerOpen = false
-                            onOpenProxy()
-                        },
-                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                     NavigationDrawerItem(
