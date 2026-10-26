@@ -182,3 +182,26 @@
   `curl --data-binary @body.json -H 'Content-Type: application/json'`。
 - 判断技巧：改完立刻 `GET /api/configs/<key>/raw` 看一眼原文——长度应该和本地文件一致、`homeUrl` 是全斜杠；
   出现 `{"value":` 或被双重转义的 `/`，就是 body 写坏了，别去怀疑站点。
+
+## 23. 视频 m3u8 报 403 = 缺 Referer，别急着判"IP 被封"
+
+- 现象：详情页能解析出 m3u8 地址，播放器却立刻 `ERROR_CODE_IO_BAD_HTTP_STATUS`；把同一条地址贴进浏览器
+  也是 `Sorry, you have been blocked`，连站点根路径都打不开——看起来像出口 IP 被整站封了。
+- 原因：视频 CDN（本例 `surrit.com`）按 **Referer** 放行，缺 Referer 一律 403（Cloudflare 拦截页）。
+  用 `curl` 复现时更迷惑：curl 自己的 TLS 指纹本来就会被挡，带不带 Referer 都是 403，证明不了什么。
+- **正确的取证方式**：在应用里用 `net.request` 做 A/B 对照——同一条 m3u8，一次带 Referer、一次不带：
+  ```js
+  (function(){
+    var u='https://cdn.example.com/xxx/playlist.m3u8';
+    var a=net.request({url:u,headers:{'Referer':'https://site.example/detail/123'}});
+    var b=net.request({url:u});
+    return 'A '+a.status+' | B '+b.status;   // 期望 A=200、B=403
+  })()
+  ```
+  A 返回 `#EXTM3U`、B 返回 Cloudflare 拦截页，就说明是 Referer 而不是 IP/代理的问题。
+- 结论要求：**playlist 之后的子播放列表和分片也要带同一个 Referer**，否则会"能开播、播几秒断"。
+  应用侧的做法是在播放器的 DataSource 上设默认请求头（一次设置，覆盖全部后续请求），
+  配置侧不需要写任何东西；如果某个播放器/站点仍失败，检查的是"默认请求头有没有挂到分片请求上"。
+- 判断技巧：403 时先看**同一条 URL 带 Referer 是否 200**，再看根路径是否也 403（也被挡=更像 IP/WAF 规则，
+  单文件被挡=更像 Referer/签名）。别用 `curl` 的结论下判断。
+
