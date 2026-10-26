@@ -95,6 +95,11 @@ private fun AppRoot() {
     ) {
         Surface(modifier = Modifier.fillMaxSize()) {
             var page by remember { mutableStateOf(Page.MAIN) }
+            // 二级页面（引擎自检 / 设置 / 网络代理 / 网页浏览）必须自己接管返回键：
+            // 返回 = 退回主界面，不能交给系统直接退出应用（ui-implementation.md §4.4）
+            androidx.activity.compose.BackHandler(enabled = page != Page.MAIN) {
+                page = Page.MAIN
+            }
             // 顶部灵动岛：展示最新一条调试日志（2 秒后自动收起）
             var islandLogs by remember { mutableStateOf<List<String>>(emptyList()) }
             DisposableEffect(Unit) {
