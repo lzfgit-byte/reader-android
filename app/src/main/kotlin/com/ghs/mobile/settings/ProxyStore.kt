@@ -83,10 +83,15 @@ class ProxyStore(private val repository: LocalRepository) {
         update { it.copy(activeId = id) }
     }
 
-    /** 设置页「应用」：启用开关 + 白名单 + 强制名单（代理地址由列表决定） */
-    suspend fun apply(enabled: Boolean, whitelist: String, forceProxy: String) {
+    /** 设置页「启用代理」开关：立即落库（白名单 / 强制名单不动） */
+    suspend fun setEnabled(enabled: Boolean) {
+        _rules.value = _rules.value.copy(enabled = enabled)
+        persist()
+    }
+
+    /** 「应用」按钮：只保存白名单与强制名单（开关与代理列表各自即时生效） */
+    suspend fun setLists(whitelist: String, forceProxy: String) {
         _rules.value = _rules.value.copy(
-            enabled = enabled,
             whitelist = ProxyRules.parseWhitelist(whitelist),
             forceProxy = ProxyRules.parseWhitelist(forceProxy),
         )

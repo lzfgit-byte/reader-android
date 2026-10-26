@@ -26,10 +26,11 @@ import com.ghs.mobile.core.model.CComic
  */
 class ReaderHost(
     context: Context,
-    proxyRules: ProxyRules,
+    /** 代理规则实时读取：关开关 / 切代理当场生效，不必重建会话 */
+    proxyRules: () -> ProxyRules = { ProxyRules.direct() },
 ) : ScriptHostTransport {
 
-    private val http = HttpScriptHost(context) { proxyRules }
+    private val http = HttpScriptHost(context, proxyRules)
 
     /** HTML 缓存透传：同一页不重复取；刷新 / 切换站点时清空 */
     var htmlCache: com.ghs.mobile.core.script.HtmlCache?
@@ -110,7 +111,8 @@ class ReaderHost(
 class ReaderSession(
     private val context: Context,
     private val source: String,
-    private val proxyRules: ProxyRules = ProxyRules.direct(),
+    /** 代理规则实时读取（provider，不是快照）；默认直连 */
+    private val proxyRules: () -> ProxyRules = { ProxyRules.direct() },
 ) : AutoCloseable {
 
     /** 配置声明的首页地址；缺失时退回演示首页 */

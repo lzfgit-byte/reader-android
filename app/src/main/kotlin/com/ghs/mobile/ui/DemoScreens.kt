@@ -182,6 +182,8 @@ fun DemoApp(
     onOpenProbe: () -> Unit = {},
     onOpenBrowser: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
+    /** 「网络代理」独立页（开关与列表切换即时生效，白名单/强制名单单独保存） */
+    onOpenProxy: () -> Unit = {},
     /** 左侧抽屉里直接展开的设置内容（由外层提供，避免二级菜单） */
     drawerSettings: @Composable () -> Unit = {},
 ) {
@@ -589,7 +591,8 @@ fun DemoApp(
             withContext(Dispatchers.IO) {
                 val source = app.configs.get(key)?.source
                     ?: app.assets.open("demo/config.js").bufferedReader().use { it.readText() }
-                ReaderSession(app, source, app.proxy.rules.value)
+                // 代理规则按 provider 传：开关/切代理后当场生效，不必重建会话
+                ReaderSession(app, source) { app.proxy.rules.value }
             }
         }.getOrElse {
             screen = Screen.Failed(it.message ?: it.toString())
@@ -1719,6 +1722,16 @@ fun DemoApp(
                             onOpenProbe()
                         },
                         icon = { Icon(Icons.Default.Info, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("网络代理") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            onOpenProxy()
+                        },
+                        icon = { Icon(Icons.Default.Settings, contentDescription = null) },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                     NavigationDrawerItem(

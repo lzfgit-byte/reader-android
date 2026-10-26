@@ -1,4 +1,4 @@
-package com.ghs.mobile.ui
+﻿package com.ghs.mobile.ui
 
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -30,13 +30,11 @@ import com.ghs.mobile.settings.ThemeMode
 import com.ghs.mobile.settings.label
 import androidx.compose.material3.Switch
 import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.RadioButton
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import com.ghs.mobile.core.engine.proxy.ProxyRules
 import androidx.compose.ui.Alignment
 import com.ghs.mobile.web.WebAdminController
 import androidx.compose.foundation.clickable
@@ -50,16 +48,10 @@ import androidx.compose.foundation.clickable
 @Composable
 fun SettingsScreen(
     settings: AppSettings,
-    proxy: ProxyRules,
     web: WebAdminController.WebSettings,
     onThemeChange: (ThemeMode) -> Unit,
     onFontScaleChange: (FontScale) -> Unit,
     onReaderModeChange: (ReaderMode) -> Unit,
-    onProxyApply: (enabled: Boolean, whitelist: String, forceProxy: String) -> Unit,
-    proxyState: com.ghs.mobile.settings.ProxyStore.State,
-    onProxyAdd: (String) -> Unit,
-    onProxySelect: (String) -> Unit,
-    onProxyRemove: (String) -> Unit,
     onWebToggle: (Boolean) -> Unit,
     onWebPortChange: (Int) -> Unit,
     onWebBindChange: (Boolean) -> Unit,
@@ -80,20 +72,13 @@ fun SettingsScreen(
         Surface(modifier = Modifier.fillMaxSize().padding(padding)) {
             SettingsContent(
                 settings = settings,
-                proxy = proxy,
                 web = web,
                 onThemeChange = onThemeChange,
                 onFontScaleChange = onFontScaleChange,
                 onReaderModeChange = onReaderModeChange,
-                onProxyApply = onProxyApply,
-                proxyState = proxyState,
-                onProxyAdd = onProxyAdd,
-                onProxySelect = onProxySelect,
-                onProxyRemove = onProxyRemove,
                 onWebToggle = onWebToggle,
                 onWebPortChange = onWebPortChange,
                 onWebBindChange = onWebBindChange,
-
             )
         }
     }
@@ -103,16 +88,10 @@ fun SettingsScreen(
 @Composable
 fun SettingsContent(
     settings: AppSettings,
-    proxy: ProxyRules,
     web: WebAdminController.WebSettings,
     onThemeChange: (ThemeMode) -> Unit,
     onFontScaleChange: (FontScale) -> Unit,
     onReaderModeChange: (ReaderMode) -> Unit,
-    onProxyApply: (enabled: Boolean, whitelist: String, forceProxy: String) -> Unit,
-    proxyState: com.ghs.mobile.settings.ProxyStore.State,
-    onProxyAdd: (String) -> Unit,
-    onProxySelect: (String) -> Unit,
-    onProxyRemove: (String) -> Unit,
     onWebToggle: (Boolean) -> Unit,
     onWebPortChange: (Int) -> Unit,
     onWebBindChange: (Boolean) -> Unit,
@@ -149,17 +128,6 @@ fun SettingsContent(
                 onPortChange = onWebPortChange,
                 onBindChange = onWebBindChange,
 
-            )
-        }
-
-        SettingSection(title = "网络代理") {
-            ProxyForm(
-                proxy = proxy,
-                state = proxyState,
-                onApply = onProxyApply,
-                onAdd = onProxyAdd,
-                onSelect = onProxySelect,
-                onRemove = onProxyRemove,
             )
         }
 
@@ -208,106 +176,6 @@ private fun SettingRow(
     }
 }
 
-/** 代理表单：改动后点「应用」才落库，避免每敲一个字都写一次数据库 */
-/** 代理表单：多条代理、单选生效；只填地址，不做认证 */
-@Composable
-private fun ProxyForm(
-    proxy: ProxyRules,
-    state: com.ghs.mobile.settings.ProxyStore.State,
-    onApply: (Boolean, String, String) -> Unit,
-    onAdd: (String) -> Unit,
-    onSelect: (String) -> Unit,
-    onRemove: (String) -> Unit,
-) {
-    var enabled by remember(proxy) { mutableStateOf(proxy.enabled) }
-    var whitelist by remember(proxy) { mutableStateOf(proxy.whitelist.joinToString(", ")) }
-    var forceProxy by remember(proxy) { mutableStateOf(proxy.forceProxy.joinToString(", ")) }
-    var newUrl by remember { mutableStateOf("") }
-
-    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text("启用代理", style = MaterialTheme.typography.bodyMedium)
-            Switch(
-                checked = enabled,
-                onCheckedChange = { next ->
-                    // 开关本身就是"启用/不启用"，立即落库，不需要再点应用
-                    enabled = next
-                    onApply(next, whitelist, forceProxy)
-                },
-            )
-        }
-
-        Text("代理列表（同时只有一条生效）", style = MaterialTheme.typography.labelMedium)
-        if (state.entries.isEmpty()) {
-            Text(
-                "还没有代理，先在下面添加一条",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-        state.entries.forEach { entry ->
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                RadioButton(
-                    selected = entry.id == state.activeId,
-                    onClick = { onSelect(entry.id) },
-                )
-                Text(
-                    entry.url,
-                    style = MaterialTheme.typography.bodySmall,
-                    modifier = Modifier.weight(1f),
-                )
-                TextButton(onClick = { onRemove(entry.id) }) { Text("删除") }
-            }
-        }
-
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedTextField(
-                value = newUrl,
-                onValueChange = { newUrl = it },
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                label = { Text("新增代理（host:port）") },
-            )
-            TextButton(
-                onClick = {
-                    onAdd(newUrl)
-                    newUrl = ""
-                },
-                enabled = newUrl.isNotBlank(),
-            ) { Text("添加") }
-        }
-
-        OutlinedTextField(
-            value = whitelist,
-            onValueChange = { whitelist = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("白名单（逗号分隔；example.com 同时覆盖其子域）") },
-        )
-        OutlinedTextField(
-            value = forceProxy,
-            onValueChange = { forceProxy = it },
-            modifier = Modifier.fillMaxWidth(),
-            label = { Text("强制代理名单（逗号分隔；命中即走代理，优先于白名单）") },
-        )
-
-        Text(
-            "白名单内直连；强制代理命中则一律走代理；未启用时全部直连。代理设置只存本机，不随导出包走。",
-            style = MaterialTheme.typography.labelSmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-            TextButton(onClick = { onApply(enabled, whitelist, forceProxy) }) { Text("应用") }
-        }
-    }
-}
 
 /** Web 管理：开关、端口、绑定范围、令牌与访问地址（全部只在应用端配置） */
 @Composable

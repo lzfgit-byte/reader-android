@@ -49,7 +49,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Page { MAIN, PROBE, SETTINGS, BROWSER }
+private enum class Page { MAIN, PROBE, SETTINGS, PROXY, BROWSER }
 
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -63,6 +63,19 @@ private fun AppRoot() {
     val proxyState by proxyStore.state.collectAsState()
     val webState by webAdmin.state.collectAsState()
     val scope = rememberCoroutineScope()
+
+    /**
+     * 代理规则一旦变了就当场落地：清 HTML/图片缓存（设计文档 §8.13），
+     * 并把新规则立刻套到 WebView 通道——引擎侧按 provider 实时读取，不需要重建会话。
+     */
+    fun applyProxyChange(block: suspend () -> Unit) {
+        scope.launch {
+            block()
+            com.ghs.mobile.ui.ImageCache.clearAll()
+            runCatching { coil.Coil.imageLoader(GhsApp.instance).memoryCache?.clear() }
+            com.ghs.mobile.core.script.WebViewProxy.apply(proxyStore.rules.value)
+        }
+    }
 
     LaunchedEffect(Unit) {
         store.load()
@@ -104,18 +117,10 @@ private fun AppRoot() {
                         SettingsContent(
                             settings = settings,
                             scrollable = false,
-                            proxy = proxyRules,
                             web = webState,
                             onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
                             onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
                             onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
-                            onProxyApply = { enabled, whitelist, forceProxy ->
-                                scope.launch { proxyStore.apply(enabled, whitelist, forceProxy) }
-                            },
-                            proxyState = proxyState,
-                            onProxyAdd = { url -> scope.launch { proxyStore.add(url) } },
-                            onProxySelect = { id -> scope.launch { proxyStore.select(id) } },
-                            onProxyRemove = { id -> scope.launch { proxyStore.remove(id) } },
                             onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
                             onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
                             onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },
@@ -123,10 +128,25 @@ private fun AppRoot() {
                     },
                     onOpenProbe = { page = Page.PROBE },
                     onOpenSettings = { page = Page.SETTINGS },
+                    onOpenProxy = { page = Page.PROXY },
                     onOpenBrowser = { page = Page.BROWSER },
                 )
 
                 Page.PROBE -> ProbeScreen(onBack = { page = Page.MAIN })
+
+                // 网络代理：开关与列表切换即时生效，白名单/强制名单由「应用」保存
+                Page.PROXY -> com.ghs.mobile.ui.ProxyScreen(
+                    state = proxyState,
+                    rules = proxyRules,
+                    onEnabledChange = { enabled -> applyProxyChange { proxyStore.setEnabled(enabled) } },
+                    onSelect = { id -> applyProxyChange { proxyStore.select(id) } },
+                    onRemove = { id -> applyProxyChange { proxyStore.remove(id) } },
+                    onAdd = { url -> applyProxyChange { proxyStore.add(url) } },
+                    onApplyLists = { whitelist, forceProxy ->
+                        applyProxyChange { proxyStore.setLists(whitelist, forceProxy) }
+                    },
+                    onBack = { page = Page.MAIN },
+                )
 
                 Page.BROWSER -> com.ghs.mobile.ui.UrlBrowserScreen(
                     proxyState = proxyState,
@@ -136,18 +156,10 @@ private fun AppRoot() {
 
                 Page.SETTINGS -> SettingsScreen(
                     settings = settings,
-                    proxy = proxyRules,
                     web = webState,
                     onThemeChange = { theme -> scope.launch { store.update { it.copy(theme = theme) } } },
                     onFontScaleChange = { scale -> scope.launch { store.update { it.copy(fontScale = scale) } } },
                     onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
-                    onProxyApply = { enabled, whitelist, forceProxy ->
-                        scope.launch { proxyStore.apply(enabled, whitelist, forceProxy) }
-                    },
-                    proxyState = proxyState,
-                    onProxyAdd = { url -> scope.launch { proxyStore.add(url) } },
-                    onProxySelect = { id -> scope.launch { proxyStore.select(id) } },
-                    onProxyRemove = { id -> scope.launch { proxyStore.remove(id) } },
                     onWebToggle = { enabled -> scope.launch { webAdmin.update { it.copy(enabled = enabled) } } },
                     onWebPortChange = { port -> scope.launch { webAdmin.update { it.copy(port = port) } } },
                     onWebBindChange = { bindAll -> scope.launch { webAdmin.update { it.copy(bindAll = bindAll) } } },

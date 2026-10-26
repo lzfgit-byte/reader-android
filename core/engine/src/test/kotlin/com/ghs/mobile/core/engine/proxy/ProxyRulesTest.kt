@@ -108,4 +108,39 @@ class ProxyRulesTest {
         val httpsDefaultPort = selector.select(URI("https://example.org/a"))
         assertEquals(Proxy.Type.HTTP, httpsDefaultPort.single().type())
     }
+
+    /**
+     * 回归：代理开关/列表切换必须**当场**生效。
+     *
+     * 会话里的 OkHttpClient 只在创建时建一次，所以规则只能按 provider 实时读；
+     * 一旦有人把它改成「创建时快照」，这条用例就会红。
+     */
+    @Test
+    fun `ProxySelector 跟随实时规则而不是快照`() {
+        var current = rules
+        val selector = RulesProxySelector { current }
+
+        assertEquals(Proxy.Type.HTTP, selector.select(URI("https://example.org/a")).single().type())
+
+        // 关掉开关：同一个 selector 立刻改成直连
+        current = current.copy(enabled = false)
+        assertEquals(Proxy.NO_PROXY, selector.select(URI("https://example.org/a")).single())
+
+        // 再打开并换一条代理：目标地址跟着换
+        current = current.copy(enabled = true, endpoint = ProxyEndpoint("10.0.0.9", 7890))
+        val moved = selector.select(URI("https://example.org/a")).single()
+        assertEquals(Proxy.Type.HTTP, moved.type())
+        assertEquals("10.0.0.9", (moved.address() as java.net.InetSocketAddress).hostString)
+    }
+
+    @Test
+    fun `白名单变更是实时的`() {
+        var current = rules
+        val selector = RulesProxySelector { current }
+
+        assertEquals(Proxy.Type.HTTP, selector.select(URI("https://example.org/a")).single().type())
+
+        current = current.copy(whitelist = current.whitelist + "example.org")
+        assertEquals(Proxy.NO_PROXY, selector.select(URI("https://example.org/a")).single())
+    }
 }

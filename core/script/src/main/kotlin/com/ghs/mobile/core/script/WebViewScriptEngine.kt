@@ -31,7 +31,10 @@ import java.util.concurrent.TimeUnit
  */
 class WebViewScriptEngine(
     context: Context,
-    private val proxyRules: ProxyRules = ProxyRules.direct(),
+    /**
+     * 代理规则**实时**读取（不是快照）：开关/切换代理后不需要重建会话就能生效。
+     */
+    private val proxyRules: () -> ProxyRules = { ProxyRules.direct() },
 ) : ScriptEngine {
 
     private val main = Handler(Looper.getMainLooper())
@@ -149,7 +152,7 @@ class WebViewScriptEngine(
      */
     private fun applyProxyOverride() {
         if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) return
-        val rules = proxyRules
+        val rules = proxyRules()
         val endpoint = rules.endpoint
         val builder = ProxyConfig.Builder()
 
