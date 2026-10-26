@@ -37,6 +37,8 @@
 
 ### Fixed
 
+- **图片的 WebView 兜底与 `data:` 图标其实都没生效（F01/F05）**：`ImageLoader.Builder.components {}` 在 Coil 2 里是**整体替换**组件注册表而不是追加（实现就是 `components(ComponentRegistry.Builder().apply(builder).build())`），连续三次调用让前两次注册的东西被后一次吃掉——`withWebViewFallback` 的拦截器、`withImageDecoding` 的解图取值器、还有这次新加的 svg 解码器只有一个能留下，留下的永远是最后注册的那个。现在四组组件写在同一个 `components {}` 里（svg 解码器 / `data:` 取值器 / 解图取值器 / WebView 兜底拦截器），并删掉两个「往 builder 上挂组件」的扩展函数，避免下一个人再踩同一脚。取证：修复前 svg 图标报的是 `BitmapFactory returned a null bitmap`（说明走的是内置解码器，svg 解码器根本不在链上），修复后同一 URL 记 `Successful (DISK)`；`rman8.com/favicon.ico`（站点本身 404）修复后开始出现 `image http error(HTTP 404) → webview` 行，说明兜底拦截器重新回到了链上。顺带补上 `DataUriFetcher`：配置里 `favicon: 'data:image/png;base64,...'` 以前直接报 `Unable to create a fetcher that supports: data:...`（Coil 2 没有内置 `data:` 取值器），图标位置永远空着；修复后记 `Successful (MEMORY)`。
+
 - **二级页面按返回键直接退出应用（F28 等）**：网络代理是从主界面打开的独立页，但返回键没人接管，按返回就把整个应用退掉了（引擎自检、设置、网页浏览是同一个坑，只是没被撞上）。现在 `AppRoot` 用一个 `BackHandler` 接管所有非主界面页：返回 = 回主界面；内容页（详情 / 阅读器 / 单图 / 播放器 / 搜索结果 / 解析中）继续由 `DemoApp` 的分层逻辑处理，抽屉与 Sheet 优先消费返回。同时把这条写成**强制规范**：`ui-implementation.md` 新增 §4.4「返回键」——返回键永远只退一层，只有主界面才允许退出应用；新增二级页面必须同时接返回键，并列入 §12 验收清单。
 
 - **漫画目录打开后从第一话开始，不定位当前话（F05）**：目录列表每次都从 `1/N` 开始渲染，几十上百话的作品要自己一路翻到当前这一话。现在打开目录直接停在当前话（列表状态随 sheet 重建，每次打开都按当前话定位）。实测《秘密教学》325 话：从第 149 话打开目录，首行即 `154/335 第149话… 当前`；换到第 151 话再打开，首行变成 `156/335 第151话… 当前`。
@@ -54,6 +56,8 @@
 - **灵动岛位置偏低（UI）**：`Popup` 的 `offset` 是像素，写死 `120` 在长屏机型上落在标题栏上。改为按内容区顶部 6dp 定位，贴合状态栏下方。
 
 ### Added
+
+- **站点图标支持矢量图 svg（F01）**：`favicon` 以前只能放位图——Coil 核心不带 svg 解码器，配置里写了 svg，那块图标就是空的（同一 CDN 的 png 能正常显示，说明不是网络问题）。现在挂上 `coil-svg` 的 `SvgDecoder`：svg 按 `viewBox`（缺失时退回 `width`/`height`）解码成位图，站点选择器与顶栏「来源切换」两处一起生效；同时把「图标取不到 / 解不开」与「没配图标」统一按无图标处理——站点卡片退回首字色块，不再留一个空方块（做法是把色块画在底层、图标画在上面，不用状态分支：`AsyncImagePainter` 必须先被 `onDraw` 才会推进加载，用 `painter.state` 在外层分支会让它永远停在 Loading，这条也写进了 `ui-implementation.md` §5）。实测（模拟器 emulator-5554，release 包）：同一 CDN 上 `android.svg` 与 `1f600.png` 两份对照配置，前者由空白变为正常显示（黑色安卓机器人图标），把它设为当前站点后顶栏「来源切换」同样显示该图标。规范写进 `config-spec.md` §3.1 的 `favicon` 行（v1.11）。
 
 - **单图阅读器支持缩放（F12）**：双指捏合 1x~5x、拖动平移（限制在画面内）、双击在 1x 与 2.5x 间切换（双击点作为放大中心），放大时暂停左右翻页手势；每张图各自记忆缩放与位移。
 

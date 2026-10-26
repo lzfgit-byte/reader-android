@@ -1,7 +1,7 @@
 > **状态**：draft
-> **版本**：v1.10
-> **最后更新**：2026-10-19
-> **取代/被取代**：取代同文件 v1.9
+> **版本**：v1.11
+> **最后更新**：2026-10-26
+> **取代/被取代**：取代同文件 v1.10
 
 # 配置规范（Config Unit）
 
@@ -115,7 +115,7 @@ my-source/
 | `name` | string | **是** | — | 展示名，1–24 字符 |
 | `version` | string | 否 | `1.0.0` | 配置自身版本（语义版本），用于导入时提示升级 |
 | `homeUrl` | string | **是** | — | 列表首页地址；**同时是相对 URL 的解析基准** |
-| `favicon` | string | 否 | 空 | 图标地址；支持 `data:` 内联图 |
+| `favicon` | string | 否 | 空 | 图标地址；也支持 `data:` 内联图（`data:image/png;base64,...` 或 URL 编码形式）。位图（png / jpg / gif / webp / ico）与矢量图（**svg**）都可以：svg 由 AndroidSVG 解码，尺寸优先取 `viewBox`、其次 `width`/`height`；取不到或解码失败一律按"无图标"处理（站点卡片退回首字色块） |
 | `searchUrl` | string | 否 | 空 | 搜索地址前缀，由 `adapterSearchUrl` 拼接 |
 | `description` | string | 否 | 空 | 一句话说明，展示在配置列表 |
 | `requiresApi` | integer | 否 | `1` | 需要的脚本 API 版本（见 §8）；高于引擎支持版本时拒绝加载 |
@@ -655,3 +655,4 @@ Web 管理界面的源码编辑器（Monaco）通过注入一份 `config-api.d.t
 | v1.8 | 2026-10-19 | 新增 §8.1：编辑器智能提示的数据源为 `config-api.d.ts`（本节与 §3、rest-contract §3 的派生物），明确"改规范必须同步 d.ts、不得反向修改规范" |
 | v1.9 | 2026-10-19 | **实现期回流修正**：`key` 正则放宽为允许大小写（3 份真实配置因大写被判非法）；§9.2 新增第 32 条核对记录 |
 | v1.10 | 2026-10-20 | 新增 §8.2 异步语义：`getHtml`/`net.request`/`executeJs` 为同步宿主实现，`await` 语义不变；QuickJS 通道仅支持同步，异步由 WebView 承担（ADR-0016） |
+| v1.11 | 2026-10-26 | `favicon` 明确支持的格式：位图（png / jpg / gif / webp / ico）、矢量图 **svg**（AndroidSVG 解码，尺寸取 `viewBox` 其次 `width`/`height`）、`data:` 内联图（base64 / URL 编码）；取不到或解码失败一律按"无图标"处理 |
