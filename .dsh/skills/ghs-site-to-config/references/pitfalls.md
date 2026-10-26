@@ -150,3 +150,35 @@
 
 
 
+
+## 21. 播放地址藏在 `eval(function(p,a,c,k,e,d){…})` 打包里
+
+- 现象：详情页 HTML 里只有一个 `<video class="player">`，**没有 `src`、没有 `<source>`、全文只出现一次 `.m3u8`**，
+  而浏览器里能放。按"找 video/src"的思路写 `getDetailInfo` 会直接返回 `null`。
+- 原因：站点用 Dean Edwards 的 packer 把播放地址压成一段
+  `eval(function(p,a,c,k,e,d){…}('source=\'8://7.6/…\'',16,16,'m3u8|…'.split('|'),0,{}))`；
+  解包后是一段赋值语句：`source='https://…/playlist.m3u8';source842='…/720p/video.m3u8';source1280='…/1080p/video.m3u8';`。
+- 正确做法：在 `getDetailInfo` 里就地把 packer 解开再取地址：
+  1. 正则抠出四个参数 `('…',a,c,'词表'.split('|'))`；
+  2. 打包串里的 `\'` 要**先还原成 `'`**，否则后面按引号取地址一条都取不到；
+  3. 标准解码是"把 base36 token 按词表替换"：`while (c--) p = p.replace(new RegExp('\\b'+c.toString(36)+'\\b','g'), k[c])`；
+  4. 再从解码结果里按 `source` / `source1280` / `source842` 取 URL（注意别让 `source` 的匹配吃掉 `source1280`，
+     必须带 `\s*=`）。
+- 站点常备的坑：**`source1280` 的 URL 不一定真是 1080p**——没有 1080p 的片子会指向 `…/720p/video.m3u8`，
+  两个变量同一条 URL。所以要按 URL 判重，并按路径里的 `1080p` / `720p` 段决定清晰度标签，别信变量名。
+- 判断技巧：详情页 `.m3u8` 只出现一次、且出现在 `eval(function(` 附近，就是打包；用
+  `/api/debug/run` 跑一次解码、把结果打出来，确认能拿到绝对地址后再写进配置。
+
+## 22. 改配置时别手搓 JSON body，写坏了会伪装成"站点 404"
+
+- 现象：更新完配置后首页打不开，报 `取页失败：HTTP 404 https://site/…`，但同一个 URL 用
+  `/api/debug/run` 里的 `getHtml('…')` 却是 200；重启后有时好、有时坏。
+- 原因：配置原文被**写坏了**。用 shell 的字符串拼接造 `{"config": "…"}` body 时，一旦引号/反斜杠没转义对，
+  存进去的就不是脚本，而是 `{"value":"…"}` 这种包装，或整段源码被 JSON 二次转义（`/` 变成 `\/`）。
+  症状很有欺骗性：源码被转义成 `homeUrl: 'https:\/\/site\/path'` 后，扫描器取出的地址带反斜杠，
+  取页请求的 path 就是 `\/path`，站点如实返回 404——看起来像镜像/节点问题。
+- 正确做法：**用脚本生成 body 再传**，例如
+  `python -c "…json.dumps({'format':'inline','config':src,'script':''})…" > body.json` 然后
+  `curl --data-binary @body.json -H 'Content-Type: application/json'`。
+- 判断技巧：改完立刻 `GET /api/configs/<key>/raw` 看一眼原文——长度应该和本地文件一致、`homeUrl` 是全斜杠；
+  出现 `{"value":` 或被双重转义的 `/`，就是 body 写坏了，别去怀疑站点。

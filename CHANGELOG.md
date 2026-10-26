@@ -13,6 +13,8 @@
 
 ### Docs
 
+- **技能补第 21、22 条坑：播放地址藏在 eval-packer 里 / 改配置时 JSON body 写坏会伪装成站点 404**（`.dsh/skills/ghs-site-to-config/`）：① 有站点的详情页只给一个没有 `src` 的 `<video class="player">`，真正的 m3u8 压在 Dean Edwards packer（`eval(function(p,a,c,k,e,d){…}('…',16,16,'词表'.split('|'),0,{}))`）里，解包后是 `source` / `source842` / `source1280` 三条赋值；解码要先把打包串里的 `\'` 还原成 `'`，再按 base36 token 替换词表，取地址的正则必须带 `\s*=`（否则 `source` 会吃掉 `source1280`），且没有 1080p 的片子会让 `source1280` 指向 `720p/video.m3u8`——要按 URL 判重、按路径定清晰度，别信变量名。② 用 shell 拼 `{"config": "…"}` body 更新配置时，一旦引号/反斜杠没转义对，存进去的源码会变成 `{"value":"…"}` 或被 JSON 二次转义（`/` → `\/`），扫描器取出的 `homeUrl` 带反斜杠，取页 path 变成 `\/path`，站点如实回 404——现象是「首页 404，但调试接口 `getHtml` 同一个 URL 返回 200」，极易误判成镜像/节点问题。正确做法是用脚本生成 UTF-8 JSON（`json.dumps`）再 `curl --data-binary @body.json`，改完立刻用 `GET /api/configs/<key>/raw` 核对原文长度与 `homeUrl` 是否全斜杠。
+
 - **技能补第 20 条坑：目录被拆成多段（单话 / 单行本 / 番外），别只抓第一个数组**（`.dsh/skills/ghs-site-to-config/`）：书目页把目录拆成多个 `<div x-data='{ … chapters: [...] … }'>`，每段标题紧跟在属性后面的 `data-flux-subheading` 里；只 `indexOf('chapters: [')` 取第一个就只拿到一段（番外全丢），全拼上又会混进「第N卷」整卷合集。正确做法是遍历所有数组、按"数组之后最近的段标题"归类，再按站点语义取舍排序（本例：单话 + 番外，跳过单行本，番外排最后）。
 
 - **技能补第 18、19 条坑：语言前缀把绝对地址正则打空 / lozad 的 1x1 占位封面**（`.dsh/skills/ghs-site-to-config/`）：① 站点把首页从 `/` 换成 `/cn` 后，所有链接都带上语言前缀（`https://site.com/cn/comics/1128`），`getItems` 里 `^https?://site\.com/comics/\d+$` 这种精确正则一条都匹配不上，整页变 0 条（`tags` 还正常，最容易误判成选择器坏了）；正确做法是正则留可选前缀、或只判 path，且配置里手工拼的地址一律用 `this.homeUrl` 算。② 列表用 lozad 懒加载时，非首屏卡片的 `src` 是 `data:image/png;base64,…` 的 1x1 透明占位、真地址在 `data-src`，只读 `src` 就会「第一张有封面、其余全灰」；要 `data-src || src` 并丢掉 `data:` 开头的值。`SKILL.md` §1 侦察清单与 §3 `homeUrl` 约束已加指针。
