@@ -1,5 +1,5 @@
 > **状态**：draft
-> **版本**：v1.16
+> **版本**：v1.17
 > **最后更新**：2026-10-27
 > **取代/被取代**：取代同文件 v1.10
 
@@ -130,7 +130,7 @@ my-source/
 | `imgHeight` | string | 否 | `147px` | 卡片高度（决定宽高比） |
 | `cardStyle` | enum | 否 | `cover-title` | `cover`（仅封面）/ `cover-title`（封面 + 标题）/ `list`（左图右文横向列表） |
 | `drawWidth` | string | 否 | `auto` | 详情页内容最大宽度 |
-| `inputWidth` | string | 否 | `auto` | 首页搜索框宽度；`auto` 表示占满剩余空间 |
+| `inputWidth` | string | 否 | `auto` | 首页搜索框宽度；`auto` 表示占满剩余空间。**当前 App 的搜索入口是顶栏放大镜 + 居中搜索弹窗**，首页不再有内联搜索框，该字段保留兼容、不影响布局 |
 | `readerMode` | enum | 否 | `vertical` | 多图阅读器默认模式：`vertical`（连续滚动）/ `horizontal`（分页）/ `auto`（按图片宽高比自动选） |
 | `textMode` | enum | 否 | `scroll` | 文本阅读器默认模式：`scroll`（滚动）/ `paged`（分页） |
 | `comicImgMaxWidth` | string | 否 | `1080px` | 图集单图解码宽度上限 |
@@ -663,3 +663,4 @@ Web 管理界面的源码编辑器（Monaco）通过注入一份 `config-api.d.t
 | v1.14 | 2026-10-27 | §3.3 `headers` 补充 Cookie 约定：站点通过 `Set-Cookie` 下发的凭证由引擎 CookieJar 在取页 / 取图 / 取视频上自动回带，配置不需要写 `Cookie` 头 |
 | v1.15 | 2026-10-27 | §3.4 `标签` 行的效果改为「首页顶栏标签图标 + 选择标签抽屉（无标签不渲染）」——入口不再占底栏 Tab，配置语义本身未变 |
 | v1.16 | 2026-10-27 | §3.1 新增 `isProxy`（默认 true，仅显式 false 直连）与 `forceProxy`（命中即代理，优先于 isProxy）；设备侧代理设置相应简化为总开关 + 代理列表（见设计文档 §5.22 / §8.13、ADR-0018） |
+| v1.17 | 2026-10-27 | §3.2 `inputWidth` 注明当前 App 的搜索入口是顶栏放大镜 + 居中搜索弹窗，首页不再有内联搜索框，该字段保留兼容但不影响布局 |
