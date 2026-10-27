@@ -44,6 +44,13 @@ object InlineConfigScanner {
     private val HOME_URL = Regex("""\bhomeUrl\s*:\s*(['"])(.*?)\1""")
     private val IMG_MAX_WIDTH = Regex("""\bcomicImgMaxWidth\s*:\s*(['"])(.*?)\1""")
 
+    /** `isProxy: false`（缺省 = true，只有显式 false 才直连） */
+    private val IS_PROXY = Regex("""\bisProxy\s*:\s*(true|false)\b""")
+
+    /** `forceProxy: ['a.com', 'cdn.test:8443']` */
+    private val FORCE_PROXY = Regex("""\bforceProxy\s*:\s*\[([^\]]*)\]""")
+    private val QUOTED = Regex("""(['"])(.*?)\1""")
+
     private val KEY_FORMAT = Regex("""^[A-Za-z0-9][A-Za-z0-9_-]{1,31}$""")
 
     /** 属性级方法声明：行首缩进 + 名字 + 参数表 + `{`；允许 `async` 与名字后的空格 */
@@ -65,6 +72,10 @@ object InlineConfigScanner {
         val homeUrl: String?,
         /** 图集单图解码宽度上限（原样保留，如 `80vw` / `1080px`） */
         val comicImgMaxWidth: String?,
+        /** 该来源是否走代理；`null` 表示没写（按默认 true 处理） */
+        val isProxy: Boolean?,
+        /** 强制走代理的地址（配置 `forceProxy` 数组） */
+        val forceProxy: List<String>,
         val methods: Set<String>,
         val missingRequired: List<String>,
         val usesDeprecatedNetRequest: Boolean,
@@ -76,11 +87,18 @@ object InlineConfigScanner {
             .mapNotNull { m -> m.groupValues[2].takeIf { it !in NOT_METHODS } }
             .toSet()
 
+        val forceBlock = FORCE_PROXY.find(source)?.groupValues?.get(1).orEmpty()
         return ScanResult(
             key = KEY.find(source)?.groupValues?.get(2)?.trim(),
             name = NAME.find(source)?.groupValues?.get(2)?.trim(),
             homeUrl = HOME_URL.find(source)?.groupValues?.get(2)?.trim(),
             comicImgMaxWidth = IMG_MAX_WIDTH.find(source)?.groupValues?.get(2)?.trim(),
+            isProxy = IS_PROXY.find(source)?.groupValues?.get(1)?.toBooleanStrictOrNull(),
+            forceProxy = QUOTED.findAll(forceBlock)
+                .map { it.groupValues[2].trim() }
+                .filter { it.isNotEmpty() }
+                .distinct()
+                .toList(),
             methods = methods,
             missingRequired = REQUIRED_METHODS.filterNot { it in methods },
             usesDeprecatedNetRequest = DEPRECATED_NET_EVENT.containsMatchIn(source) &&

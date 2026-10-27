@@ -233,33 +233,9 @@ class HttpScriptHost(
         android.util.Log.i("GHS", "fetchHtml done ${System.currentTimeMillis() - started}ms $url")
     }
 
-    /** 给无头 WebView 套上与 OkHttp 相同的代理规则（WebView 代理是进程级的） */
-    private fun applyWebViewProxy() {
-        if (!androidx.webkit.WebViewFeature.isFeatureSupported(
-                androidx.webkit.WebViewFeature.PROXY_OVERRIDE,
-            )
-        ) {
-            return
-        }
-        val rules = proxyRules()
-        val endpoint = rules.endpoint
-        val builder = androidx.webkit.ProxyConfig.Builder()
-        if (rules.enabled && endpoint?.isConfigured == true) {
-            builder.addProxyRule("http://" + endpoint.authority)
-            rules.whitelist.forEach { entry ->
-                val pattern = entry.trim().removePrefix("*.").removePrefix(".")
-                if (pattern.isNotEmpty()) runCatching { builder.addBypassRule(pattern) }
-            }
-        } else {
-            builder.addDirect()
-        }
-        runCatching {
-            androidx.webkit.ProxyController.getInstance().setProxyOverride(
-                builder.build(),
-                { runnable -> android.os.Handler(android.os.Looper.getMainLooper()).post(runnable) },
-                {},
-            )
-        }
+    /** 给无头 WebView 套上与 OkHttp 相同的代理判定（WebView 代理是进程级的） */
+    private fun applyWebViewProxy(url: String) {
+        WebViewProxy.apply(proxyRules(), url)
     }
     /**
      * 无头 WebView 取渲染后的 HTML。
@@ -421,7 +397,7 @@ class HttpScriptHost(
 
                 onMain {
                     // WebView 兜底也必须走代理，否则直连会被站点挡掉
-                    applyWebViewProxy()
+                    applyWebViewProxy(url)
                     val view = window.view
                     runCatching { view.stopLoading() }
                     runCatching { view.clearHistory() }

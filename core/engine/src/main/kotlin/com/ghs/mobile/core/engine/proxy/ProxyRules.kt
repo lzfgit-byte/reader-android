@@ -14,25 +14,29 @@ data class ProxyEndpoint(
 }
 
 /**
- * 代理判定：**唯一决策点**（[ADR-0009]）。
+ * 代理判定：**唯一决策点**（[ADR-0018]）。
  *
- * 规则（顺序即优先级）：
- * 1. 未启用或端点不完整 → 直连
- * 2. 命中白名单 → 直连
- * 3. 其余一律走代理
+ * 设备侧只保留两件事：**总开关**与**代理列表**（同一时刻一条生效）。
+ * "哪个站点要走代理"由配置自己声明：
  *
- * 白名单条目支持三种写法：
- * - `example.com`：精确主机
- * - `example.com:8080`：精确主机 + 端口
- * - `.example.com` 或 `*.example.com`：后缀匹配（含子域）
+ * 1. 总开关关掉、或端点不完整 → 直连
+ * 2. 目标是代理自己 → 直连（避免自环）
+ * 3. 命中配置的 `forceProxy` → **走代理**（即使该来源 `isProxy: false`）
+ * 4. 其余按来源的 `isProxy` 决定（默认 `true`，只有显式写 `false` 才直连）
  *
- * [ADR-0009]: ../../docs/02-architecture/adr/ADR-0009-proxy-whitelist-single-decision.md
+ * `forceProxy` 条目支持三种写法（与旧白名单同一套匹配规则）：
+ * - `example.com`：精确主机，且覆盖其子域
+ * - `example.com:8080`：额外要求端口一致
+ * - `*`：全部地址
+ *
+ * [ADR-0018]: ../../../../../../docs/02-architecture/adr/ADR-0018-proxy-per-config-policy.md
  */
 data class ProxyRules(
     val enabled: Boolean = false,
     val endpoint: ProxyEndpoint? = null,
-    val whitelist: List<String> = emptyList(),
-    /** 强制代理名单：命中即走代理，优先级高于白名单 */
+    /** 当前来源是否走代理（配置 `isProxy`，默认 true） */
+    val siteEnabled: Boolean = true,
+    /** 当前来源强制走代理的地址（配置 `forceProxy`），优先于 [siteEnabled] */
     val forceProxy: List<String> = emptyList(),
 ) {
     fun shouldProxy(host: String?, port: Int): Boolean {
@@ -41,16 +45,13 @@ data class ProxyRules(
         val normalizedHost = normalizeHost(host) ?: return false
         // 代理自身所在的地址不应再走代理，避免自环
         if (normalizedHost == normalizeHost(target.host)) return false
-        // 强制代理优先：命中强制名单一律走代理，即使它同时在白名单里
-        if (isForceProxied(normalizedHost, port)) return true
-        return !isWhitelisted(normalizedHost, port)
+        // 强制名单优先：命中就代理，哪怕这个来源整体是直连的
+        if (isForced(normalizedHost, port)) return true
+        return siteEnabled
     }
 
-    fun isForceProxied(host: String, port: Int): Boolean =
+    fun isForced(host: String, port: Int): Boolean =
         forceProxy.any { entry -> matches(entry.trim(), host, port) }
-
-    fun isWhitelisted(host: String, port: Int): Boolean =
-        whitelist.any { entry -> matches(entry.trim(), host, port) }
 
     private fun matches(entry: String, host: String, port: Int): Boolean {
         if (entry.isEmpty()) return false
@@ -59,23 +60,20 @@ data class ProxyRules(
         val (entryHost, entryPort) = splitHostPort(entry)
         if (entryPort != null && entryPort != port) return false
 
-        val suffixMatch = entryHost.startsWith("*.") || entryHost.startsWith(".")
         val bare = entryHost.removePrefix("*.").removePrefix(".").lowercase()
         if (bare.isEmpty()) return false
 
-        // 裸域名同时覆盖其子域：用户写 example.com 时，cdn.example.com 也应直连
-        // （图片/静态资源常在子域上，否则图片仍走代理被挡）
+        // 裸域名同时覆盖其子域：写 example.com 时 cdn.example.com 也算命中
         return host == bare || host.endsWith(".$bare")
     }
 
     companion object {
         const val DEFAULT_PROXY_URL = "http://192.168.31.245:10808"
 
-        /** 默认：启用，指向给定的本地代理地址，白名单为空 */
+        /** 默认：启用，指向给定的本地代理地址 */
         fun default(): ProxyRules = ProxyRules(
             enabled = true,
             endpoint = parseEndpoint(DEFAULT_PROXY_URL),
-            whitelist = emptyList(),
         )
 
         fun direct(): ProxyRules = ProxyRules(enabled = false)
@@ -92,7 +90,8 @@ data class ProxyRules(
             return ProxyEndpoint(host = host, port = finalPort)
         }
 
-        fun parseWhitelist(raw: String?): List<String> =
+        /** 逗号/换行分隔的地址串 → 列表（配置数组在解析脚本里已经拆好，这里只处理文本形态） */
+        fun parseHostList(raw: String?): List<String> =
             raw.orEmpty().split(',', '，', '\n')
                 .map { it.trim() }
                 .filter { it.isNotEmpty() }
@@ -120,7 +119,7 @@ data class ProxyRules(
     }
 }
 
-/** OkHttp 的 ProxySelector：每个请求按 [ProxyRules] 逐个判定（白名单才能真正生效） */
+/** OkHttp 的 ProxySelector：每个请求按 [ProxyRules] 逐个判定（来源策略才能真正生效） */
 class RulesProxySelector(private val rules: () -> ProxyRules) : java.net.ProxySelector() {
 
     override fun select(uri: URI): List<java.net.Proxy> {

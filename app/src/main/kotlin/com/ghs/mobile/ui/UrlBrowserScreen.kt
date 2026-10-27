@@ -60,20 +60,16 @@ fun UrlBrowserScreen(
     val window = remember { WebWindows.acquire(WebWindows.BROWSER_SPEC) }
     val context = LocalContext.current
 
-    // 规则随开关切换；离开本页恢复全局规则
-    LaunchedEffect(useProxy, proxyState.activeId, globalRules.enabled) {
+    // 规则随开关切换；离开本页恢复全局规则（含当前来源的 isProxy / forceProxy）
+    LaunchedEffect(useProxy, proxyState.activeId, globalRules.enabled, loadedUrl) {
         val endpoint = ProxyRules.parseEndpoint(proxyState.active?.url)
         val rules = if (useProxy && endpoint != null) {
-            ProxyRules(
-                enabled = true,
-                endpoint = endpoint,
-                whitelist = emptyList(),      // 本页不套白名单：要代理就全走代理
-                forceProxy = listOf("*"),     // 强制全部走代理
-            )
+            // 本页听用户的：要代理就整页走代理（不看来源的 isProxy）
+            ProxyRules(enabled = true, endpoint = endpoint, siteEnabled = true)
         } else {
             ProxyRules(enabled = false, endpoint = null)
         }
-        WebViewProxy.apply(rules)
+        WebViewProxy.apply(rules, loadedUrl)
     }
     DisposableEffect(Unit) {
         onDispose {

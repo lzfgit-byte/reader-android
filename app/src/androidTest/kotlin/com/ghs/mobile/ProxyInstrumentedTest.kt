@@ -20,8 +20,8 @@ import org.junit.runner.RunWith
  * 代理真机验证：本地起两个服务——一个"目标站点"，一个"HTTP 代理"。
  *
  * 断言：
- * - 白名单内的地址**直连**（目标站点收到，代理没有）
- * - 白名单外的地址**走代理**（代理收到绝对 URI）
+ * - 来源声明直连（isProxy=false）时**直连**（目标站点收到，代理没有）
+ * - 命中 forceProxy 的地址**走代理**（代理收到绝对 URI）
  *
  * 全程不访问外网。
  */
@@ -43,10 +43,13 @@ class ProxyInstrumentedTest {
         serve(target, "direct-body") { line -> targetRequests += line }
         serve(proxy, "proxy-body") { line -> proxyRequests += line }
 
+        // 来源声明直连（isProxy=false），但把目标地址写进 forceProxy：
+        // 同一台设备上就能同时验证「直连」与「强制走代理」两条分支
         val rules = ProxyRules(
             enabled = true,
             endpoint = ProxyEndpoint("127.0.0.1", proxy.localPort),
-            whitelist = listOf("127.0.0.1:${target.localPort}"),
+            siteEnabled = false,
+            forceProxy = listOf("localhost:${target.localPort}"),
         )
         host = HttpScriptHost(InstrumentationRegistry.getInstrumentation().targetContext) { rules }
     }
@@ -59,17 +62,17 @@ class ProxyInstrumentedTest {
     }
 
     @Test
-    fun whitelisted_host_goes_direct() {
+    fun direct_site_bypasses_proxy() {
         val body = host.fetchHtml("http://127.0.0.1:${target.localPort}/list")
 
         assertEquals("direct-body", body)
         assertTrue("目标站点应收到请求", targetRequests.isNotEmpty())
-        assertTrue("白名单内的请求不应经过代理：$proxyRequests", proxyRequests.isEmpty())
+        assertTrue("直连来源的请求不应经过代理：$proxyRequests", proxyRequests.isEmpty())
     }
 
     @Test
-    fun non_whitelisted_host_uses_proxy() {
-        // localhost 与 127.0.0.1 指向同一地址，但主机名不在白名单里 → 必须走代理
+    fun force_proxy_host_uses_proxy() {
+        // localhost 与 127.0.0.1 指向同一地址；forceProxy 里写的是 localhost → 必须走代理
         val body = host.fetchHtml("http://localhost:${target.localPort}/list")
 
         assertEquals("proxy-body", body)

@@ -14,7 +14,9 @@ import org.json.JSONObject
 /**
  * 代理设置：存在 `app_setting(device)` 作用域。
  *
- * 支持**多条代理、同一时刻只有一条生效**（`activeId` 指向它）。
+ * 只有两件事：**总开关** + **代理列表**（多条、同一时刻一条生效，`activeId` 指向它）。
+ * "哪个来源要走代理"不在这里——那是配置自己的 `isProxy` / `forceProxy`（见 [SiteProxyPolicy]）。
+ *
  * 代理不做认证：只连本机/内网的转发端口，没有用户名密码的场景。
  *
  * 为什么是 `device` 而不是 `prefs`：代理地址属于**本机网络环境**，
@@ -41,7 +43,7 @@ class ProxyStore(private val repository: LocalRepository) {
 
     suspend fun load() {
         val saved = withContext(Dispatchers.IO) { repository.settings(SettingScope.DEVICE) }
-        // 三把键都没有时保留默认（启用 + 内置地址）
+        // 两把键都没有时保留默认（启用 + 内置地址）
         if (saved["proxy_url"] == null && saved["proxy_enabled"] == null && saved["proxy_list"] == null) return
 
         val stored = parseEntries(saved["proxy_list"])
@@ -56,11 +58,10 @@ class ProxyStore(private val repository: LocalRepository) {
             ?: entries.firstOrNull()?.id
 
         _state.value = State(entries, activeId)
+        // 旧版本存过 proxy_whitelist / proxy_force：新模型不再读它们，留着也不会影响判定
         _rules.value = ProxyRules(
             enabled = saved["proxy_enabled"]?.toBooleanStrictOrNull() ?: true,
             endpoint = ProxyRules.parseEndpoint(_state.value.active?.url),
-            whitelist = ProxyRules.parseWhitelist(saved["proxy_whitelist"]),
-            forceProxy = ProxyRules.parseWhitelist(saved["proxy_force"]),
         )
     }
 
@@ -83,18 +84,9 @@ class ProxyStore(private val repository: LocalRepository) {
         update { it.copy(activeId = id) }
     }
 
-    /** 设置页「启用代理」开关：立即落库（白名单 / 强制名单不动） */
+    /** 设置页「启用代理」开关：立即落库 */
     suspend fun setEnabled(enabled: Boolean) {
         _rules.value = _rules.value.copy(enabled = enabled)
-        persist()
-    }
-
-    /** 「应用」按钮：只保存白名单与强制名单（开关与代理列表各自即时生效） */
-    suspend fun setLists(whitelist: String, forceProxy: String) {
-        _rules.value = _rules.value.copy(
-            whitelist = ProxyRules.parseWhitelist(whitelist),
-            forceProxy = ProxyRules.parseWhitelist(forceProxy),
-        )
         persist()
     }
 
@@ -114,8 +106,6 @@ class ProxyStore(private val repository: LocalRepository) {
             repository.putSetting(SettingScope.DEVICE, "proxy_active", state.activeId.orEmpty())
             // 老键继续写：旧版本或外部工具仍会读 proxy_url
             repository.putSetting(SettingScope.DEVICE, "proxy_url", state.active?.url.orEmpty())
-            repository.putSetting(SettingScope.DEVICE, "proxy_whitelist", rules.whitelist.joinToString(","))
-            repository.putSetting(SettingScope.DEVICE, "proxy_force", rules.forceProxy.joinToString(","))
         }
     }
 

@@ -14,6 +14,7 @@ import coil.decode.DataSource
 import coil.intercept.Interceptor
 import coil.request.ImageResult
 import coil.request.SuccessResult
+import com.ghs.mobile.GhsApp
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
@@ -191,7 +192,14 @@ object WebViewImageLoader {
         // 这里不加 Referer：Android WebView 对程序化 loadUrl 只会带上自己算的 Referer，
         // 额外传进去的 Referer 会被丢掉（实测服务端收到的就是空）。需要 Referer 的图床
         // 在 OkHttp 那一层就已经带上了，兜底只负责"连接层面取不回来"的情况。
-        main.post { runCatching { window.view.loadUrl(url) } }
+        main.post {
+            // 兜底的 WebView 也要按**这张图**的地址做代理判定：
+            // 来源声明直连但 forceProxy 命中该图床时，兜底仍然要走代理，否则前面的成功判定白费
+            runCatching {
+                com.ghs.mobile.core.script.WebViewProxy.apply(GhsApp.instance.proxyRules(), url)
+            }
+            runCatching { window.view.loadUrl(url) }
+        }
 
         Thread {
             val deadline = System.currentTimeMillis() + TIMEOUT_MS

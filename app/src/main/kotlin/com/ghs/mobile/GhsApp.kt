@@ -12,6 +12,7 @@ import com.ghs.mobile.core.data.LocalRepository
 import com.ghs.mobile.core.engine.proxy.RulesProxySelector
 import com.ghs.mobile.settings.ProxyStore
 import com.ghs.mobile.settings.SettingsStore
+import com.ghs.mobile.settings.SiteProxyPolicy
 import com.ghs.mobile.web.ConfigStore
 import com.ghs.mobile.web.WebAdminController
 import okhttp3.OkHttpClient
@@ -41,12 +42,22 @@ class GhsApp : Application(), ImageLoaderFactory {
     }
 
     /**
+     * 代理判定（唯一入口）：设备侧的开关/代理列表 + **当前来源**声明的 `isProxy` / `forceProxy`。
+     *
+     * 每次请求现算，不缓存快照：拨开关、切代理、切站点都立刻生效，不需要重建会话。
+     */
+    fun proxyRules(): com.ghs.mobile.core.engine.proxy.ProxyRules {
+        val site = SiteProxyPolicy.policy.value
+        return proxy.rules.value.copy(siteEnabled = site.useProxy, forceProxy = site.forceProxy)
+    }
+
+    /**
      * 带代理的 HTTP 客户端：图片、视频和应用请求共用同一套代理规则。
      *
-     * `ProxySelector` 按请求逐个判定，白名单才能真正生效。
+     * `ProxySelector` 按请求逐个判定，来源级策略（isProxy / forceProxy）才能真正生效。
      */
     fun proxiedClient(): OkHttpClient = OkHttpClient.Builder()
-        .proxySelector(RulesProxySelector { proxy.rules.value })
+        .proxySelector(RulesProxySelector { proxyRules() })
         // 与 WebView 共用 Cookie：站点用 Set-Cookie 下发的通行凭证，图片/视频请求也要带回去。
         // 取页那条管线本来就用这个 jar，但图片/视频走的是这个客户端——少了它，站点发给页面的
         // `xxx_access=…` 一类 cookie 到不了图床，表现为「页面能开、图全 403」。

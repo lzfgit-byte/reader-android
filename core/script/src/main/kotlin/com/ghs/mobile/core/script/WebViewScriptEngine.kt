@@ -6,9 +6,6 @@ import android.os.Handler
 import android.os.Looper
 import android.webkit.JavascriptInterface
 import android.webkit.WebView
-import androidx.webkit.ProxyConfig
-import androidx.webkit.ProxyController
-import androidx.webkit.WebViewFeature
 import com.ghs.mobile.core.engine.proxy.ProxyRules
 import com.ghs.mobile.core.engine.script.ScriptEngine
 import com.ghs.mobile.core.script.window.WebWindow
@@ -147,29 +144,12 @@ class WebViewScriptEngine(
     /**
      * 把代理规则应用到 WebView（ADR-0008：代理对无头 WebView 同样生效）。
      *
-     * 走 `ProxyConfig`：全局代理 + 白名单作为 bypass 规则；
-     * 未启用则显式 `addDirect()`，避免继承系统代理造成"配了却没用"的错觉。
+     * 判定与 OkHttp 共用 [ProxyRules]：`isProxy: false` 的来源整体直连，
+     * `forceProxy` 里有当前地址则仍走代理。未启用则显式 `addDirect()`，
+     * 避免继承系统代理造成"配了却没用"的错觉。
      */
     private fun applyProxyOverride() {
-        if (!WebViewFeature.isFeatureSupported(WebViewFeature.PROXY_OVERRIDE)) return
-        val rules = proxyRules()
-        val endpoint = rules.endpoint
-        val builder = ProxyConfig.Builder()
-
-        if (rules.enabled && endpoint?.isConfigured == true) {
-            builder.addProxyRule("http://${endpoint.authority}")
-            rules.whitelist.forEach { entry ->
-                val pattern = entry.trim().removePrefix("*.").removePrefix(".")
-                if (pattern.isNotEmpty()) runCatching { builder.addBypassRule(pattern) }
-            }
-        } else {
-            builder.addDirect()
-        }
-
-        runCatching {
-            ProxyController.getInstance()
-                .setProxyOverride(builder.build(), { runnable -> main.post(runnable) }) { }
-        }
+        WebViewProxy.apply(proxyRules())
     }
 
     // ── 内部 ─────────────────────────────────────────────────────────────────

@@ -614,7 +614,7 @@ fun DemoApp(
                 val source = app.configs.get(key)?.source
                     ?: app.assets.open("demo/config.js").bufferedReader().use { it.readText() }
                 // 代理规则按 provider 传：开关/切代理后当场生效，不必重建会话
-                ReaderSession(app, source) { app.proxy.rules.value }
+                ReaderSession(app, source) { app.proxyRules() }
             }
         }.getOrElse {
             screen = Screen.Failed(it.message ?: it.toString())
@@ -622,6 +622,14 @@ fun DemoApp(
         }
 
         session = created
+        // 当前来源的代理策略：配置的 isProxy / forceProxy 决定这个站点的请求走不走代理
+        com.ghs.mobile.settings.SiteProxyPolicy.apply(created.isProxy, created.forceProxy)
+        android.util.Log.i(
+            "GHS",
+            "site proxy isProxy=${created.isProxy} forceProxy=${created.forceProxy}",
+        )
+        // 换了来源就要按新策略重新套一次 WebView 代理（进程级，不重套会沿用上一个站点的设置）
+        com.ghs.mobile.core.script.WebViewProxy.apply(app.proxyRules())
         // 进度按相对地址存：记录当前站点，供 ProgressKeys 剥/拼域名
         ProgressKeys.homeUrl = created.homeUrl
         // 图片 Referer 跟着当前站点走：图床按它判盗链（缺了封面/页图 403）
@@ -1433,11 +1441,13 @@ fun DemoApp(
                     Text(current.message, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
 
                     // 失败原因常常是"配的地址不是 HTTP 代理"，把判定线索直接摆出来
-                    val rules = app.proxy.rules.value
+                    val rules = app.proxyRules()
                     val endpoint = rules.endpoint
                     if (rules.enabled && endpoint != null) {
                         Text(
-                            "已启用代理 ${endpoint.authority}（白名单 ${rules.whitelist.size} 条）\n" +
+                            "已启用代理 ${endpoint.authority}（当前来源" +
+                                (if (rules.siteEnabled) "走代理" else "直连") +
+                                "，强制代理 ${rules.forceProxy.size} 条）\n" +
                                 "若错误为 unexpected end of stream / CONNECT 失败，\n" +
                                 "说明该地址不是 HTTP 代理，或目标域名未放行。",
                             style = MaterialTheme.typography.labelSmall,

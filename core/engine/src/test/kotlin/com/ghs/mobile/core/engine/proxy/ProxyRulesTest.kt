@@ -10,10 +10,10 @@ import kotlin.test.assertTrue
 
 class ProxyRulesTest {
 
+    /** 默认来源策略：走代理，无强制名单（与配置不写 isProxy 时一致） */
     private val rules = ProxyRules(
         enabled = true,
         endpoint = ProxyEndpoint("192.168.31.245", 4000),
-        whitelist = listOf("example.com", ".internal.test", "api.local:8443"),
     )
 
     @Test
@@ -30,38 +30,51 @@ class ProxyRulesTest {
     }
 
     @Test
-    fun `白名单精确匹配并覆盖子域`() {
-        assertFalse(rules.shouldProxy("example.com", 80))
-        assertFalse(rules.shouldProxy("EXAMPLE.COM", 443))
-        // 裸域名同样覆盖子域：图片/静态资源常在不同子域上
-        assertFalse(rules.shouldProxy("sub.example.com", 80))
-        assertFalse(rules.shouldProxy("cdn-msp3.example.com", 443))
-        // 相似但不同域名的不能误伤
-        assertTrue(rules.shouldProxy("notexample.com", 80))
-    }
-
-    @Test
-    fun `白名单后缀匹配包含子域`() {
-        assertFalse(rules.shouldProxy("internal.test", 80))
-        assertFalse(rules.shouldProxy("api.internal.test", 443))
-        assertTrue(rules.shouldProxy("notinternal.test", 80))
-    }
-
-    @Test
-    fun `白名单带端口时端口必须一致`() {
-        assertFalse(rules.shouldProxy("api.local", 8443))
-        assertTrue(rules.shouldProxy("api.local", 9000))
-    }
-
-    @Test
-    fun `其余主机走代理`() {
+    fun `来源默认走代理`() {
         assertTrue(rules.shouldProxy("example.org", 80))
         assertTrue(rules.shouldProxy("cdn.other.net", 443))
     }
 
     @Test
+    fun `来源声明直连且没有强制名单时全部直连`() {
+        val directSite = rules.copy(siteEnabled = false)
+        assertFalse(directSite.shouldProxy("example.org", 80))
+        assertFalse(directSite.shouldProxy("cdn.other.net", 443))
+    }
+
+    @Test
+    fun `强制名单在直连来源上也生效`() {
+        val directSite = rules.copy(
+            siteEnabled = false,
+            forceProxy = listOf("images.example.com", ".cdn.test"),
+        )
+        assertTrue(directSite.shouldProxy("images.example.com", 443))
+        // 裸域名覆盖其子域
+        assertTrue(directSite.shouldProxy("eu.images.example.com", 443))
+        assertTrue(directSite.shouldProxy("static.cdn.test", 80))
+        // 没命中的仍直连
+        assertFalse(directSite.shouldProxy("example.com", 80))
+        assertFalse(directSite.shouldProxy("notcdn.test", 80))
+    }
+
+    @Test
+    fun `强制名单带端口时端口必须一致`() {
+        val directSite = rules.copy(siteEnabled = false, forceProxy = listOf("api.local:8443"))
+        assertTrue(directSite.shouldProxy("api.local", 8443))
+        assertFalse(directSite.shouldProxy("api.local", 9000))
+    }
+
+    @Test
+    fun `强制名单支持星号表示全部`() {
+        val directSite = rules.copy(siteEnabled = false, forceProxy = listOf("*"))
+        assertTrue(directSite.shouldProxy("anything.test", 443))
+    }
+
+    @Test
     fun `代理自身地址不再走代理`() {
         assertFalse(rules.shouldProxy("192.168.31.245", 4000))
+        // 端口不同也按主机放行：连自己绕一圈没有意义
+        assertFalse(rules.shouldProxy("192.168.31.245", 4001))
     }
 
     @Test
@@ -77,12 +90,12 @@ class ProxyRulesTest {
     }
 
     @Test
-    fun `解析白名单`() {
+    fun `解析地址列表`() {
         assertEquals(
             listOf("a.com", "b.com:8080", ".c.com"),
-            ProxyRules.parseWhitelist(" a.com , b.com:8080，.c.com \n a.com "),
+            ProxyRules.parseHostList(" a.com , b.com:8080，.c.com \n a.com "),
         )
-        assertTrue(ProxyRules.parseWhitelist(null).isEmpty())
+        assertTrue(ProxyRules.parseHostList(null).isEmpty())
     }
 
     @Test
@@ -91,26 +104,23 @@ class ProxyRulesTest {
         assertTrue(default.enabled)
         assertEquals("192.168.31.245", default.endpoint?.host)
         assertEquals(10808, default.endpoint?.port)
-        assertTrue(default.whitelist.isEmpty())
+        assertTrue(default.siteEnabled)
+        assertTrue(default.forceProxy.isEmpty())
         assertTrue(default.shouldProxy("example.org", 443))
     }
 
     @Test
-    fun `ProxySelector 按规则逐请求选择`() {
-        val selector = RulesProxySelector { rules }
-
-        val proxied = selector.select(URI("https://example.org/a"))
+    fun `ProxySelector 按来源策略逐请求选择`() {
+        val proxied = RulesProxySelector { rules }.select(URI("https://example.org/a"))
         assertEquals(Proxy.Type.HTTP, proxied.single().type())
 
-        val bypass = selector.select(URI("https://example.com/a"))
-        assertEquals(Proxy.NO_PROXY, bypass.single())
-
-        val httpsDefaultPort = selector.select(URI("https://example.org/a"))
-        assertEquals(Proxy.Type.HTTP, httpsDefaultPort.single().type())
+        val direct = RulesProxySelector { rules.copy(siteEnabled = false) }
+            .select(URI("https://example.org/a"))
+        assertEquals(Proxy.NO_PROXY, direct.single())
     }
 
     /**
-     * 回归：代理开关/列表切换必须**当场**生效。
+     * 回归：代理开关/列表/来源策略切换必须**当场**生效。
      *
      * 会话里的 OkHttpClient 只在创建时建一次，所以规则只能按 provider 实时读；
      * 一旦有人把它改成「创建时快照」，这条用例就会红。
@@ -134,13 +144,18 @@ class ProxyRulesTest {
     }
 
     @Test
-    fun `白名单变更是实时的`() {
+    fun `来源策略变更是实时的`() {
         var current = rules
         val selector = RulesProxySelector { current }
 
         assertEquals(Proxy.Type.HTTP, selector.select(URI("https://example.org/a")).single().type())
 
-        current = current.copy(whitelist = current.whitelist + "example.org")
+        // 切到 isProxy=false 的来源：立刻直连
+        current = current.copy(siteEnabled = false)
         assertEquals(Proxy.NO_PROXY, selector.select(URI("https://example.org/a")).single())
+
+        // 该来源声明了 forceProxy：命中的地址仍走代理
+        current = current.copy(forceProxy = listOf("example.org"))
+        assertEquals(Proxy.Type.HTTP, selector.select(URI("https://example.org/a")).single().type())
     }
 }

@@ -82,10 +82,10 @@ class ChallengeActivity : Activity() {
         val view = window.view
         CookieManager.getInstance().setAcceptCookie(true)
         CookieManager.getInstance().setAcceptThirdPartyCookies(view, true)
-        // 校验窗口与普通请求使用同一套代理规则：
-        // 白名单内的地址直连，不在白名单的走代理。窗口不绕过代理。
+        // 校验窗口与普通请求使用同一套代理判定：来源声明直连就直连，
+        // forceProxy 命中仍走代理。窗口不绕过代理。
         runCatching {
-            com.ghs.mobile.core.script.WebViewProxy.apply(GhsApp.instance.proxy.rules.value)
+            com.ghs.mobile.core.script.WebViewProxy.apply(GhsApp.instance.proxyRules())
         }
         // 进度条：加载中显示，加载完自动隐藏
         val progress = android.widget.ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal).apply {

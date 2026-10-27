@@ -1,4 +1,4 @@
-﻿package com.ghs.mobile
+package com.ghs.mobile
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -62,6 +62,8 @@ private fun AppRoot() {
     val proxyRules by proxyStore.rules.collectAsState()
     // 代理列表：多条代理、单选生效
     val proxyState by proxyStore.state.collectAsState()
+    // 当前来源的代理策略（配置 isProxy / forceProxy）：只读展示，设置在配置里
+    val siteProxy by com.ghs.mobile.settings.SiteProxyPolicy.policy.collectAsState()
     val webState by webAdmin.state.collectAsState()
     val scope = rememberCoroutineScope()
 
@@ -74,7 +76,7 @@ private fun AppRoot() {
             block()
             com.ghs.mobile.ui.ImageCache.clearAll()
             runCatching { coil.Coil.imageLoader(GhsApp.instance).memoryCache?.clear() }
-            com.ghs.mobile.core.script.WebViewProxy.apply(proxyStore.rules.value)
+            com.ghs.mobile.core.script.WebViewProxy.apply(GhsApp.instance.proxyRules())
         }
     }
 
@@ -146,17 +148,15 @@ private fun AppRoot() {
                     onBack = { page = Page.MAIN },
                 )
 
-                // 网络代理：开关与列表切换即时生效，白名单/强制名单由「应用」保存
+                // 网络代理：只有总开关 + 代理列表；来源级策略由配置 isProxy / forceProxy 决定
                 Page.PROXY -> com.ghs.mobile.ui.ProxyScreen(
                     state = proxyState,
                     rules = proxyRules,
+                    site = siteProxy,
                     onEnabledChange = { enabled -> applyProxyChange { proxyStore.setEnabled(enabled) } },
                     onSelect = { id -> applyProxyChange { proxyStore.select(id) } },
                     onRemove = { id -> applyProxyChange { proxyStore.remove(id) } },
                     onAdd = { url -> applyProxyChange { proxyStore.add(url) } },
-                    onApplyLists = { whitelist, forceProxy ->
-                        applyProxyChange { proxyStore.setLists(whitelist, forceProxy) }
-                    },
                     onBack = { page = Page.MAIN },
                 )
 
@@ -169,7 +169,7 @@ private fun AppRoot() {
 
                 Page.BROWSER -> com.ghs.mobile.ui.UrlBrowserScreen(
                     proxyState = proxyState,
-                    globalRules = proxyRules,
+                    globalRules = GhsApp.instance.proxyRules(),
                     onBack = { page = Page.MAIN },
                 )
             }

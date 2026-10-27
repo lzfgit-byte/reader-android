@@ -33,14 +33,17 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.ghs.mobile.core.engine.proxy.ProxyRules
 import com.ghs.mobile.settings.ProxyStore
+import com.ghs.mobile.settings.SiteProxyPolicy
 
 /**
  * 网络代理（独立页，F28）。
  *
+ * 这里只有**两件事**：总开关与代理列表——"哪个来源走不走代理"由配置自己声明
+ * （`isProxy` 默认 true、`forceProxy` 强制名单），不在设备设置里维护。
+ *
  * 交互约定：
- * - **启用代理开关**：拨一下就生效并落库，不需要「应用」；
- * - **代理列表**：点选哪条就当场生效（同一时刻只有一条生效），删除同理；
- * - **「应用」只负责白名单与强制代理名单**这两个自由输入框，避免每敲一个字都写库。
+ * - **启用代理开关**：拨一下就生效并落库；
+ * - **代理列表**：点选哪条就当场生效（同一时刻只有一条生效），删除同理。
  *
  * 变更通过 [onEnabledChange] / [onSelect] / [onRemove] / [onAdd] 直接落到 ProxyStore，
  * 由外层清缓存并重新套到 WebView；引擎侧按 provider 实时读取规则，不再重建会话。
@@ -50,11 +53,11 @@ import com.ghs.mobile.settings.ProxyStore
 fun ProxyScreen(
     state: ProxyStore.State,
     rules: ProxyRules,
+    site: SiteProxyPolicy.Policy,
     onEnabledChange: (Boolean) -> Unit,
     onSelect: (String) -> Unit,
     onRemove: (String) -> Unit,
     onAdd: (String) -> Unit,
-    onApplyLists: (whitelist: String, forceProxy: String) -> Unit,
     onBack: () -> Unit,
 ) {
     Scaffold(
@@ -77,14 +80,24 @@ fun ProxyScreen(
                     .padding(16.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                ProxySwitchCard(state = state, rules = rules, onEnabledChange = onEnabledChange)
+                ProxySwitchCard(
+                    state = state,
+                    rules = rules,
+                    site = site,
+                    onEnabledChange = onEnabledChange,
+                )
                 ProxyListCard(
                     state = state,
                     onSelect = onSelect,
                     onRemove = onRemove,
                     onAdd = onAdd,
                 )
-                ProxyListsCard(rules = rules, onApplyLists = onApplyLists)
+                Text(
+                    "来源级策略写在配置里：`isProxy: false` 的站点直连，`forceProxy: [\"…\"]` " +
+                        "里的地址即使该站点直连也走代理。改动配置后重新导入即可，这里不用再点应用。",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
         }
     }
@@ -95,6 +108,7 @@ fun ProxyScreen(
 private fun ProxySwitchCard(
     state: ProxyStore.State,
     rules: ProxyRules,
+    site: SiteProxyPolicy.Policy,
     onEnabledChange: (Boolean) -> Unit,
 ) {
     Card {
@@ -119,8 +133,14 @@ private fun ProxySwitchCard(
             val endpoint = state.active?.url
             Text(
                 when {
-                    !rules.enabled -> "当前状态：直连（不走代理）"
+                    !rules.enabled -> "当前状态：直连（代理已关闭）"
                     endpoint.isNullOrBlank() -> "当前状态：已启用，但没有可用代理 → 实际直连"
+                    !site.useProxy -> "当前来源声明直连" +
+                        if (site.forceProxy.isEmpty()) {
+                            "（isProxy: false）"
+                        } else {
+                            "；强制名单 ${site.forceProxy.size} 条仍走代理"
+                        }
                     else -> "当前状态：走 $endpoint"
                 },
                 style = MaterialTheme.typography.labelMedium,
@@ -189,66 +209,6 @@ private fun ProxyListCard(
                     },
                     enabled = newUrl.isNotBlank(),
                 ) { Text("添加") }
-            }
-        }
-    }
-}
-
-/** 白名单 / 强制代理名单：只由「应用」保存 */
-@Composable
-private fun ProxyListsCard(
-    rules: ProxyRules,
-    onApplyLists: (String, String) -> Unit,
-) {
-    // 草稿不做 remember(rules)：拨开关时 rules 会变，草稿不能被清掉
-    var whitelist by remember { mutableStateOf(rules.whitelist.joinToString(", ")) }
-    var forceProxy by remember { mutableStateOf(rules.forceProxy.joinToString(", ")) }
-    val savedWhitelist = rules.whitelist.joinToString(", ")
-    val savedForce = rules.forceProxy.joinToString(", ")
-    val dirty = whitelist.trim() != savedWhitelist.trim() || forceProxy.trim() != savedForce.trim()
-
-    Card {
-        Column(
-            modifier = Modifier.fillMaxWidth().padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text("白名单与强制代理名单", style = MaterialTheme.typography.titleMedium)
-                if (dirty) {
-                    Text(
-                        "未保存",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.error,
-                    )
-                }
-            }
-            OutlinedTextField(
-                value = whitelist,
-                onValueChange = { whitelist = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("白名单（逗号分隔；example.com 同时覆盖其子域）") },
-            )
-            OutlinedTextField(
-                value = forceProxy,
-                onValueChange = { forceProxy = it },
-                modifier = Modifier.fillMaxWidth(),
-                label = { Text("强制代理名单（逗号分隔；命中即走代理，优先于白名单）") },
-            )
-            Text(
-                "这两栏改完要按「应用」才落库——它们是自由文本，边打边存会写很多次库。" +
-                    "白名单内直连；强制代理命中则一律走代理；未启用代理时全部直连。",
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
-                TextButton(
-                    onClick = { onApplyLists(whitelist, forceProxy) },
-                    enabled = dirty,
-                ) { Text("应用") }
             }
         }
     }

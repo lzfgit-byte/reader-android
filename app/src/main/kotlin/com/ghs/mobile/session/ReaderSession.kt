@@ -115,9 +115,23 @@ class ReaderSession(
     private val proxyRules: () -> ProxyRules = { ProxyRules.direct() },
 ) : AutoCloseable {
 
+    /** 配置的静态元信息（key/name/homeUrl/isProxy/forceProxy 等，不执行脚本即可读） */
+    private val scan = InlineConfigScanner.scan(source)
+
     /** 配置声明的首页地址；缺失时退回演示首页 */
-    val homeUrl: String = InlineConfigScanner.scan(source).homeUrl?.takeIf { it.isNotBlank() }
+    val homeUrl: String = scan.homeUrl?.takeIf { it.isNotBlank() }
         ?: "https://demo.local/list"
+
+    /**
+     * 该来源是否走代理（配置 `isProxy`）。
+     *
+     * 默认 `true`：只有配置**显式**写 `false` 才直连。设备侧的代理总开关仍是最终闸门——
+     * 开关关掉时任何来源都直连。
+     */
+    val isProxy: Boolean = scan.isProxy ?: true
+
+    /** 该来源强制走代理的地址（配置 `forceProxy`），命中即走代理，优先于 [isProxy] */
+    val forceProxy: List<String> = scan.forceProxy
 
     /**
      * 图集单图解码宽度上限（像素），来自配置 `comicImgMaxWidth`。
