@@ -35,8 +35,9 @@ const val SkipImageFallbackKey = "ghs.skipImageFallback"
  * 再在页面里 `fetch(location.href)` → FileReader → base64。
  * 同源 fetch 不受 CORS 限制，不需要图床配合。
  *
- * 如果打开的是挑战页（contentType 不是图片类型），
- * 交给 [ChallengeGate] 让用户手动完成校验。
+ * 如果打开的是**可交互**的挑战页（Cloudflare 挑战结构标记，contentType 也不是图片类型），
+ * 交给 [ChallengeGate] 让用户手动完成校验；纯拦截页（`Sorry, you have been blocked`）
+ * 用户怎么点都过不去，只按取图失败处理，不弹窗口。
  */
 class WebViewImageFallbackInterceptor(private val context: Context) : Interceptor {
 
@@ -146,6 +147,10 @@ object WebViewImageLoader {
         val latch = CountDownLatch(1)
         var output: ByteArray? = null
         var challenge = false
+        // 「不是图片」有两种：可交互的挑战页（值得弹窗让用户过）与硬拦截
+        // （Cloudflare 的 Sorry, you have been blocked）。后者用户点什么都没用，
+        // 弹一次顶层窗口只会盖住界面、还吞掉用户下一下点击，直接按取图失败处理。
+        val hardBlocked = java.util.concurrent.atomic.AtomicBoolean(false)
         // 归还窗口后轮询线程必须停：否则会在下一个请求的页面上继续求值
         val stopped = java.util.concurrent.atomic.AtomicBoolean(false)
 
@@ -160,9 +165,18 @@ object WebViewImageLoader {
             ) { raw ->
                 val type = raw?.trim()?.removeSurrounding("\"") ?: ""
                 if (!type.startsWith("image/")) {
-                    challenge = true
-                    android.util.Log.w("GHS", "image webview got '$type' (可能是挑战页) $url")
-                    latch.countDown()
+                    // 再问一次页面像不像「能人工过」的挑战页：Cloudflare 挑战页有固定结构标记，
+                    // 纯拦截页（blocked）没有——据此决定要不要弹人机校验窗口
+                    view.evaluateJavascript(
+                        "(function(){var h=document.documentElement?document.documentElement.outerHTML:'';" +
+                            "return /_cf_chl_opt|challenge-platform|cf-turnstile|verify you are human|Just a moment/i" +
+                            ".test(h)?'1':'0';})()",
+                    ) { flag ->
+                        val interactive = flag?.contains("1") == true
+                        if (interactive) challenge = true else hardBlocked.set(true)
+                        android.util.Log.w("GHS", "image webview got '$type' (challenge=$interactive) $url")
+                        latch.countDown()
+                    }
                     return@evaluateJavascript
                 }
                 view.evaluateJavascript(
@@ -181,9 +195,11 @@ object WebViewImageLoader {
 
         Thread {
             val deadline = System.currentTimeMillis() + TIMEOUT_MS
-            while (!stopped.get() && System.currentTimeMillis() < deadline && output == null && !challenge) {
+            while (!stopped.get() && System.currentTimeMillis() < deadline && output == null &&
+                !challenge && !hardBlocked.get()
+            ) {
                 Thread.sleep(POLL_MS)
-                if (stopped.get() || challenge) break
+                if (stopped.get() || challenge || hardBlocked.get()) break
                 val b64 = runCatching { window.eval("window.__ghsB64||''", 1_500) }
                     .getOrNull()
                     ?.trim()
@@ -196,7 +212,10 @@ object WebViewImageLoader {
                     break
                 }
             }
-            android.util.Log.i("GHS", "image webview done bytes=${output?.size ?: 0} challenge=$challenge $url")
+            android.util.Log.i(
+                "GHS",
+                "image webview done bytes=${output?.size ?: 0} challenge=$challenge blocked=${hardBlocked.get()} $url",
+            )
             latch.countDown()
         }.start()
 
