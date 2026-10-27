@@ -335,6 +335,21 @@ interface ConfigMeta {
   description?: string
   /** 需要的脚本 API 版本；高于引擎支持版本会被拒绝加载 */
   requiresApi?: number
+  /**
+   * 该来源的请求是否走代理。默认 `true`。
+   *
+   * **只有显式写 `false` 才直连**；设备侧的代理总开关是最终闸门——
+   * 开关关掉时任何来源都直连，这里写 `true` 也不会生效。
+   */
+  isProxy?: boolean
+  /**
+   * 强制走代理的地址（命中即代理，**优先于 `isProxy`**）。
+   *
+   * 写法与旧白名单一致：`example.com`（同时覆盖其子域，如 `cdn.example.com`）、
+   * `host:port`（额外限定端口）、`*`（全部地址）。
+   * 典型用法：站点整体直连（`isProxy: false`），但图床 / 视频 CDN 必须过代理。
+   */
+  forceProxy?: string[]
 }
 
 interface ConfigRender {
