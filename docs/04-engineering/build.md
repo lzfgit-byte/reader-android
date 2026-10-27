@@ -1,6 +1,6 @@
 > **状态**：draft
-> **版本**：v3.5
-> **最后更新**：2026-10-20
+> **版本**：v3.6
+> **最后更新**：2026-10-27
 > **取代/被取代**：取代同文件 v3.3
 
 # 本地构建与验证
@@ -73,6 +73,17 @@ $env:ANDROID_USER_HOME = "$tc\android-home"   # 让 sdkmanager 不写 %USERPROFI
 产物：`app/build/outputs/apk/debug/app-debug.apk`（约 9MB，`minSdk 26` / `targetSdk 34`）。
 
 首次构建会从 Google Maven 拉 AGP 与 Compose 依赖，约 7 分钟；之后增量构建在十几秒量级。
+
+### 2.2 显示名与版本号
+
+| 项 | 规则 |
+|---|---|
+| 显示名 | `Reader`：`app/src/main/res/values/strings.xml` 的 `app_name`（manifest 两处 `android:label` 都引用它）。**包名 `com.ghs.mobile` 与工程代号 GHS Mobile 不变**，所以覆盖安装仍是同一个应用，不会变成另一个包 |
+| 版本来源 | 工程根目录 `version.properties`（`versionCode` + `versionName`），唯一来源；`app/build.gradle.kts` 顶部读取 |
+| 自增时机 | **请求了打包任务时**（任务名含 `assemble` / `bundle` / `package`）在配置阶段先自增（`versionCode` +1、`versionName` 末段 +1）并写回文件，再把新值写进 APK——同一个 commit 连打两次包就是两个版本号 |
+| 不动的场景 | 单测、lint、IDE 同步（没有打包任务）不改版本号，避免「随手同步一下就跳版本」 |
+| 展示 | `/api/meta` 的 `appVersion` 与关于信息取 `BuildConfig.VERSION_NAME`，不再手写常量 |
+
 
 ---
 
@@ -405,3 +416,4 @@ App 读取的是 `filesDir/configs/` 下的配置（浏览器编辑后落盘的�
 | v3.2 | 2026-10-21 | §3 补真实配置接入的三个坑（item.type 回传、失败可见、超时）；代理默认端口改 10808 |
 | v3.3 | 2026-10-21 | §6 补列表封面加载；记录真实配置下列表/详情/播放的实测结果 |
 | v3.5 | 2026-10-21 | §3.w 补代理慢页面的超时与重试策略；图片详情直达阅读器 |
+| v3.6 | 2026-10-27 | 新增 §2.2「显示名与版本号」：显示名 Reader（包名不变）、版本号由 `version.properties` 在每次打包时自增、`/api/meta` 取 `BuildConfig.VERSION_NAME` |
