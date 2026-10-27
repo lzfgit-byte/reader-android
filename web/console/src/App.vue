@@ -383,7 +383,7 @@ onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer
   <div class="app">
     <header class="bar">
       <div class="brand">
-        <strong>GHS Mobile · 配置管理</strong>
+        <strong>Reader · 配置管理</strong>
         <span class="hint">编辑在 Web 端，阅读在 App 端</span>
       </div>
       <div class="actions">

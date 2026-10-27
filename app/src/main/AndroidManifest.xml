@@ -6,7 +6,7 @@
     <application
         android:name=".GhsApp"
         android:allowBackup="false"
-        android:label="GHS Mobile"
+        android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
@@ -16,7 +16,7 @@
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:label="GHS Mobile"
+            android:label="@string/app_name"
             android:configChanges="orientation|screenSize|screenLayout|smallestScreenSize|keyboardHidden|uiMode"
             android:supportsPictureInPicture="false">
             <intent-filter>

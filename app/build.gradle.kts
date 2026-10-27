@@ -1,7 +1,47 @@
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     kotlin("android")
     id("org.jetbrains.kotlin.plugin.compose")
+}
+
+// ── 版本号：每次打包自增 ──────────────────────────────────────────────────
+// `version.properties`（工程根目录）是唯一来源，内容是 `versionCode` 与 `versionName`。
+// 只要这次构建**请求了打包任务**（assemble / bundle / package*），就在这里先自增再读：
+// 同一个 commit 连续打两次包会得到两个不同的版本号，APK 里用的就是本次的值。
+// 不请求打包的构建（单测、lint、IDE 同步）不动它，避免"随手同步一下就跳版本"。
+val versionFile = rootProject.file("version.properties")
+
+fun isPackagingRequest(): Boolean {
+    val names = gradle.startParameter.taskNames
+    return names.any { name ->
+        val lower = name.lowercase()
+        lower.contains("assemble") || lower.contains("bundle") || lower.contains("package")
+    }
+}
+
+/** `0.1.0` → `0.1.1`；段数不足或末段不是数字时退化成追加 `.1` */
+fun bumpPatch(name: String): String {
+    val parts = name.split('.')
+    val last = parts.lastOrNull()?.toIntOrNull() ?: return "$name.1"
+    return (parts.dropLast(1) + (last + 1).toString()).joinToString(".")
+}
+
+val appVersion: Pair<Int, String> = run {
+    val props = Properties()
+    if (versionFile.exists()) {
+        versionFile.inputStream().use { props.load(it) }
+    }
+    var code = props.getProperty("versionCode")?.toIntOrNull() ?: 1
+    var name = props.getProperty("versionName")?.trim().orEmpty().ifEmpty { "0.1.0" }
+    if (isPackagingRequest()) {
+        code += 1
+        name = bumpPatch(name)
+        versionFile.writeText("versionCode=$code\nversionName=$name\n")
+        logger.lifecycle("版本号自增 → $name ($code)")
+    }
+    code to name
 }
 
 android {
@@ -12,8 +52,8 @@ android {
         applicationId = "com.ghs.mobile"
         minSdk = 26
         targetSdk = 34
-        versionCode = 1
-        versionName = "0.1.0"
+        versionCode = appVersion.first
+        versionName = appVersion.second
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 

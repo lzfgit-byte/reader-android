@@ -38,7 +38,8 @@ class GhsApp : Application(), ImageLoaderFactory {
     }
 
     val webAdmin: WebAdminController by lazy {
-        WebAdminController(this, repository, configs)
+        // 版本取打包时写进 BuildConfig 的值（见 version.properties 与 app/build.gradle.kts）
+        WebAdminController(this, repository, configs, appVersion = VERSION)
     }
 
     /**
@@ -130,7 +131,12 @@ class GhsApp : Application(), ImageLoaderFactory {
         lateinit var instance: GhsApp
             private set
 
-        /** 应用版本（服务端 /api/meta 展示） */
-        const val VERSION = "0.1.0"
+        /**
+         * 应用版本（`/api/meta` 与关于信息展示）。
+         *
+         * 直接取 `BuildConfig.VERSION_NAME`：它来自打包时的 `version.properties`，
+         * 每次打包自增一次（见 `app/build.gradle.kts` 顶部）。不再手写常量，避免与 APK 版本对不上。
+         */
+        val VERSION: String = BuildConfig.VERSION_NAME
     }
 }
