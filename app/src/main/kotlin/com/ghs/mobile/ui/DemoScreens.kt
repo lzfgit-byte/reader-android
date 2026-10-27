@@ -443,6 +443,9 @@ fun DemoApp(
                     } else {
                         searchError = null
                         searchOpen = false
+                        // 记住这次搜索的实际地址：筛选面板要在这个地址上改参数（不能丢掉 search=…）
+                        currentListUrl = matched.first
+                        noMore = false
                         screen = Screen.SearchResults(trimmed, matched.second)
                         // 新的一次搜索：结果从顶部开始
                         resetListScroll()
@@ -515,7 +518,9 @@ fun DemoApp(
      */
     fun applyFilter(schema: String, value: String) {
         val active = session ?: return
-        val currentPage = (screen as? Screen.List)?.page ?: return
+        val listScreen = screen as? Screen.List
+        val searchScreen = screen as? Screen.SearchResults
+        val currentPage = listScreen?.page ?: searchScreen?.page ?: return
         val updated = currentPage.urlReplace.map { group ->
             if (group.schema != schema) {
                 group
@@ -527,6 +532,7 @@ fun DemoApp(
                 )
             }
         }
+        // 搜索结果的筛选在搜索地址上改参数（关键词保留），普通列表在列表地址上改
         val baseUrl = currentListUrl ?: active.homeUrl
         filterLoading = true
         scope.launch {
@@ -536,7 +542,12 @@ fun DemoApp(
                 noMore = false
                 currentListUrl = target
                 lastPage = page
-                screen = Screen.List(page)
+                // 保持原来的页面形态：从搜索结果进来就还是搜索结果（保留关键词与「清除」入口）
+                screen = if (searchScreen != null) {
+                    Screen.SearchResults(searchScreen.keyword, page)
+                } else {
+                    Screen.List(page)
+                }
                 // 筛选后是另一批结果：回到顶部
                 resetListScroll()
             }
@@ -1311,8 +1322,9 @@ fun DemoApp(
                             }
                         }
 
-                        // 筛选：仅当配置返回了 urlReplace 分组时出现
-                        val filterGroups = (screen as? Screen.List)?.page?.urlReplace.orEmpty()
+                        // 筛选：仅当配置返回了 urlReplace 分组时出现（普通列表与搜索结果都支持）
+                        val filterGroups = ((screen as? Screen.List)?.page
+                            ?: (screen as? Screen.SearchResults)?.page)?.urlReplace.orEmpty()
                         if (filterGroups.isNotEmpty()) {
                             TopBarAction(onClick = { showFilterSheet = true }) {
                                 Text(if (filterLoading) "筛选中…" else "筛选")
@@ -1872,7 +1884,8 @@ fun DemoApp(
 
     // 筛选/排序面板：每个 schema 一组，点一项即重新取页
     if (showFilterSheet) {
-        val groups = (screen as? Screen.List)?.page?.urlReplace.orEmpty()
+        val groups = ((screen as? Screen.List)?.page
+            ?: (screen as? Screen.SearchResults)?.page)?.urlReplace.orEmpty()
         ModalBottomSheet(
             onDismissRequest = { showFilterSheet = false },
             sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
