@@ -77,6 +77,7 @@ class HttpScriptHost(
             return cached
         }
         android.util.Log.i("GHS", "fetchHtml start $url")
+        logProxyDecision(url)
         val requestBuilder = Request.Builder()
             .url(url)
             .header("User-Agent", USER_AGENT)
@@ -231,6 +232,27 @@ class HttpScriptHost(
 
     private fun logDone(url: String, started: Long) {
         android.util.Log.i("GHS", "fetchHtml done ${System.currentTimeMillis() - started}ms $url")
+    }
+
+    /**
+     * 取页前把**代理判定结果**打一行日志。
+     *
+     * 排障时"到底走了代理没有"是第一个要回答的问题：只报"连接失败"没法区分
+     * 是代理不生效还是代理本身不通。这里只打一行、只在取页时打（不是每个图片请求）。
+     */
+    private fun logProxyDecision(url: String) {
+        runCatching {
+            val uri = java.net.URI(url)
+            val port = when {
+                uri.port > 0 -> uri.port
+                uri.scheme.equals("https", ignoreCase = true) -> 443
+                else -> 80
+            }
+            val rules = proxyRules()
+            val via = rules.shouldProxy(uri.host, port)
+            val target = if (via) "经 ${rules.endpoint?.authority}" else "直连"
+            android.util.Log.i("GHS", "proxy ${uri.host}:$port -> $target")
+        }
     }
 
     /** 给无头 WebView 套上与 OkHttp 相同的代理判定（WebView 代理是进程级的） */
