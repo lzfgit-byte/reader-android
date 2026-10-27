@@ -47,6 +47,10 @@ class GhsApp : Application(), ImageLoaderFactory {
      */
     fun proxiedClient(): OkHttpClient = OkHttpClient.Builder()
         .proxySelector(RulesProxySelector { proxy.rules.value })
+        // 与 WebView 共用 Cookie：站点用 Set-Cookie 下发的通行凭证，图片/视频请求也要带回去。
+        // 取页那条管线本来就用这个 jar，但图片/视频走的是这个客户端——少了它，站点发给页面的
+        // `xxx_access=…` 一类 cookie 到不了图床，表现为「页面能开、图全 403」。
+        .cookieJar(com.ghs.mobile.core.script.WebViewCookieJar())
         .build()
 
     /**

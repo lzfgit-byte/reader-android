@@ -13,11 +13,13 @@
 
 ### Fixed
 
+- **图片/视频请求补上站点 Cookie（F04/F06）：页面能开、图全 403**：取页管线一直用 `WebViewCookieJar`（与 WebView 共享 Cookie），但**图片/视频走的是另一个 OkHttp 客户端**（`GhsApp.proxiedClient()`），没有 CookieJar——站点用 `Set-Cookie` 下发的通行凭证（如 JComic 的 `jcomic_access=verified_user`，domain=`.jcomic.net`）只到了页面请求，图床收到的是"未验证"请求，于是整片 403，还连带把每张图都推进校验窗。现在 `proxiedClient()` 接上同一个 jar（设计文档 §8.5「Cookie 维持：WebView 与 OkHttp 共享」的落地）：凭证对齐后实测 JComic 列表 26 张封面全部出图、阅读器 `第1話 1/22` 逐页正常渲染、不再弹校验窗。顺带纠正上一轮的错误结论——当时判的"图床按请求速率拦"是假象：`net.request` 走的是取页管线（带 cookie）所以 200，Coil 取图走图片客户端（无 cookie）所以 403，两条管线对比出的差异不是站点的限速策略。
+
 - **视频播放补上 Referer（F06）：详情页直连播放的 m3u8 一律 403**：`Screen.VideoPlayer` 早就有 `referer` 参数、剧集播放也传了，但**条目直接进播放器那条路径没传**，`HttpDataSource` 因此不带 `Referer`；视频 CDN（如 `surrit.com`）缺它整站 403，表现成"m3u8 地址解析成功、播放器报 `ERROR_CODE_IO_BAD_HTTP_STATUS`"，很容易被误判成出口 IP 被封。现在按设计文档 §5.6「媒体请求带站点 Referer」补齐：新增 `playbackReferer()`，优先用条目来源页 `jumpUrl`（与站点自己的播放器一致），非绝对地址时退回站点 origin；Referer 挂在 DataSource 的默认请求头上，所以 playlist 之后返回的子播放列表与分片也带同一个头。实测 `https://missav.ws/cn/caribbeancom-102626-001`：`00:20 / 1:07:06` 正常出画面并推进，A/B 对照（`net.request` 带 Referer=200 返回 `#EXTM3U`、不带=403）见 `.dsh/skills/ghs-site-to-config/references/pitfalls.md` 第 23 条。
 
 ### Docs
 
-- **技能补第 24、25 条坑：页图地址加密（`data-locked`）+ S3 预签名 60 秒 / 图床按请求速率拦**（`.dsh/skills/ghs-site-to-config/`）：① 有站点的阅读页 `<img>` 全是空 `src`，真地址在 `data-locked="JCOMIC_TRAPS_<base64>"`，站点自己的 JS 是「去前缀 → 整串反转 → `atob`」（沙箱里 `atob` 可用），解出来是 `images.` 主机的 S3 预签名地址、`X-Amz-Expires=60`——60 秒后必然 403，是站点设计不是配置错。② 这类图床的 Cloudflare 规则对请求速率敏感：同一出口、同一签名地址，只带 `Referer` 单发是 200，紧接着连发 3 个就全 403 挑战，阅读器一次预取十几张必被拦；且该主机直连是 `ERR_CONNECTION_CLOSED`，只能走代理。取证要用 `net.request` 做「单发 vs 连发」对照，`curl` 的 TLS 指纹本来就会被挡，结论不可信。
+- **技能补第 24、25 条坑：页图地址加密（`data-locked`）+ S3 预签名 60 秒 / 图床 403 是缺通行 Cookie**（`.dsh/skills/ghs-site-to-config/`）：① 有站点的阅读页 `<img>` 全是空 `src`，真地址在 `data-locked="JCOMIC_TRAPS_<base64>"`，站点自己的 JS 是「去前缀 → 整串反转 → `atob`」（沙箱里 `atob` 可用），解出来是 `images.` 主机的 S3 预签名地址、`X-Amz-Expires=60`——60 秒后必然 403，是站点设计不是配置错。② 图床 403 的真因是**缺站点用 `Set-Cookie` 下发的通行 cookie**（`xxx_access=verified_user` 一类），而"单发 200、连发 403"是假象——`net.request` 走取页管线（带 cookie）、Coil 取图走图片客户端（当时没 cookie），A/B 比出来的是客户端差异。教训写进坑里：做 A/B 必须同一条管线、只改一个变量；图床 403 且响应头有 `Set-Cookie` 时先怀疑 cookie。
 
 - **技能补第 23 条坑：视频 m3u8 报 403 是缺 Referer，别急着判「IP 被封」**（`.dsh/skills/ghs-site-to-config/`）：视频 CDN 按 Referer 放行，缺了整站 403（连根路径也 403，很像 IP 封禁）；而用 `curl` 复现时它自己的 TLS 指纹本来就会被挡，带不带 Referer 都是 403，证明不了任何事。取证要用应用内 `net.request` 做 A/B（同一条 m3u8 带 / 不带 Referer 各请求一次，期望 200 / 403），并注意 playlist 之后返回的子列表与分片也要带同一个 Referer——应用侧靠播放器 DataSource 的默认请求头覆盖。
 
