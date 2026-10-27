@@ -1,5 +1,5 @@
-> **状态**：draft
-> **版本**：v1.13
+﻿> **状态**：draft
+> **版本**：v1.14
 > **最后更新**：2026-10-26
 > **取代/被取代**：取代同文件 v1.10
 
@@ -147,7 +147,7 @@ my-source/
 | `retry` | integer | 否 | `1` | 失败重试次数，范围 0–3 |
 | `cacheHtml` | boolean | 否 | `true` | 是否缓存页面 HTML |
 | `useWebView` | boolean | 否 | `false` | 强制走无头浏览器通道（JS 渲染页面/需要浏览器环境时） |
-| `headers` | object | 否 | `{}` | 附加请求头，如 `{"Referer": "https://example.com/"}`；`User-Agent` 可覆盖。**当前引擎尚未实现该字段**（写入不生效）：Referer 由引擎按 `homeUrl` 派生——取页、OkHttp 图片请求、`adapterImageCode` 解图请求都已带上（站点图标用**该站点自己**的 `homeUrl`）；WebView 兜底那条路发不出程序化的 Referer，不依赖它。**视频**走另一条规则：播放器按条目来源页（`jumpUrl`，缺省退回站点 origin）设默认请求头，playlist、playlist 里返回的子播放列表与分片都带同一个 Referer——媒体 CDN 普遍校验它，缺了会 403 |
+| `headers` | object | 否 | `{}` | 附加请求头，如 `{"Referer": "https://example.com/"}`；`User-Agent` 可覆盖。**当前引擎尚未实现该字段**（写入不生效）：Referer 由引擎按 `homeUrl` 派生——取页、OkHttp 图片请求、`adapterImageCode` 解图请求都已带上（站点图标用**该站点自己**的 `homeUrl`）；WebView 兜底那条路发不出程序化的 Referer，不依赖它。**视频**走另一条规则：播放器按条目来源页（`jumpUrl`，缺省退回站点 origin）设默认请求头，playlist、playlist 里返回的子播放列表与分片都带同一个 Referer——媒体 CDN 普遍校验它，缺了会 403。**Cookie 不用配置**：站点用 `Set-Cookie` 下发的凭证（如 `xxx_access=verified_user`、`cf_clearance`）由引擎的 CookieJar 在取页 / 取图 / 取视频三条请求上自动回带 |
 | `challengeMarkers` | string[] | 否 | `[]` | 追加的人机校验特征（HTML 关键词），与内置特征合并后判定；命中即触发顶层校验窗口（§7、设计文档 §8.14） |
 | `ifWinExecCode` | string | 否 | 空 | **JS 片段**：当取页必须降级到无头浏览器通道时，先注入执行这段代码（常用于在窗口里直接改写 DOM 或提示"不支持"），再取 `outerHTML` |
 
@@ -658,3 +658,4 @@ Web 管理界面的源码编辑器（Monaco）通过注入一份 `config-api.d.t
 | v1.11 | 2026-10-26 | `favicon` 明确支持的格式：位图（png / jpg / gif / webp / ico）、矢量图 **svg**（AndroidSVG 解码，尺寸取 `viewBox` 其次 `width`/`height`）、`data:` 内联图（base64 / URL 编码）；取不到或解码失败一律按"无图标"处理 |
 | v1.12 | 2026-10-26 | 修正 §3.3 `headers` 的说明：该字段**引擎尚未实现**（写入不生效），并写明 Referer 实际由引擎按 `homeUrl` 派生（图片请求同样适用，修 mycomic 等图床的 403） |
 | v1.13 | 2026-10-26 | §3.3 `headers` 补全 Referer 的实际覆盖范围：**视频**按条目来源页（`jumpUrl`，缺省退回站点 origin）设默认请求头，playlist 与 playlist 返回的子列表/分片都带同一个 Referer（媒体 CDN 缺 Referer 会 403） |
+| v1.14 | 2026-10-27 | §3.3 `headers` 补充 Cookie 约定：站点通过 `Set-Cookie` 下发的凭证由引擎 CookieJar 在取页 / 取图 / 取视频上自动回带，配置不需要写 `Cookie` 头 |
