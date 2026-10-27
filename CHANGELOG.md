@@ -17,6 +17,8 @@
 
 ### Fixed
 
+- **图床返回硬拦截页时不再弹人机校验（F29）**：图片兜底把「contentType 不是图片」一律当成挑战页，于是图床回一个 Cloudflare 硬拦截（`Sorry, you have been blocked`）也弹全屏校验窗口——用户点什么都没用，窗口还盖住界面、吞掉下一次点击（实测：重装后封面刷新时被它挡住，点标签图标那一下直接丢了）。现在先读页面结构标记（`_cf_chl_opt` / `challenge-platform` / `cf-turnstile` / `Just a moment`）：只有**可交互**的挑战页才弹窗，硬拦截按取图失败处理并计入该 host 冷却；日志把 `challenge=` 与 `blocked=` 分开，便于判断是"要人过"还是"被拦死"。设计文档 §8.14 新增「图片来源」一行。
+
 - **打开「选择站点」会突然弹出人机校验窗（F01）**：站点选择器要显示每个站点的 `favicon`，其中某个站点的图标请求被 Cloudflare 挡成挑战页，图片兜底（`WebViewImageFallback`）把它当成"需要人过校验"的图，于是给一个用户根本没打开的站点弹了全屏校验窗口。现在站点图标这类装饰图标带着 `ghs.skipImageFallback` 参数，失败就按失败处理、退回首字色块，不触发兜底与校验（实测开抽屉不再弹窗，KC 图标显示为「K」色块）。
 
 - **标签抽屉在有多条占位标签时崩溃（F10）**：MissAV 的 `getTags` 会返回三个 `url` 为空、标题同为「—」的分隔占位项，抽屉的 LazyGrid 用「标题#地址」当 key，直接撞成重复 key 抛 `Key "—#" was already used` 崩掉。改为按下标取 key（实测 MissAV 24 个标签正常展示，21 个可点 + 3 个描边占位）。
