@@ -265,6 +265,10 @@ fun DemoApp(
     var parseTarget by remember { mutableStateOf<Item?>(null) }
     // 打开条目的整体等待态：解析 + 目录 + 图片全流程都显示 loading
     var opening by remember { mutableStateOf(false) }
+    // 单图阅读当前页：提到这一层，返回键与「关闭」都要用它。
+    // 放在单图那个分支里（局部 remember）时，系统返回键只拿得到「进入单图时那一页」，
+    // 结果是退出后既跳回旧位置、又用旧页码把单图里推进的进度覆盖回去。
+    var singlePageIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
 
     // 只要当前不是「列表页」就说明有上一级可回。这里不能只列具体 Screen 类型：
     // 新增的界面（如分段/线路选集的详情态）一旦漏掉，按返回就会被系统当成退出应用
@@ -284,14 +288,26 @@ fun DemoApp(
                 opening = false
                 detailElapsedSec = 0
             }
-            // 单图阅读：退回漫画阅读（双击进来的位置）
+            // 单图阅读：退回漫画阅读（双击进来的位置 = 单图里最后看到的那一页）
             screen is Screen.SinglePage -> {
                 val single = screen as Screen.SinglePage
+                // 退出前先把进度按**单图里的当前页**落一次：
+                // 单图每翻一页都会写，但这条路径以前会紧接着回到漫画阅读，
+                // 阅读器一进来就按旧位置上报，把刚写进去的进度覆盖回去。
+                saveImageProgress(
+                    repository = repository,
+                    scope = scope,
+                    itemUrl = single.item.jumpUrl,
+                    chapters = single.chapters,
+                    chapterIndex = single.chapterIndex,
+                    pagesSize = single.pages.size,
+                    index = singlePageIndex,
+                )
                 screen = if (single.fromComic) {
                     Screen.ComicReader(
                         item = single.item,
                         pages = single.pages,
-                        startIndex = single.startIndex,
+                        startIndex = singlePageIndex.coerceIn(0, (single.pages.size - 1).coerceAtLeast(0)),
                         chapters = single.chapters,
                         chapterIndex = single.chapterIndex,
                         preloadNext = single.preloadNext,
@@ -718,10 +734,11 @@ fun DemoApp(
             // 图片（非 comic）：直接进单图阅读，从上次的页续看
             if (info != null && info.detailType == DetailType.IMAGE && info.details.isNotEmpty()) {
                 val saved = withContext(Dispatchers.IO) { repository.progress(ProgressKeys.key(item.jumpUrl)) }
+                singlePageIndex = (saved?.chapterOffset ?: 0).coerceIn(0, info.details.lastIndex.coerceAtLeast(0))
                 screen = Screen.SinglePage(
                     item = item,
                     pages = info.details,
-                    startIndex = saved?.chapterOffset ?: 0,
+                    startIndex = singlePageIndex,
                 )
                 finish()
                 return@launch
@@ -886,20 +903,15 @@ fun DemoApp(
                     }
                 },
                 onProgress = { index ->
-                    scope.launch {
-                        repository.saveProgress(
-                            ReadingProgress(
-                                itemUrl = ProgressKeys.key(reader.item.jumpUrl),
-                                kind = ReaderKind.IMAGE,
-                                chapterUrl = reader.chapters.getOrNull(reader.chapterIndex)?.url.orEmpty(),
-                                chapterIndex = reader.chapterIndex,
-                                chapterCount = reader.chapters.size.coerceAtLeast(1),
-                                chapterOffset = index,
-                                percent = ((index + 1) * 100.0 / reader.pages.size.coerceAtLeast(1)),
-                                updatedAt = System.currentTimeMillis(),
-                            ),
-                        )
-                    }
+                    saveImageProgress(
+                        repository = repository,
+                        scope = scope,
+                        itemUrl = reader.item.jumpUrl,
+                        chapters = reader.chapters,
+                        chapterIndex = reader.chapterIndex,
+                        pagesSize = reader.pages.size,
+                        index = index,
+                    )
                 },
                 onBack = { screen = lastPage?.let { Screen.List(it) } ?: Screen.Loading },
                 chapterIndex = reader.chapterIndex,
@@ -921,6 +933,7 @@ fun DemoApp(
                 },
                 onNextChapter = { openChapter(reader.chapterIndex + 1) },
                 onOpenSinglePage = { index ->
+                    singlePageIndex = index
                     screen = Screen.SinglePage(
                         item = reader.item,
                         pages = reader.pages,
@@ -936,39 +949,41 @@ fun DemoApp(
         }
 
         is Screen.SinglePage -> {
-            // 单图里读到的位置：返回漫画阅读时要跳到这里，否则外面还停在进入时的第一张
-            var singleIndex by remember(reader.startIndex) {
-                androidx.compose.runtime.mutableIntStateOf(reader.startIndex)
-            }
             SinglePageReaderScreen(
                 title = reader.item.title,
                 pages = reader.pages,
                 startIndex = reader.startIndex,
                 onProgress = { index ->
-                    singleIndex = index
-                    scope.launch {
-                        repository.saveProgress(
-                            ReadingProgress(
-                                itemUrl = ProgressKeys.key(reader.item.jumpUrl),
-                                kind = ReaderKind.IMAGE,
-                                chapterUrl = reader.chapters.getOrNull(reader.chapterIndex)?.url.orEmpty(),
-                                chapterIndex = reader.chapterIndex,
-                                chapterCount = reader.chapters.size.coerceAtLeast(1),
-                                chapterOffset = index,
-                                percent = ((index + 1) * 100.0 / reader.pages.size.coerceAtLeast(1)),
-                                updatedAt = System.currentTimeMillis(),
-                            ),
-                        )
-                    }
+                    // 位置提到外层：返回键要用它回到同一页，并把进度写在那里
+                    singlePageIndex = index
+                    saveImageProgress(
+                        repository = repository,
+                        scope = scope,
+                        itemUrl = reader.item.jumpUrl,
+                        chapters = reader.chapters,
+                        chapterIndex = reader.chapterIndex,
+                        pagesSize = reader.pages.size,
+                        index = index,
+                    )
                 },
                 // 关闭：来自漫画阅读就回去；否则回列表（单图阅读是独立组件）
                 onClose = {
                     if (reader.fromComic) {
+                        // 同返回键：退出前按当前页落一次进度，并回到这一张
+                        saveImageProgress(
+                            repository = repository,
+                            scope = scope,
+                            itemUrl = reader.item.jumpUrl,
+                            chapters = reader.chapters,
+                            chapterIndex = reader.chapterIndex,
+                            pagesSize = reader.pages.size,
+                            index = singlePageIndex,
+                        )
                         screen = Screen.ComicReader(
                             item = reader.item,
                             pages = reader.pages,
                             // 回到单图里最后看到的那一张（阅读器要跟着滚过去）
-                            startIndex = singleIndex.coerceIn(0, (reader.pages.size - 1).coerceAtLeast(0)),
+                            startIndex = singlePageIndex.coerceIn(0, (reader.pages.size - 1).coerceAtLeast(0)),
                             chapters = reader.chapters,
                             chapterIndex = reader.chapterIndex,
                             preloadNext = reader.preloadNext,
@@ -1943,6 +1958,38 @@ fun DemoApp(
                 }
             },
             onDismiss = { showPageSheet = false },
+        )
+    }
+}
+
+/**
+ * 保存图片类阅读进度（漫画阅读器 / 单图阅读共用）。
+ *
+ * 单图阅读每翻一页会写一次；退出单图（返回键或「关闭」）时还要用**单图里的当前页**
+ * 再写一次——退出后紧跟着回到漫画阅读器，它会按自己的起始页上报，若不先写这一次，
+ * 刚推进的进度就被覆盖回进入单图前的位置。
+ */
+private fun saveImageProgress(
+    repository: LocalRepository,
+    scope: kotlinx.coroutines.CoroutineScope,
+    itemUrl: String,
+    chapters: List<CContent>,
+    chapterIndex: Int,
+    pagesSize: Int,
+    index: Int,
+) {
+    scope.launch {
+        repository.saveProgress(
+            ReadingProgress(
+                itemUrl = ProgressKeys.key(itemUrl),
+                kind = ReaderKind.IMAGE,
+                chapterUrl = chapters.getOrNull(chapterIndex)?.url.orEmpty(),
+                chapterIndex = chapterIndex,
+                chapterCount = chapters.size.coerceAtLeast(1),
+                chapterOffset = index,
+                percent = ((index + 1) * 100.0 / pagesSize.coerceAtLeast(1)),
+                updatedAt = System.currentTimeMillis(),
+            ),
         )
     }
 }
