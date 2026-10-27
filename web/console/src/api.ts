@@ -30,6 +30,13 @@ export interface ValidateResult {
   warnings: Issue[]
 }
 
+/** 备份恢复结果：配置按新增/覆盖/删除计数，收藏按写入/清空计数 */
+export interface BackupReport {
+  ok: boolean
+  configs: { added: number; updated: number; removed: number }
+  collects: { imported: number; removed: number }
+}
+
 export interface ConsoleApi {
   list(): Promise<ConfigSummary[]>
   get(key: string): Promise<ConfigDetail | null>
@@ -43,6 +50,10 @@ export interface ConsoleApi {
   exportAll(): Promise<string>
   /** 导入：单份脚本原文或整包 JSON 文本 */
   importConfigs(payload: string): Promise<{ imported: number; keys: string[] }>
+  /** 备份：全部配置 + 收藏装进一个 JSON 文件（文本） */
+  backup(): Promise<string>
+  /** 恢复：全量替换配置与收藏（不可撤销） */
+  restoreBackup(payload: string): Promise<BackupReport>
   /** 实时调试台：当前运行时状态 */
   debugState(): Promise<Record<string, unknown>>
   /** 实时调试台：脚本日志 */
@@ -251,6 +262,44 @@ export function createMockApi(): ConsoleApi {
       saveAll(all)
       return { imported: keys.length, keys }
     },
+    async backup() {
+      const configs = loadAll().map((item, index) => ({
+        key: item.key,
+        name: item.name,
+        enabled: item.enabled,
+        sort: index,
+        source: item.source,
+      }))
+      return JSON.stringify(
+        {
+          $schema: 'ghs-backup/1',
+          appVersion: 'mock',
+          exportedAt: Date.now(),
+          sections: { configs, collects: [] },
+        },
+        null,
+        2,
+      )
+    },
+    async restoreBackup(payload) {
+      const parsed = tryParseJson(payload)
+      const incoming = parsed?.sections?.configs
+      if (!Array.isArray(incoming)) throw new Error('备份里没有配置')
+      const next: StoredConfig[] = incoming.map((item: any, index: number) => ({
+        key: String(item.key),
+        name: String(item.name || item.key),
+        enabled: item.enabled !== false,
+        format: String(item.source ?? '').includes('/* break */') ? 'inline' : 'manifest',
+        updatedAt: Date.now() + index,
+        source: String(item.source ?? ''),
+      }))
+      saveAll(next)
+      return {
+        ok: true,
+        configs: { added: next.length, updated: 0, removed: 0 },
+        collects: { imported: 0, removed: 0 },
+      }
+    },
   }
 }
 
@@ -381,6 +430,16 @@ export function createHttpApi(): ConsoleApi {
         method: 'POST',
         body: JSON.stringify(body),
       })
+    },
+    async backup() {
+      const response = await fetch('/api/backup/export', { credentials: 'same-origin' })
+      if (!response.ok) {
+        throw new ApiError(response.status, `HTTP_${response.status}`, '备份失败')
+      }
+      return await response.text()
+    },
+    async restoreBackup(payload) {
+      return await call<BackupReport>('/backup/restore', { method: 'POST', body: payload })
     },
     async debugState() {
       return await call<Record<string, unknown>>('/state')

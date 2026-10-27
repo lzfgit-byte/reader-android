@@ -155,8 +155,92 @@ async function onFavFile(ev: Event): Promise<void> {
   }
 }
 
-async function exportAll(): Promise<void> {
+// ── 备份 / 恢复（整包：全部配置 + 收藏） ──────────────────────
+const backupInput = ref<HTMLInputElement | null>(null)
+const backingUp = ref(false)
+const pendingRestore = ref<{
+  text: string
+  configs: number
+  collects: number
+  appVersion: string
+} | null>(null)
+
+/** 备份：一个文件装全部配置与收藏，浏览器直接下载 */
+async function exportBackup(): Promise<void> {
+  backingUp.value = true
   try {
+    const text = await api.backup()
+    const now = new Date()
+    const pad = (value: number): string => String(value).padStart(2, '0')
+    // 与 App 端同名规则：ghs-backup-<yyyyMMdd-HHmm>.json（见 local-store §5.1）
+    const stamp =
+      `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}` +
+      `-${pad(now.getHours())}${pad(now.getMinutes())}`
+    downloadText(`ghs-backup-${stamp}.json`, text)
+    const parsed = JSON.parse(text)
+    const configCount = parsed?.sections?.configs?.length ?? 0
+    const collectCount = parsed?.sections?.collects?.length ?? 0
+    status.value = `已导出备份：配置 ${configCount} 份 · 收藏 ${collectCount} 条`
+    error.value = ''
+  } catch (e) {
+    error.value = `备份失败：${String(e)}`
+  } finally {
+    backingUp.value = false
+  }
+}
+
+function pickRestoreFile(): void {
+  backupInput.value?.click()
+}
+
+/** 恢复第一步：读文件、校验格式、把"将替换什么"摆给用户确认 */
+async function onBackupFile(ev: Event): Promise<void> {
+  const input = ev.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
+  if (!file) return
+  try {
+    const text = await file.text()
+    const parsed = JSON.parse(text)
+    if (parsed?.$schema !== 'ghs-backup/1') {
+      throw new Error('不是备份文件（$schema 不是 ghs-backup/1）')
+    }
+    const configList = parsed?.sections?.configs
+    if (!Array.isArray(configList) || configList.length === 0) {
+      throw new Error('备份里没有配置')
+    }
+    pendingRestore.value = {
+      text,
+      configs: configList.length,
+      collects: Array.isArray(parsed?.sections?.collects) ? parsed.sections.collects.length : 0,
+      appVersion: String(parsed.appVersion ?? ''),
+    }
+    error.value = ''
+  } catch (e) {
+    pendingRestore.value = null
+    error.value = `读取备份失败：${e instanceof Error ? e.message : String(e)}`
+  }
+}
+
+/** 恢复第二步：确认后提交；服务端全量替换，返回逐项计数 */
+async function doRestore(): Promise<void> {
+  const pending = pendingRestore.value
+  if (!pending) return
+  pendingRestore.value = null
+  try {
+    const report = await api.restoreBackup(pending.text)
+    status.value =
+      `已恢复：配置 +${report.configs.added} / 覆盖 ${report.configs.updated} / 删除 ${report.configs.removed}` +
+      ` · 收藏 ${report.collects.imported} 条`
+    error.value = ''
+    selectedKey.value = ''
+    await refresh()
+  } catch (e) {
+    error.value = `恢复失败：${String(e)}`
+  }
+}
+
+async function exportAll(): Promise<void> {  try {
     const text = await api.exportAll()
     const stamp = new Date().toISOString().slice(0, 19).replace(/[:T]/g, '-')
     downloadText(`ghs-configs-${stamp}.json`, text)
@@ -399,6 +483,10 @@ onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer
         <button class="ghost" @click="exportAll">导出全部</button>
         <button class="ghost" @click="exportFavorites">导出收藏</button>
         <button class="ghost" @click="pickFavImport">导入收藏</button>
+        <button class="ghost" :disabled="backingUp" @click="exportBackup">
+          {{ backingUp ? '备份中…' : '备份' }}
+        </button>
+        <button class="ghost" @click="pickRestoreFile">恢复</button>
         <button class="ghost" :class="{ active: debugOpen }" @click="toggleDebug">调试</button>
         <button class="ghost" @click="createConfig">新建</button>
         <button class="ghost danger" @click="removeConfig">删除</button>
@@ -408,6 +496,7 @@ onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer
     </header>
     <input ref="importInput" type="file" accept=".js,.json,.txt" hidden @change="onImportFile" />
     <input ref="favInput" type="file" accept=".json" hidden @change="onFavFile" />
+    <input ref="backupInput" type="file" accept=".json" hidden @change="onBackupFile" />
 
     <p v-if="narrow" class="readonly-tip">当前窗口过窄，源码为只读预览；请用桌面浏览器（≥900px）编辑。</p>
 
@@ -435,6 +524,22 @@ onBeforeUnmount(() => { if (debugTimer !== null) window.clearInterval(debugTimer
           <button class="ghost" @click="keyConflict = null">取消</button>
           <button class="ghost" @click="restoreKey">改回 {{ selectedKey }}</button>
           <button @click="saveAsNewKey">另存为 {{ keyConflict }}</button>
+        </div>
+      </div>
+    </div>
+
+    <div v-if="pendingRestore" class="backdrop" @click.self="pendingRestore = null">
+      <div class="modal">
+        <h3>确认全量恢复</h3>
+        <p>
+          将用备份里的 <strong>{{ pendingRestore.configs }}</strong> 份配置与
+          <strong>{{ pendingRestore.collects }}</strong> 条收藏<strong>替换</strong>本机现有数据，
+          备份里没有的站点会被删除。此操作不可撤销。
+          <template v-if="pendingRestore.appVersion">（备份来自 {{ pendingRestore.appVersion }}）</template>
+        </p>
+        <div class="modal-actions">
+          <button class="ghost" @click="pendingRestore = null">取消</button>
+          <button class="solid-danger" @click="doRestore">清空并恢复</button>
         </div>
       </div>
     </div>

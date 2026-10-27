@@ -30,6 +30,9 @@ class AdminServer(
     private val onConfigsChanged: () -> Unit = {},
 ) : NanoHTTPD(bindHost, port) {
 
+    /** 备份 / 恢复（F20）：一个文件装全部配置与收藏 */
+    private val backup by lazy { BackupService(store, repository, appVersion) }
+
     override fun serve(session: IHTTPSession): Response {
         // 必须先把 body 读完：keep-alive 下未消费的字节会被当成下一个请求行，
         // NanoHTTPD 会报 "BAD REQUEST: Syntax error. HTTP verb ..."（曾导致保存/新建无效）
@@ -110,6 +113,8 @@ class AdminServer(
                 path == "/configs/import" && method == Method.POST -> importConfigs(rawBody)
                 path == "/favorites/export" && method == Method.GET -> exportFavorites()
                 path == "/favorites/import" && method == Method.POST -> importFavorites(rawBody)
+                path == "/backup/export" && method == Method.GET -> backupExport()
+                path == "/backup/restore" && method == Method.POST -> backupRestore(rawBody)
                 path == "/validate" && method == Method.POST -> validate(rawBody)
 
                 path.startsWith("/configs/") -> {
@@ -367,8 +372,59 @@ class AdminServer(
         return jsonOk(org.json.JSONObject().put("imported", imported))
     }
 
-    private fun createConfig(rawBody: String): Response {
-        val body = parseJson(rawBody)
+    /** 备份导出：整包 JSON，浏览器直接下成文件 */
+    private fun backupExport(): Response {
+        val body = backup.export()
+        val response = newFixedLengthResponse(
+            Response.Status.OK,
+            "application/json; charset=utf-8",
+            body,
+        )
+        response.addHeader(
+            "Content-Disposition",
+            "attachment; filename=\"${backup.suggestedFileName()}\"",
+        )
+        return response
+    }
+
+    /**
+     * 备份恢复：**全量替换**配置与收藏。
+     *
+     * 解析或校验失败返回 400 + `E-BAK-*`，此时不做任何写入（先校验后落库）。
+     */
+    private fun backupRestore(rawBody: String): Response {
+        if (rawBody.isBlank()) {
+            return json(Response.Status.BAD_REQUEST, error("E-BAK-002", "请求体为空"))
+        }
+        return try {
+            val report = backup.restore(rawBody)
+            notifyChanged()
+            jsonOk(
+                JSONObject()
+                    .put("ok", true)
+                    .put(
+                        "configs",
+                        JSONObject()
+                            .put("added", report.configsAdded)
+                            .put("updated", report.configsUpdated)
+                            .put("removed", report.configsRemoved),
+                    )
+                    .put(
+                        "collects",
+                        JSONObject()
+                            .put("imported", report.collectsImported)
+                            .put("removed", report.collectsRemoved),
+                    ),
+            )
+        } catch (failure: BackupService.BackupException) {
+            json(
+                Response.Status.BAD_REQUEST,
+                error(failure.code, failure.message ?: "备份文件不可用"),
+            )
+        }
+    }
+
+    private fun createConfig(rawBody: String): Response {        val body = parseJson(rawBody)
         val source = body.optString("config")
         if (source.isBlank()) {
             return json(Response.Status.BAD_REQUEST, error("E-CFG-002", "缺少 config 内容"))

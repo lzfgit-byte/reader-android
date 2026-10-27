@@ -53,11 +53,19 @@ interface CollectDao {
     @Query("SELECT * FROM collect WHERE configKey = :configKey AND url = :url LIMIT 1")
     suspend fun find(configKey: String, url: String): CollectEntity?
 
+    /** 全站收藏：备份导出用，不分站点、按站点名聚在一起 */
+    @Query("SELECT * FROM collect ORDER BY configKey ASC, count DESC, createTime DESC")
+    suspend fun listAll(): List<CollectEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insert(entity: CollectEntity): Long
 
     @Query("DELETE FROM collect WHERE configKey = :configKey AND url = :url")
     suspend fun delete(configKey: String, url: String)
+
+    /** 全量恢复前清空：恢复语义是 replace，不做合并 */
+    @Query("DELETE FROM collect")
+    suspend fun clearAll()
 
     @Query("SELECT COUNT(*) FROM collect WHERE configKey = :configKey")
     suspend fun count(configKey: String): Int

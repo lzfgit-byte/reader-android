@@ -13,6 +13,7 @@ import com.ghs.mobile.core.engine.proxy.RulesProxySelector
 import com.ghs.mobile.settings.ProxyStore
 import com.ghs.mobile.settings.SettingsStore
 import com.ghs.mobile.settings.SiteProxyPolicy
+import com.ghs.mobile.web.BackupService
 import com.ghs.mobile.web.ConfigStore
 import com.ghs.mobile.web.WebAdminController
 import okhttp3.OkHttpClient
@@ -40,6 +41,16 @@ class GhsApp : Application(), ImageLoaderFactory {
     val webAdmin: WebAdminController by lazy {
         // 版本取打包时写进 BuildConfig 的值（见 version.properties 与 app/build.gradle.kts）
         WebAdminController(this, repository, configs, appVersion = VERSION)
+    }
+
+    /**
+     * 备份 / 恢复（F20）：配置 + 收藏装进一个文件。
+     *
+     * App 端与内置 Web 服务共用同一套编解码与恢复规则（[BackupService]），
+     * 两端导出的文件可以互相回灌。
+     */
+    val backup: BackupService by lazy {
+        BackupService(configs, repository, VERSION)
     }
 
     /**

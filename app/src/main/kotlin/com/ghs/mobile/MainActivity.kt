@@ -50,7 +50,7 @@ class MainActivity : ComponentActivity() {
     }
 }
 
-private enum class Page { MAIN, PROBE, APPEARANCE, WEB, PROXY, READING, BROWSER }
+private enum class Page { MAIN, PROBE, APPEARANCE, WEB, PROXY, READING, BACKUP, BROWSER }
 
 @Composable
 @OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
@@ -127,6 +127,7 @@ private fun AppRoot() {
                     onOpenWeb = { page = Page.WEB },
                     onOpenProxy = { page = Page.PROXY },
                     onOpenReading = { page = Page.READING },
+                    onOpenBackup = { page = Page.BACKUP },
                 )
 
                 Page.PROBE -> ProbeScreen(onBack = { page = Page.MAIN })
@@ -166,6 +167,9 @@ private fun AppRoot() {
                     onReaderModeChange = { mode -> scope.launch { store.update { it.copy(readerMode = mode) } } },
                     onBack = { page = Page.MAIN },
                 )
+
+                // 备份与恢复：配置 + 收藏导出成一个文件 / 从文件全量恢复
+                Page.BACKUP -> com.ghs.mobile.ui.BackupScreen(onBack = { page = Page.MAIN })
 
                 Page.BROWSER -> com.ghs.mobile.ui.UrlBrowserScreen(
                     proxyState = proxyState,

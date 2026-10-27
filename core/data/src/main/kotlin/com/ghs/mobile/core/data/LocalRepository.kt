@@ -130,6 +130,14 @@ class LocalRepository(private val database: GhsDatabase) {
         )
     }
 
+    /** 所有站点的收藏（备份导出用）：不按站点过滤，含已删除站点的遗留条目 */
+    suspend fun allCollects(): List<CollectedItem> =
+        collectDao.listAll()
+            .map { CollectedItem(it.configKey, it.url, it.payload, it.count, it.createTime) }
+
+    /** 清空全部收藏：全量恢复（replace）用，调用方负责先确认 */
+    suspend fun clearCollects() = collectDao.clearAll()
+
     suspend fun uncollect(configKey: String, url: String) = collectDao.delete(configKey, url)
 
     suspend fun isCollected(configKey: String, url: String): Boolean =

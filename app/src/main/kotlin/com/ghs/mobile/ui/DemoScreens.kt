@@ -121,6 +121,7 @@ import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.window.Dialog
 import kotlinx.coroutines.delay
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Backup
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.material3.FilterChip
 import coil.imageLoader
@@ -190,6 +191,7 @@ fun DemoApp(
     onOpenWeb: () -> Unit = {},
     onOpenProxy: () -> Unit = {},
     onOpenReading: () -> Unit = {},
+    onOpenBackup: () -> Unit = {},
 ) {
     val app = GhsApp.instance
     val repository = app.repository
@@ -1793,6 +1795,16 @@ fun DemoApp(
                             onOpenReading()
                         },
                         icon = { Icon(Icons.Default.Star, contentDescription = null) },
+                        modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+                    )
+                    NavigationDrawerItem(
+                        label = { Text("备份与恢复") },
+                        selected = false,
+                        onClick = {
+                            drawerOpen = false
+                            onOpenBackup()
+                        },
+                        icon = { Icon(Icons.Default.Backup, contentDescription = null) },
                         modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
                     )
                     NavigationDrawerItem(
