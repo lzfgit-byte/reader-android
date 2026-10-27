@@ -23,13 +23,8 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Surface
 
 /** 历史条目：条目 + 记录时间 */
 data class HistoryEntry(val item: Item, val createTime: Long)
@@ -124,38 +119,6 @@ fun LoadMoreHint(loading: Boolean, noMore: Boolean) {
         modifier = Modifier.fillMaxWidth().padding(12.dp),
     )
 }
-/** 标签页：读取配置的 getTags，点标签即加载对应列表 */
-@OptIn(ExperimentalLayoutApi::class)
-@Composable
-fun TagsScreen(
-    tags: List<com.ghs.mobile.core.model.Tag>,
-    onOpen: (com.ghs.mobile.core.model.Tag) -> Unit,
-) {
-    if (tags.isEmpty()) {
-        EmptyHint("该配置没有返回标签")
-        return
-    }
-    FlowRow(
-        modifier = Modifier.fillMaxSize().padding(12.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp),
-    ) {
-        tags.forEach { tag ->
-            Surface(
-                onClick = { onOpen(tag) },
-                shape = RoundedCornerShape(8.dp),
-                color = MaterialTheme.colorScheme.secondaryContainer,
-            ) {
-                Text(
-                    tag.title.ifEmpty { "未命名" },
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
-                )
-            }
-        }
-    }
-}
-
 /** 分页条：读取 pagination，当前页高亮，点击跳转 */
 @Composable
 fun PagerBar(

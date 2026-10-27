@@ -1,5 +1,6 @@
 package com.ghs.mobile.ui
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -11,11 +12,13 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -193,6 +196,92 @@ fun PagePickerSheet(
                                 page.title.ifEmpty { "·" },
                                 style = MaterialTheme.typography.titleSmall,
                                 color = if (isCurrent) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * 标签抽屉：首页顶栏「标签」图标 → 选标签。
+ *
+ * 标签入口不再占一个底栏 Tab：它属于首页的一次「换一批内容」，放在顶栏更贴近
+ * 分页/筛选这两个同类动作。`url` 为空的项是配置给的占位（见 ui-implementation §5），
+ * 渲染但不可点；当前标签高亮，并给出「全部」用于回到首页全量列表。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+fun TagPickerSheet(
+    tags: List<com.ghs.mobile.core.model.Tag>,
+    /** 当前列表来自哪个标签；null 表示首页全量列表 */
+    currentTitle: String?,
+    onPickHome: () -> Unit,
+    onPick: (com.ghs.mobile.core.model.Tag) -> Unit,
+    onDismiss: () -> Unit,
+) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    val clickableCount = tags.count { it.url.isNotBlank() }
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+        Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
+            Text("选择标签", style = MaterialTheme.typography.titleLarge)
+            Text(
+                if (currentTitle == null) "共 $clickableCount 个标签" else "当前：$currentTitle",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
+            )
+            LazyVerticalGrid(
+                columns = GridCells.Fixed(3),
+                modifier = Modifier.fillMaxWidth().heightIn(max = 420.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp),
+            ) {
+                // 只在「已经按标签筛过」时给回去的入口，避免首页上多一个无意义的同义项
+                if (currentTitle != null) {
+                    item(key = "home") {
+                        Surface(
+                            onClick = onPickHome,
+                            shape = RoundedCornerShape(10.dp),
+                            color = MaterialTheme.colorScheme.surfaceVariant,
+                            modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                        ) {
+                            Box(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                                Text("全部", style = MaterialTheme.typography.labelLarge)
+                            }
+                        }
+                    }
+                }
+                // 不按「标题#地址」做 key：配置可以返回多个空地址占位项（同名、同空地址），
+                // 那样 key 会重复，LazyGrid 直接抛 "Key was already used" 崩掉
+                itemsIndexed(tags, key = { index, _ -> index }) { index, tag ->
+                    val placeholder = tag.url.isBlank()
+                    val selected = !placeholder && tag.title == currentTitle
+                    Surface(
+                        onClick = { if (!placeholder) onPick(tag) },
+                        enabled = !placeholder,
+                        shape = RoundedCornerShape(10.dp),
+                        color = when {
+                            selected -> MaterialTheme.colorScheme.primary
+                            placeholder -> Color.Transparent
+                            else -> MaterialTheme.colorScheme.secondaryContainer
+                        },
+                        border = if (placeholder) BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant) else null,
+                        modifier = Modifier.fillMaxWidth().heightIn(min = 44.dp),
+                    ) {
+                        Box(Modifier.fillMaxSize().padding(horizontal = 8.dp, vertical = 10.dp), contentAlignment = Alignment.Center) {
+                            Text(
+                                tag.title.ifEmpty { "·" },
+                                style = MaterialTheme.typography.labelLarge,
+                                color = when {
+                                    selected -> MaterialTheme.colorScheme.onPrimary
+                                    placeholder -> MaterialTheme.colorScheme.onSurfaceVariant
+                                    else -> MaterialTheme.colorScheme.onSecondaryContainer
+                                },
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
                             )
                         }
                     }

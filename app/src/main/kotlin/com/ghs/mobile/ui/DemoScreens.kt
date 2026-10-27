@@ -93,6 +93,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.material.icons.filled.Menu
+import androidx.compose.material.icons.filled.LocalOffer
 import androidx.compose.material.icons.filled.Place
 import com.ghs.mobile.core.model.Analysis
 import com.ghs.mobile.core.model.AnalysisDetail
@@ -173,8 +174,8 @@ private sealed interface Screen {
     data class Failed(val message: String) : Screen
 }
 
-/** 底部导航 */
-enum class DemoTab(val label: String) { HOME("首页"), FAVORITES("收藏"), HISTORY("历史"), TAGS("标签") }
+/** 底部导航：标签不是 Tab，入口在首页顶栏（配置的 `标签` 项） */
+enum class DemoTab(val label: String) { HOME("首页"), FAVORITES("收藏"), HISTORY("历史") }
 
 /** 演示配置的 key（收藏/历史按配置分组的键） */
 private const val CONFIG_KEY = "demo"
@@ -328,6 +329,10 @@ fun DemoApp(
     var noMore by remember { mutableStateOf(false) }
     // 从标签进入的列表：标题显示标签名；null 表示首页
     var activeTagTitle by remember { mutableStateOf<String?>(null) }
+    // 首页顶栏「标签」入口的数据源：缓存最近一次列表页返回的标签。
+    // 不能直接读 lastPage：点进某个标签后的那一页未必再返回标签，入口会凭空消失。
+    var tagCache by remember { mutableStateOf<List<com.ghs.mobile.core.model.Tag>>(emptyList()) }
+    var showTagSheet by remember { mutableStateOf(false) }
     var collected by remember { mutableStateOf<Set<String>>(emptySet()) }
     var favoriteItems by remember { mutableStateOf<kotlin.collections.List<Item>>(emptyList()) }
     var historyEntries by remember { mutableStateOf<kotlin.collections.List<HistoryEntry>>(emptyList()) }
@@ -374,6 +379,18 @@ fun DemoApp(
 
     // 切到收藏/历史时重新读一次：数据可能在别处（阅读、收藏）被改过
     LaunchedEffect(tab) { if (tab != DemoTab.HOME) refreshLibrary() }
+
+    // 标签入口的数据源：任何一次列表解析出标签就记住（同一次取页顺带返回，不额外请求）
+    LaunchedEffect(screen) {
+        val page = when (val current = screen) {
+            is Screen.List -> current.page
+            is Screen.SearchResults -> current.page
+            else -> null
+        }
+        if (page != null && page.tags.isNotEmpty()) tagCache = page.tags
+    }
+    // 换站点：标签各站不同，别把上一站的标签留在入口里
+    LaunchedEffect(configKey) { tagCache = emptyList() }
 
     fun toggleCollect(item: Item) {
         scope.launch {
@@ -584,6 +601,8 @@ fun DemoApp(
         val key = configKey ?: return@LaunchedEffect
         // 切站点：把「从哪来回哪去」的缓存一起清掉，否则返回会回到上一个站点的列表
         returnScreen = null
+        // 标签名同理：那是上一站点的标签，重建后列表会回到首页全量
+        activeTagTitle = null
         screen = Screen.Loading
         // 切换站点 / 配置重载：作废 HTML 缓存，避免看到上一个站点的页面
         ImageCache.clearHtml()
@@ -1187,7 +1206,8 @@ fun DemoApp(
             .put("screen", stateName)
             .put("url", currentListUrl ?: session?.homeUrl ?: "")
             .put("items", list?.items?.size ?: 0)
-            .put("tags", list?.tags?.size ?: 0)
+            .put("tags", tagCache.size)
+            .put("tagTitle", activeTagTitle ?: "")
             .put("filterGroups", list?.urlReplace?.size ?: 0)
             .put("detailError", detailError ?: "")
             .put("logCount", logEntries.size)
@@ -1246,12 +1266,12 @@ fun DemoApp(
                                             )
                                         }
                                     }
-                                    // 当前 Tab：底栏已经高亮，这里只作次要提示，不抢标题的位置
+                                    // 当前 Tab：底栏已经高亮，这里只作次要提示，不抢标题的位置；
+                                    // 首页在看某个标签的列表时，这里显示标签名（否则看不出筛过什么）
                                     val tabName = when (tab) {
-                                        DemoTab.HOME -> ""
+                                        DemoTab.HOME -> activeTagTitle?.takeIf { screen is Screen.List } ?: ""
                                         DemoTab.FAVORITES -> "收藏"
                                         DemoTab.HISTORY -> "历史"
-                                        DemoTab.TAGS -> "标签"
                                     }
                                     if (tabName.isNotEmpty()) {
                                         Text(
@@ -1259,6 +1279,7 @@ fun DemoApp(
                                             style = MaterialTheme.typography.labelMedium,
                                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                                             maxLines = 1,
+                                            modifier = Modifier.padding(start = 6.dp),
                                         )
                                     }
                                 }
@@ -1270,6 +1291,14 @@ fun DemoApp(
                         if (filterGroups.isNotEmpty()) {
                             TopBarAction(onClick = { showFilterSheet = true }) {
                                 Text(if (filterLoading) "筛选中…" else "筛选")
+                            }
+                        }
+                        // 标签：配置的 getTags 有内容才渲染（缺失的入口不渲染，不置灰）
+                        if (tab == DemoTab.HOME && tagCache.isNotEmpty() &&
+                            (screen is Screen.List || screen is Screen.SearchResults)
+                        ) {
+                            IconButton(onClick = { showTagSheet = true }) {
+                                Icon(Icons.Default.LocalOffer, contentDescription = "标签")
                             }
                         }
                         // 页码：点开选页
@@ -1345,7 +1374,6 @@ fun DemoApp(
                                     DemoTab.HOME -> Icons.Default.Home
                                     DemoTab.FAVORITES -> Icons.Default.Favorite
                                     DemoTab.HISTORY -> Icons.Default.List
-                                    DemoTab.TAGS -> Icons.Default.Place
                                 },
                                 contentDescription = entry.label,
                             )
@@ -1393,13 +1421,6 @@ fun DemoApp(
                 return@Surface
             }
 
-            if (tab == DemoTab.TAGS && libraryOnTop) {
-                TagsScreen(
-                    tags = lastPage?.tags.orEmpty(),
-                    onOpen = { tag -> if (tag.url.isNotBlank()) openFromUrl(tag.url, tag.title) },
-                )
-                return@Surface
-            }
 
             when (val current = screen) {
                 Screen.Loading -> Centered {
@@ -1842,6 +1863,24 @@ fun DemoApp(
                 }
             }
         }
+    }
+
+    // 标签抽屉：首页顶栏「标签」图标打开，选中即按该标签地址换一批内容
+    if (showTagSheet) {
+        TagPickerSheet(
+            tags = tagCache,
+            currentTitle = activeTagTitle,
+            onPickHome = {
+                showTagSheet = false
+                val home = session?.homeUrl
+                if (!home.isNullOrBlank()) openFromUrl(home, null)
+            },
+            onPick = { tag ->
+                showTagSheet = false
+                if (tag.url.isNotBlank()) openFromUrl(tag.url, tag.title)
+            },
+            onDismiss = { showTagSheet = false },
+        )
     }
 
     // 站点抽屉：标题 + 搜索 + 两列站点卡片，当前打勾
