@@ -305,3 +305,26 @@
 
   写完先看一眼体积（应与源码同量级）；保存后再 `GET /api/configs/<key>` 抽查开头是不是 `key:` 而不是 `{"value":`。
 
+## 29. 筛选/排序别手写选项表：参数名与当前值都在页面里
+
+- 现象：`urlReplace` 里手写了「排序/时长/清晰度」三组，选项和站点对不上；点某一项要么没反应、要么参数名不对；
+  从第 2 页开始筛选后「当前项」高亮全错，甚至点「不限」清不掉参数。
+- 原因：站点的筛选菜单是**服务端渲染的 DOM**，不是固定参数表：
+  `<ul data-filter="o" data-selected="…"><li data-value="mr"><a>最新</a></li>…`；
+  参数名就是 `data-filter`，可选值是 `li[data-value]`；有的组在特定页面是隐藏的（外层 `displayNone`）；
+  当前选中项要从 **canonical URL 的 query** 读，不能靠配置里的 `this.currentUrlReplace` 存状态
+  （每次取页都重新解析，上一轮的赋值早丢了）。
+- 正确做法：
+
+  1. `getUrlReplace($)` 遍历 `.js-filterMenu ul[data-filter]`，用 `data-filter` 当 `param`、
+     `li[data-value]` 当 `value`、`a` 的文本当 `title`；**跳过没有标题或只有 1 项的组**（分类 chip 会混进来），
+     隐藏组（如 `.js-time-period.displayNone`）也跳过。
+  2. 当前值：`$('link[rel="canonical"]').attr('href')` 取当前页地址，解析 query；
+     参数不存在 = 该组的空值项（全部/最相关），按值相等高亮。
+  3. `adapterLoadUrl(url, groups)` 取每组里 `current === true` 的那一项（不是 `urlAppend[0]`），
+     有值写参数、空值删参数；同时删掉 `page`（换筛选回第 1 页）。
+  4. 不要在 `adapterLoadUrl` 里改 `this.*` 存状态——面板与分页各自都会重新解析页面。
+- 验证：`/api/debug/run` 打 `config.getUrlReplace(cheerio.load(getHtml(searchUrl)))` 看组与当前项；
+  再打 `config.adapterLoadUrl(url, groups)` 看最终 URL 是否只改了目标参数、`page` 是否被删，最后真机点一遍。
+
+

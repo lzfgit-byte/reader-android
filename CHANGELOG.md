@@ -33,6 +33,8 @@
 
 ### Fixed
 
+- **搜索结果页没有筛选入口，筛选面板只在普通列表出现（F03）**：`urlReplace` 面板的显示条件与 `applyFilter` 都只认 `Screen.List`，于是「搜索关键词 → 想按最新排序」这条路走不通——站点搜索页明明带了 `js-filterMenu`，App 里却没有「筛选」。现在搜索结果页同样显示筛选按钮：面板取该次搜索页解析出的分组，`applyFilter` 在**搜索地址**上改参数（`search=` 与已有筛选都保留），并按原页面形态回填（仍是搜索结果页，关键词与「清除」都在）。顺带把 `runSearch` 里漏记的 `currentListUrl` 补上——否则筛选会以 `homeUrl` 为基准，关键词直接丢掉；换筛选时统一删 `page` 回第 1 页。验证（Pornhub 配置，搜索 `panty`）：筛选「最新」→ `fetchHtml start https://cn.pornhub.com/video/search?search=panty&o=mr`；先跳到第 3 页再改「出品=专业」→ `...search=panty&o=mr&p=professional`（`page=3` 已去掉）；清「出品」回到 `...&o=mr`、清「排序」回到 `...?search=panty`，每次都是 32 条、当前项在面板里高亮正确。设计文档 §5.3、UI 规范 §6、功能登记表 F03 已同步。
+
 - **Web 配置编辑器缺少 `isProxy` / `forceProxy` 的类型提示（F24）**：上一轮把这两个字段加进了 `config-spec` §3.1，但派生物 `web/console/config-api.d.ts` 没跟上——编辑器里既没有补全，也会把这两个键当成未知成员（`pnpm check:dts` 直接报 `d.ts 缺少：forceProxy, isProxy`）。现在补进 `ConfigMeta` 并带上 hover 说明：默认 `true`、只有显式 `false` 才直连、`forceProxy` 命中即代理且优先于 `isProxy`、`example.com` 同时覆盖子域 / `host:port` 限端口 / `*` 全部。验证：`node scripts/check-dts.mjs` 由「1 项不一致」转为「通过」；真机 Chrome 打开控制台（`http://127.0.0.1:18600/console/`，走的就是 APK 内置的那份包），在 `WebConfig` 对象里输入 `isP` / `forc`，补全分别给出 `isProxy` / `forceProxy`。
 
 - **单页阅读按返回键退出会丢进度（F12）**：在单图阅读里翻到第 N 页后按系统返回键，漫画阅读器回到的却是**进入单图时**那一页，而且它一进来就按这个旧页码上报，把单图里已经写进去的进度覆盖回去（实测：单图里读到 4/6，返回后阅读器显示 `1/6 · 16%`）。根因是"当前页"只存在单图分支的**局部** `remember` 里，返回键那一层拿不到，只能读 `SinglePage.startIndex`。现在把当前页提到 `DemoApp` 层（`singlePageIndex`），系统返回键与「×」都用它回填阅读器位置，并在退出时按该页显式写一次进度；进度写入抽成 `saveImageProgress()`，漫画阅读器与单图共用，避免两处各写一份逻辑再次漂移。验证：单图 4/19 按返回键 → 阅读器显示 `4/19 · 21%`；退出阅读器后重新打开同一本，仍从 4/19 续看；「×」路径同样回到 6/19 · 31%。
@@ -50,6 +52,8 @@
 - **视频播放补上 Referer（F06）：详情页直连播放的 m3u8 一律 403**：`Screen.VideoPlayer` 早就有 `referer` 参数、剧集播放也传了，但**条目直接进播放器那条路径没传**，`HttpDataSource` 因此不带 `Referer`；视频 CDN（如 `surrit.com`）缺它整站 403，表现成"m3u8 地址解析成功、播放器报 `ERROR_CODE_IO_BAD_HTTP_STATUS`"，很容易被误判成出口 IP 被封。现在按设计文档 §5.6「媒体请求带站点 Referer」补齐：新增 `playbackReferer()`，优先用条目来源页 `jumpUrl`（与站点自己的播放器一致），非绝对地址时退回站点 origin；Referer 挂在 DataSource 的默认请求头上，所以 playlist 之后返回的子播放列表与分片也带同一个头。实测 `https://missav.ws/cn/caribbeancom-102626-001`：`00:20 / 1:07:06` 正常出画面并推进，A/B 对照（`net.request` 带 Referer=200 返回 `#EXTM3U`、不带=403）见 `.dsh/skills/ghs-site-to-config/references/pitfalls.md` 第 23 条。
 
 ### Docs
+
+- **技能补第 29 条坑：筛选/排序别手写选项表，参数名与当前值都在页面里**（`.dsh/skills/ghs-site-to-config/`）：站点把筛选菜单做成 `<ul data-filter="o"><li data-value="mr">最新</li>…`，参数名就是 `data-filter`、当前值只能从 canonical URL 的 query 读；手写选项表会出现「选项对不上、点不限清不掉、翻页后当前项全错」。正确做法是解析 `.js-filterMenu ul[data-filter]`（跳过无标题/单选项/隐藏组），`adapterLoadUrl` 取每组 `current` 项、空值删参数并删 `page`，不要用 `this.*` 存筛选状态。另附：Pornhub 的 playlist 页首次访问会弹年龄确认（WebView 兜底里点一次「我年满18岁」后 cookie 才齐）。
 
 - **技能补第 27、28 条坑：内联 JSON 的播放地址按括号深度取 / PowerShell 拼 JSON 别把 ETS 属性写进去**（`.dsh/skills/ghs-site-to-config/`）：① 有站点（Pornhub 系）把 `mediaDefinitions` 内嵌在详情页 `<script>` 里（本站在约 600KB 处），数组项带 `segmentFormats` 嵌套；`\[.*?\]` 这类非贪婪正则在 WebView 渲染后的大 HTML 里会截错位置导致 `JSON.parse` 抛错，表现为详情返回 `null`。正确写法是按括号深度扫描、跳过字符串里的括号，取到原文再 `JSON.parse`，按 `format` 映射 `m3u8`/`mp4`、按 `quality || height` 定清晰度，并且每次进详情重新取（签名 URL 有有效期）。② 用 PowerShell 组装请求体时，`Get-Content -Raw` 的字符串带 `PSPath`/`PSDrive`/`Credential` 等 ETS 属性，直接 `| ConvertTo-Json` 会序列化成 `{"value":…,"PSPath":…}` 一整包；服务端把 4KB 源码存成 380KB 的包装对象，站点列表能出来但四个方法同时报 `config.getItems is not a function`。改用 `[IO.File]::ReadAllText()` 取纯字符串，存完抽查开头是 `key:` 而不是 `{"value":`。
 
