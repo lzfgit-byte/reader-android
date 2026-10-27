@@ -1,6 +1,6 @@
 > **状态**：draft
-> **版本**：v1.1
-> **最后更新**：2026-10-19
+> **版本**：v1.2
+> **最后更新**：2026-10-27
 > **取代/被取代**：取代同文件 v1.0
 
 # 本地仓库规范（Local Store）
@@ -43,6 +43,8 @@
 | **运行日志** `logs` | 引擎与抓取日志 | Room `log` | ❌ | ❌ | 仅本机排查用，最多 2000 条 |
 
 > **判据**：换一台设备仍然成立 → 同步；只在当前设备/网络成立 → 不同步。
+
+**v1 备份文件（F20）只覆盖 `configs` 与 `collects` 两类**：换机时最不可重建的就是这两样；进度与历史留到 v1.1（见 §5.1、§6.4）。
 
 ---
 
@@ -121,30 +123,32 @@ log(id, info TEXT, type TEXT, createTime)
 
 ## 5. 导出格式
 
-### 5.1 单文件 bundle（默认）
+### 5.1 备份文件（F20，`ghs-backup/1`）
 
-文件名：`ghs-repo-<yyyyMMdd-HHmm>.bundle.json`
+文件名：`ghs-backup-<yyyyMMdd-HHmm>.json`（本地时区）
 
 ```json
 {
-  "$schema": "ghs-repo/1",
-  "appVersion": "1.0.0",
-  "exportedAt": "2026-10-19T10:00:00Z",
+  "$schema": "ghs-backup/1",
+  "appVersion": "0.1.10",
+  "exportedAt": 1761550000000,
   "sections": {
-    "configs": [ { "key": "demo", "format": "manifest", "config": {…}, "script": "…", "sort": 0, "enabled": true } ],
-    "prefs":   { "theme": "system", "fontScale": 1.0, "readerMode": "vertical", "historyRemember": 100 },
-    "progress":[ { "itemUrl": "…", "kind": "text", "chapterIndex": 3, "chapterOffset": 42, "percent": 12.5, "updatedAt": 1760000000000 } ],
-    "collects":[ { "configKey": "demo", "url": "…", "value": "{…}", "count": 0 } ],
-    "viewHistory":[ … ],
-    "searchHistory":[ … ]
-  },
-  "device": { "webPort": 18600, "bind": "loopback", "cacheImageMb": 512 }
+    "configs": [
+      { "key": "demo", "name": "Demo", "enabled": true, "sort": 0, "source": "…配置源码…" }
+    ],
+    "collects": [
+      { "configKey": "demo", "url": "https://…", "payload": "{…}", "count": 3, "createTime": 1761550000000 }
+    ]
+  }
 }
 ```
 
-- `device` 段导出但**导入时默认忽略**（可勾选"同时恢复本机设置"）；
-- `searchHistory` 默认不导出，需在导出对话框勾选；
-- 不含 WebDAV 凭证与任何 token。
+- **只装两类数据**：全部配置（含启用状态与顺序）与全部收藏（含"看过次数" `count`）；`prefs` / `progress` / `viewHistory` / `searchHistory` 是**保留段**，本版本不写、导入时忽略。
+- **不含 `device`**：端口、绑定、代理、WebDAV 凭证、Cookie 一律不进文件（L6）。
+- 配置用单文件源码 `source`：本应用里内联与清单形态都是一段 JS，不再拆 `config` 对象 + `script` 两段。
+- `name` 只是展示名，导入后以 `source` 里的 `name:` 为准；`key` 必须与源码里的 `key:` 一致（见 §6.4）。
+- 文件是**全量快照**：导出即这两类数据的全部；恢复即整体替换，不做合并。
+- 与 Web 管理的「导出全部配置」「导出收藏」是**不同粒度**：前者用于备份迁移，后者用于单类数据搬运，格式互不兼容。
 
 ### 5.2 分层目录（供 WebDAV / 人工维护）
 
@@ -168,9 +172,11 @@ repo/
 
 | 模式 | 行为 |
 |---|---|
-| `dry-run` | 只解析与校验，返回将发生的变化，不落库 |
-| `merge`（默认） | 按主键 upsert；冲突按 §6.2 |
-| `replace` | 清空对应类别后导入（危险操作，需二次确认） |
+| `dry-run` | 只解析与校验，返回将发生的变化，不落库（**v1 未实现**，见 §6.4） |
+| `merge` | 按主键 upsert；冲突按 §6.2（**v1 未实现**） |
+| `replace` | 清空对应类别后导入（危险操作，需二次确认）。**F20 备份恢复只用这一种** |
+
+> 上表是完整仓库导入的目标形态；**v1 实际落地的只有 F20 备份文件的全量替换**（§6.4），dry-run / merge 留到 v1.1。
 
 ### 6.2 冲突判定
 
@@ -198,6 +204,35 @@ repo/
 
 - 单条失败不中断整批；
 - 失败项原样保留在导入报告里，便于用户修正后重试。
+
+### 6.4 备份恢复（F20）
+
+**语义：全量替换（replace）。** 文件里出现的类别整体替换，文件里没有的类别保持原样（`configs` 与 `collects` 在备份里总是同时出现）。
+
+**顺序：先校验、后落库。** 整个文件解析并逐条校验通过后才开始写入——任何一条不合法都不写任何数据，避免"删到一半才发现文件坏了"。
+
+| 校验项 | 错误码 |
+|---|---|
+| `$schema` 必须是 `ghs-backup/1` | `E-BAK-001` |
+| 文件不超过 16MB、JSON 可解析、有 `sections`、至少含一个类别 | `E-BAK-002` |
+| 配置 key 合法、`source` 非空、源码里的 `key:` 与记录一致 | `E-BAK-003` |
+| 配置 key 不重复 | `E-BAK-004` |
+| 超过体积上限 | `E-BAK-005` |
+| `configs` 是空数组（明确的清空意图，但按误操作处理，拒绝执行） | `E-BAK-006` |
+
+**恢复报告**（只报计数：要么全部成功，要么一条不动，因此没有逐条 failures）：
+
+```json
+{
+  "ok": true,
+  "configs":  { "added": 2, "updated": 1, "removed": 3 },
+  "collects": { "imported": 12, "removed": 9 }
+}
+```
+
+- 恢复**不动**设备设置、凭证、Cookie；
+- 收藏引用了已不存在的站点也照常写入（配置可能稍后补齐），不算失败；
+- App 端与 Web 端调用同一个恢复实现，结果一致；两端导出的文件互相可恢复。
 
 ---
 
@@ -260,6 +295,9 @@ repo/
 ## 10. 验收清单
 
 - [ ] 导出 → 清空 → 导入后，配置、进度、收藏、历史完全一致
+- [ ] **F20**：导出备份 → 增删站点与收藏 → 全量恢复后，配置（含启用状态与顺序）与收藏（含次数）与导出时一致
+- [ ] **F20**：选到非法 / 错误格式的备份文件时，数据零变化并给出 `E-BAK-*` 提示
+- [ ] **F20**：App 与 Web 两端导出的备份文件可以互相恢复
 - [ ] `dry-run` 不产生任何写入
 - [ ] 文本内容无进度记录时，打开落在第一章
 - [ ] 有进度记录时，打开落在记录的章节与段落位置
@@ -278,3 +316,4 @@ repo/
 |---|---|---|
 | v1.0 | 2026-10-19 | 建立本地仓库规范：数据分类与同步归属、表结构、进度统一模型、键归一化、导出格式（bundle / 分层）、导入与冲突规则、WebDAV 同步流程、保留策略、版本迁移与验收清单 |
 | v1.1 | 2026-10-19 | 新增「凭据与 Cookie」类别（不导出、不同步、不可明文查看）；`device` 组补充代理白名单字段 |
+| v1.2 | 2026-10-27 | 按 F20 实现回流：§5.1 从"整仓 bundle（含 prefs/progress/history/device）"改为实际落地的 **`ghs-backup/1`（configs + collects）**，`device` 不再进导出；§6 标注 dry-run / merge 未实现；新增 §6.4 全量替换规则、`E-BAK-*` 错误码与恢复报告；验收清单补 3 条 |

@@ -13,9 +13,13 @@
 
 ### Added
 
+- **备份与恢复：一个文件装全部配置与收藏（F20）**：换机时最不可重建的两样数据——站点配置与收藏——现在可以整包带走：`GET /api/backup/export` 输出单文件 JSON（`$schema: ghs-backup/1`，配置存源码 + 启用状态 + 顺序，收藏存 payload + **看过次数**），`POST /api/backup/restore` 按文件**全量替换**这两类数据并返回「新增 / 覆盖 / 删除 + 收藏写入」计数；端口、绑定、代理、Cookie、WebDAV 凭证一律不进文件。恢复是**先校验后落库**：整个文件解析通过才开始写，任何一条不合法都返回 `E-BAK-*` 且数据零变化；`configs` 为空数组会被当成误操作直接拒绝（`E-BAK-006`），避免一个空文件把站点全清掉。两个入口共用同一套实现：App 抽屉「备份与恢复」（系统文件选择器，不申请存储权限）与 Web 控制台顶栏「备份 / 恢复」（选文件后先弹确认框列出将替换的数量）。格式见 [local-store](docs/03-api/local-store.md) §5.1 / §6.4，接口见 [web-admin-api](docs/03-api/web-admin-api.md) §4.4，设计见 [design.md](docs/01-product/design.md) §5.14。验证：接口导出 19 份配置 / 2 条收藏（162,706 字节）；临时加 1 份配置与 1 条收藏后恢复，返回 `configs {added:0, updated:19, removed:1}`、`collects {imported:2, removed:3}`，复查 `zz-temp` 与测试收藏都已消失；App 侧导出到 Downloads 的文件同样是 162,706 字节 / 19 份 / 2 条，再用它恢复，界面显示「恢复完成 · 配置：新增 0 · 覆盖 19 · 删除 1；收藏：写入 2 条（原有 3 条已清空）」；Web 控制台点「备份」状态条显示「已导出备份：配置 19 份 · 收藏 2 条」并由 Chrome 下载成 `ghs-backup-20261027-1317.json`，点「恢复」选同一文件后确认框显示「配置 19 份 · 收藏 2 条 · 来自 0.1.5」，确认后状态条「已恢复：配置 +0 / 覆盖 19 / 删除 1 · 收藏 2 条」；三个错误样本（`E-BAK-001` / `E-BAK-006` / `E-BAK-003`）均返回 400，恢复前后配置数都是 19。
+
 - **配置新增代理策略字段 `isProxy` / `forceProxy`（F28）**：来源是否走代理交给配置声明——`isProxy` 默认 `true`，**只有显式写 `false` 才直连**；`forceProxy` 是地址数组（`example.com` 同时覆盖子域、`host:port` 限定端口、`*` 表示全部），**命中即走代理，优先于 `isProxy`**，用来表达"站点整体直连、但图床/视频 CDN 必须过代理"这类拓扑。字段写在配置顶层，随配置导入生效；设备侧代理总开关仍是最终闸门（关掉时任何来源都直连）。字段与语义见 [config-spec](docs/03-api/config-spec.md) §3.1。
 
 ### Changed
+
+- **F20 从 v1.1 提前到 v1，范围收窄为「配置 + 收藏」（F20）**：原计划导出整个本地仓库（偏好、进度、收藏、历史、设备设置）并支持 `dry-run` / `merge` / `replace` 三种导入模式；现在 v1 只做**全部配置 + 全部收藏**的整包备份与**全量替换**恢复，进度、历史与合并/预演模式留到 v1.1。归属规则同步调整：备份与恢复不再"仅 Web"，改为 **App + Web 双入口**（换机现场往往没有电脑，手机端必须能就地导出）。设计文档 §2.6 / §5.10 / §5.14 / §11-Q2、功能登记表与 [ui-implementation](docs/02-architecture/ui-implementation.md) 抽屉入口、[web-console](docs/02-architecture/web-console.md) §6.2.1 已同步。
 
 - **应用显示名改为 `Reader`，版本号每次打包自增（工程配置）**：桌面图标 / 任务切换 / 应用信息里看到的名字改成 **Reader**（`app/src/main/res/values/strings.xml` 的 `app_name`，manifest 两处 `android:label` 引用它；Web 管理界面标题同步改为「Reader · 配置管理」）。**包名 `com.ghs.mobile` 与工程代号 GHS Mobile 不变**，覆盖安装仍是同一个应用，不会变成另一个包。版本号从手写常量改为工程根目录的 `version.properties`（唯一来源）：只要构建请求了打包任务（`assemble*` / `bundle*` / `package*`），配置阶段先把 `versionCode` +1、`versionName` 末段 +1 写回文件，再写进 APK——同一个 commit 连打两次包就是两个版本号；单测 / lint / IDE 同步不动它。`/api/meta` 的 `appVersion` 与关于信息改取 `BuildConfig.VERSION_NAME`，不再手写 `0.1.0`。
 

@@ -1,6 +1,6 @@
 > **状态**：draft
-> **版本**：v1.3
-> **最后更新**：2026-10-19
+> **版本**：v1.4
+> **最后更新**：2026-10-27
 > **取代/被取代**：取代同文件 v1.2
 
 # 内置 Web 管理服务 API
@@ -133,11 +133,41 @@ POST /api/validate
 | GET | `/api/favorites/export` | 导出全部站点的收藏：`{version, exportedAt, items:[{configKey,url,payload,count,createTime}]}`；`url` 为相对地址，`payload` 为条目原 JSON |
 | POST | `/api/favorites/import` | 请求体同上（也接受 `favorites` 或裸数组）；按 `configKey+url` **覆盖**写入，返回 `{imported}` |
 
-'> 写成幂等覆盖而非追加：同一收藏重复导入不会产生重复行，便于多设备互相同步。
-> 提供了 `count` 时按该值原样写入（不累加），用于迁移「看过多少次」；未提供则按一次收藏处理。'
+> 写成幂等覆盖而非追加：同一收藏重复导入不会产生重复行，便于多设备互相同步。
+> 提供了 `count` 时按该值原样写入（不累加），用于迁移「看过多少次」；未提供则按一次收藏处理。
 
+### 4.4 备份与恢复（F20）
 
-### 4.4 运行时控制
+| 方法 | 路径 | 说明 |
+|---|---|---|
+| GET | `/api/backup/export` | 整包备份：**全部配置 + 全部收藏**，`application/json` + `Content-Disposition: attachment; filename="ghs-backup-<yyyyMMdd-HHmm>.json"`；格式见 [local-store](local-store.md) §5.1 |
+| POST | `/api/backup/restore` | 请求体为备份文件原文；**全量替换**配置与收藏，返回逐项计数；文件不合法时返回 400 + `E-BAK-*`，且**不写入任何数据** |
+
+恢复成功返回：
+
+```json
+{
+  "ok": true,
+  "configs":  { "added": 2, "updated": 1, "removed": 3 },
+  "collects": { "imported": 12, "removed": 9 }
+}
+```
+
+错误：
+
+| 错误码 | HTTP | 含义 |
+|---|---|---|
+| `E-BAK-001` | 400 | `$schema` 不是 `ghs-backup/1` |
+| `E-BAK-002` | 400 | 空文件 / JSON 不合法 / 缺 `sections` / 两个类别都没有 |
+| `E-BAK-003` | 400 | 配置 key 不合法、`source` 为空，或源码里的 `key:` 与记录不一致 |
+| `E-BAK-004` | 400 | 配置 key 重复 |
+| `E-BAK-005` | 400 | 超过 16MB |
+| `E-BAK-006` | 400 | `configs` 是空数组（拒绝清空全部站点） |
+
+> 恢复只影响配置与收藏，**不动**端口、绑定、代理、凭证与 Cookie（[local-store](local-store.md) L6）。
+> 该动作不可撤销，Web 控制台与 App 端都在提交前展示"将替换多少配置/收藏"并要求确认。
+
+### 4.5 运行时控制
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
@@ -353,3 +383,4 @@ GET /engine/listConfigUnits
 | v1.1 | 2026-10-19 | 明确配置面归属：端口/绑定/令牌等应用级设置不提供 API；WebDAV 仅保留状态与动作接口，**移除 `PUT /api/webdav`**（地址与凭证只在应用端配置）；新增 `POST /api/webdav/resolve`；安全边界增加「凭证不出应用」 |
 | v1.2 | 2026-10-19 | 调试接口补人机校验：`options.waitForChallenge` / `challengeTimeoutMs`、事件 `challenge` 与 `challengeResolved`、`E-CHALLENGE-*` 说明；修正错误表重复行 |
 | v1.3 | 2026-10-19 | WebDAV 明确**不走代理**（独立客户端 + `Proxy.NO_PROXY`）；`/engine` 定位补注为「本地调试出口」而非远程服务 |
+| v1.4 | 2026-10-27 | 新增 §4.4 备份与恢复（F20）：`GET /api/backup/export`、`POST /api/backup/restore`（全量替换、`E-BAK-*` 错误码、恢复报告）；原「运行时控制」顺延为 §4.5；顺带修掉收藏接口说明里两行多余的引号 |
