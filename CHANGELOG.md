@@ -51,6 +51,8 @@
 
 ### Docs
 
+- **技能补第 27、28 条坑：内联 JSON 的播放地址按括号深度取 / PowerShell 拼 JSON 别把 ETS 属性写进去**（`.dsh/skills/ghs-site-to-config/`）：① 有站点（Pornhub 系）把 `mediaDefinitions` 内嵌在详情页 `<script>` 里（本站在约 600KB 处），数组项带 `segmentFormats` 嵌套；`\[.*?\]` 这类非贪婪正则在 WebView 渲染后的大 HTML 里会截错位置导致 `JSON.parse` 抛错，表现为详情返回 `null`。正确写法是按括号深度扫描、跳过字符串里的括号，取到原文再 `JSON.parse`，按 `format` 映射 `m3u8`/`mp4`、按 `quality || height` 定清晰度，并且每次进详情重新取（签名 URL 有有效期）。② 用 PowerShell 组装请求体时，`Get-Content -Raw` 的字符串带 `PSPath`/`PSDrive`/`Credential` 等 ETS 属性，直接 `| ConvertTo-Json` 会序列化成 `{"value":…,"PSPath":…}` 一整包；服务端把 4KB 源码存成 380KB 的包装对象，站点列表能出来但四个方法同时报 `config.getItems is not a function`。改用 `[IO.File]::ReadAllText()` 取纯字符串，存完抽查开头是 `key:` 而不是 `{"value":`。
+
 - **技能补第 24、25 条坑：页图地址加密（`data-locked`）+ S3 预签名 60 秒 / 图床 403 是缺通行 Cookie**（`.dsh/skills/ghs-site-to-config/`）：① 有站点的阅读页 `<img>` 全是空 `src`，真地址在 `data-locked="JCOMIC_TRAPS_<base64>"`，站点自己的 JS 是「去前缀 → 整串反转 → `atob`」（沙箱里 `atob` 可用），解出来是 `images.` 主机的 S3 预签名地址、`X-Amz-Expires=60`——60 秒后必然 403，是站点设计不是配置错。② 图床 403 的真因是**缺站点用 `Set-Cookie` 下发的通行 cookie**（`xxx_access=verified_user` 一类），而"单发 200、连发 403"是假象——`net.request` 走取页管线（带 cookie）、Coil 取图走图片客户端（当时没 cookie），A/B 比出来的是客户端差异。教训写进坑里：做 A/B 必须同一条管线、只改一个变量；图床 403 且响应头有 `Set-Cookie` 时先怀疑 cookie。
 
 - **技能补第 23 条坑：视频 m3u8 报 403 是缺 Referer，别急着判「IP 被封」**（`.dsh/skills/ghs-site-to-config/`）：视频 CDN 按 Referer 放行，缺了整站 403（连根路径也 403，很像 IP 封禁）；而用 `curl` 复现时它自己的 TLS 指纹本来就会被挡，带不带 Referer 都是 403，证明不了任何事。取证要用应用内 `net.request` 做 A/B（同一条 m3u8 带 / 不带 Referer 各请求一次，期望 200 / 403），并注意 playlist 之后返回的子列表与分片也要带同一个 Referer——应用侧靠播放器 DataSource 的默认请求头覆盖。

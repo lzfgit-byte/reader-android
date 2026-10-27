@@ -253,3 +253,55 @@
   ——注意调试上下文里配置对象叫 `config`（`getData()` 不存在）。
 - 附带：这类搜索卡片的 `<img src>` 对多话作品给的是**目录 URL**（`https://图床/<hash>/?X-Amz-…`，没有文件名），
   取图必然 404/403。这是站点自己的数据问题，不是选择器错，也不用去猜文件名补全。
+
+## 27. 播放地址塞在内联 JSON（`mediaDefinitions`）：正则截数组会截断，改成括号深度扫描
+
+- 现象：详情页能开、标题封面都对，但 `getDetailInfo` 返回 `null` 或只解析出前一两档；
+  用 `html.match(/"mediaDefinitions"\s*:\s*(\[[\s\S]*?\])/)` 时好时坏。
+- 原因：这段 JSON 是站点内嵌在 `<script>` 里的（本站在页面前部约 600KB 处），
+  数组里的对象还带 `segmentFormats` 等嵌套；`\[.*?\]` 依赖"第一个 `]` 就是数组结尾"，
+  页面稍有变化（WebView 渲染后的 HTML 更大）就会截在错误位置，`JSON.parse` 直接抛。
+- 正确做法：用**括号深度扫描**取原文，字符串里的括号要跳过（引号转义也要处理）：
+
+  ```js
+  arrayAt(html, key) {
+    const at = html.indexOf(`"${key}":`);
+    if (at < 0) return null;
+    const start = html.indexOf('[', at);
+    let depth = 0, inString = false, escaped = false;
+    for (let p = start; p < html.length; p += 1) {
+      const ch = html.charAt(p);
+      if (inString) {
+        if (escaped) escaped = false;
+        else if (ch === '\\') escaped = true;
+        else if (ch === '"') inString = false;
+      } else if (ch === '"') inString = true;
+      else if (ch === '[') depth += 1;
+      else if (ch === ']') { depth -= 1; if (depth === 0) return html.substring(start, p + 1); }
+    }
+    return null;
+  }
+  ```
+
+  取到原文再 `JSON.parse`，按 `format`（`hls` / `mp4`）映射成 `m3u8` / `mp4`，
+  `quality` 用 `d.quality || d.height`；签名参数有有效期，每次进详情都重新取一遍，别缓存 URL。
+- 验证：调试接口单行表达式返回 `hls:240,hls:480,hls:720,mp4:|n=4` 这类结果，再进播放器看画质菜单。
+
+## 28. 用 PowerShell 组装 JSON 请求体：字符串会带上 ETS 属性，`ConvertTo-Json` 把整包写坏
+
+- 现象：POST 配置成功、列表里也有，但一切站点都报
+  `Uncaught TypeError: config.getItems is not a function`，日志里四个方法同时不存在。
+- 原因：`Get-Content -Raw` 返回的字符串带 PowerShell 的扩展属性（`PSPath`、`PSDrive`、`Credential`…），
+  直接 `@{ config = $src } | ConvertTo-Json` 会把这些属性一起序列化：
+  服务端收到的 `config` 不是 JS 源码，而是 `{"value":"…","PSPath":"…"}` 一整包，存进去自然没有方法。
+  配置体积也会从 4KB 膨胀到 380KB 量级。
+- 正确做法：用 .NET 读纯字符串，别用管道：
+
+  ```powershell
+  $src = [IO.File]::ReadAllText($path, [Text.Encoding]::UTF8)
+  $json = @{ key = 'k'; config = $src } | ConvertTo-Json -Depth 4
+  [IO.File]::WriteAllText($tmp, $json, (New-Object Text.UTF8Encoding($false)))
+  ```
+
+  写完先看一眼体积（应与源码同量级）；保存后再 `GET /api/configs/<key>` 抽查开头是不是 `key:` 而不是 `{"value":`。
+
