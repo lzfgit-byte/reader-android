@@ -18,6 +18,14 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 /**
+ * 标记「这张图失败就按失败处理，别走 WebView 兜底」的 ImageRequest 参数。
+ *
+ * 站点图标一类装饰图用得上：它们的 403 背后常常是图床/站点自己的 Cloudflare 挑战页，
+ * 兜底会顺手弹一个全屏校验窗口——用户只是点开「选择站点」，却突然被要求过人机校验。
+ */
+const val SkipImageFallbackKey = "ghs.skipImageFallback"
+
+/**
  * 图片兜底：OkHttp 取图失败时，用 WebView 把图片**字节**取回来再交给 Coil 解码。
  *
  * 为什么取字节而不是截屏：截屏只有视口分辨率，长条图会糊、会截断；
@@ -35,18 +43,21 @@ class WebViewImageFallbackInterceptor(private val context: Context) : Intercepto
     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
         val request = chain.request
         val url = request.data.toString()
+        val skipFallback = request.parameters.value<Boolean>(SkipImageFallbackKey) == true
 
         val result = try {
             chain.proceed(request)
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Throwable) {
+            if (skipFallback) throw error
             android.util.Log.w("GHS", "image okhttp failed(${error.message}) → webview $url")
             return fallback(request, url) ?: throw error
         }
 
         // 403/404 在 Coil 里是 ErrorResult 而不是异常，同样要兜底
         if (result is coil.request.ErrorResult) {
+            if (skipFallback) return result
             android.util.Log.w("GHS", "image http error(${result.throwable.message}) → webview $url")
             return fallback(request, url) ?: result
         }

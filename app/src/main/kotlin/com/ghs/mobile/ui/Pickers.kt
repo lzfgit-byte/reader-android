@@ -323,6 +323,9 @@ internal fun rememberSiteFaviconModel(store: ConfigStore.StoredConfig): ImageReq
     return remember(url, referer, context) {
         ImageRequest.Builder(context)
             .data(url)
+            // 图标是装饰：取不到就画首字色块。别让它的 403 触发图片兜底里的 WebView 挑战流程，
+            // 否则只是打开「选择站点」，就会给某个没打开的站点弹一次人机校验。
+            .setParameter(SkipImageFallbackKey, true)
             .apply { if (!referer.isNullOrBlank()) setHeader("Referer", referer) }
             .build()
     }
