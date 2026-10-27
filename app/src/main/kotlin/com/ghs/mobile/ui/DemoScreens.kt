@@ -119,6 +119,15 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.material.icons.filled.Clear
 import kotlinx.coroutines.delay
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Backup
@@ -336,9 +345,12 @@ fun DemoApp(
     // 当前列表地址：刷新按钮用它重新取数据
     var currentListUrl by remember { mutableStateOf<String?>(null) }
     var pendingReload by remember { mutableStateOf(false) }
-    var searchOpen by remember { mutableStateOf(false) }
+    // 搜索面板（底部弹层）：顶栏放大镜打开，填关键词后点右下角「搜索」
+    var showSearchDialog by remember { mutableStateOf(false) }
     var searchKeyword by remember { mutableStateOf("") }
     var searchError by remember { mutableStateOf<String?>(null) }
+    // 搜索中：弹 loading 弹窗，期间不接受第二次提交
+    var searching by remember { mutableStateOf(false) }
     // 列表形态：双列卡片 / 单列行卡片（参考常见阅读客户端）
     var layoutMode by remember { mutableStateOf(ItemCardLayout.GRID) }
     // 图片清晰度：默认原图（fullUrl），可切到展示图（url）
@@ -430,28 +442,35 @@ fun DemoApp(
         }
     }
 
-    /** 搜索：adapterSearchUrl 取地址 → 取页 → 按普通列表解析 */
+    /**
+     * 搜索：`adapterSearchUrl` 取地址 → 取页 → 按普通列表解析。
+     *
+     * 由搜索面板右下角「搜索」按钮触发；期间 `searching` 为真，界面弹 loading 弹窗。
+     * 失败时**不关面板**：错误留在面板里，用户可以就地改关键词再点一次。
+     */
     fun runSearch(keyword: String) {
         val active = session ?: return
         val trimmed = keyword.trim()
-        if (trimmed.isEmpty()) return
+        if (trimmed.isEmpty() || searching) return
+        searchKeyword = trimmed
+        searchError = null
+        searching = true
         scope.launch {
-            runCatching { withContext(Dispatchers.IO) { active.search(trimmed) } }
-                .onSuccess { matched ->
-                    if (matched == null) {
-                        searchError = "该配置不支持搜索（adapterSearchUrl 返回空串）"
-                    } else {
-                        searchError = null
-                        searchOpen = false
-                        // 记住这次搜索的实际地址：筛选面板要在这个地址上改参数（不能丢掉 search=…）
-                        currentListUrl = matched.first
-                        noMore = false
-                        screen = Screen.SearchResults(trimmed, matched.second)
-                        // 新的一次搜索：结果从顶部开始
-                        resetListScroll()
-                    }
+            val outcome = runCatching { withContext(Dispatchers.IO) { active.search(trimmed) } }
+            outcome.onSuccess { matched ->
+                if (matched == null) {
+                    searchError = "该配置不支持搜索（adapterSearchUrl 返回空串）"
+                } else {
+                    showSearchDialog = false
+                    // 记住这次搜索的实际地址：筛选面板要在这个地址上改参数（不能丢掉 search=…）
+                    currentListUrl = matched.first
+                    noMore = false
+                    screen = Screen.SearchResults(trimmed, matched.second)
+                    // 新的一次搜索：结果从顶部开始
+                    resetListScroll()
                 }
-                .onFailure { searchError = it.message ?: it.toString() }
+            }.onFailure { searchError = it.message ?: it.toString() }
+            searching = false
         }
     }
 
@@ -1359,7 +1378,11 @@ fun DemoApp(
                             Text(if (layoutMode == ItemCardLayout.GRID) "双列" else "单列")
                         }
                         if (tab == DemoTab.HOME && (screen is Screen.List || screen is Screen.SearchResults)) {
-                            IconButton(onClick = { searchOpen = !searchOpen }) {
+                            IconButton(onClick = {
+                                // 已在搜索结果里：带着上次的关键词打开，改两个字就能重搜
+                                searchError = null
+                                showSearchDialog = true
+                            }) {
                                 Icon(Icons.Default.Search, contentDescription = "搜索")
                             }
                         }
@@ -1554,14 +1577,6 @@ fun DemoApp(
                 }
 
                 is Screen.List -> Column(Modifier.fillMaxSize()) {
-                    if (searchOpen) {
-                        DemoSearchBar(
-                            keyword = searchKeyword,
-                            error = searchError,
-                            onKeywordChange = { searchKeyword = it },
-                            onSubmit = { runSearch(searchKeyword) },
-                        )
-                    }
                     ListScreen(
                         page = current.page,
                         progress = progressByUrl,
@@ -1932,6 +1947,30 @@ fun DemoApp(
             onDismiss = { showTagSheet = false },
         )
     }
+
+    // 搜索弹窗：顶栏放大镜打开，居中显示，输入关键词 → 点右下角「搜索」执行
+    if (showSearchDialog) {
+        SearchDialog(
+            keyword = searchKeyword,
+            error = searchError,
+            searching = searching,
+            onKeywordChange = {
+                searchKeyword = it
+                // 改了关键词就把上一次的报错收起来，别让旧错误一直挂着
+                if (searchError != null) searchError = null
+            },
+            onSubmit = { runSearch(searchKeyword) },
+            onDismiss = {
+                // 搜索进行中不允许关面板：用户会以为没搜
+                if (!searching) {
+                    showSearchDialog = false
+                    searchError = null
+                }
+            },
+        )
+    }
+    // 搜索中的 loading 弹窗：模态、不可取消，避免重复提交
+    if (searching) SearchLoadingDialog(searchKeyword)
 
     // 站点抽屉：标题 + 搜索 + 两列站点卡片，当前打勾
     if (showSiteSheet) {
@@ -2309,36 +2348,128 @@ private fun VideoDetail(info: DetailInfo) {
     }
 }
 
-/** 演示用搜索栏：输入关键字 -> adapterSearchUrl -> 取页 -> 复用列表解析 */
+/**
+ * 搜索弹窗：输入关键词 → `adapterSearchUrl` → 取页 → 复用列表解析。
+ *
+ * **居中**显示（不是底部抽屉）：键盘弹出时上下都还有余量，输入框不会被顶到屏幕边缘；
+ * 整块盒子按 IME insets 上移，所以键盘再高也压不到「搜索」按钮。
+ * 打开即聚焦输入框并弹键盘；右下角「搜索」是唯一的提交入口（键盘的搜索键同效）。
+ * 搜索失败时弹窗不关，错误显示在输入框下方，改词再提交即可。
+ */
 @Composable
-private fun DemoSearchBar(
+private fun SearchDialog(
     keyword: String,
     error: String?,
+    searching: Boolean,
     onKeywordChange: (String) -> Unit,
     onSubmit: () -> Unit,
+    onDismiss: () -> Unit,
 ) {
-    Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 8.dp)) {
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically,
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    Dialog(
+        onDismissRequest = onDismiss,
+        // 关掉平台默认的窄宽度：自己要一个能按屏幕居中、能吃到 IME insets 的整窗
+        properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false),
+    ) {
+        Box(
+            modifier = Modifier.fillMaxSize().imePadding(),
+            contentAlignment = Alignment.Center,
         ) {
-            OutlinedTextField(
-                value = keyword,
-                onValueChange = onKeywordChange,
-                modifier = Modifier.weight(1f),
-                singleLine = true,
-                label = { Text("搜索关键字") },
-            )
-            TextButton(onClick = onSubmit) { Text("搜索") }
+            Surface(
+                shape = RoundedCornerShape(20.dp),
+                color = MaterialTheme.colorScheme.surface,
+                tonalElevation = 6.dp,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            ) {
+                Column(modifier = Modifier.padding(20.dp)) {
+                    Text("搜索", style = MaterialTheme.typography.titleMedium)
+                    // 等弹窗挂载后再要焦点，否则 requestFocus 会被忽略、键盘不弹
+                    LaunchedEffect(Unit) {
+                        delay(150)
+                        runCatching { focusRequester.requestFocus() }
+                        keyboard?.show()
+                    }
+                    OutlinedTextField(
+                        value = keyword,
+                        onValueChange = onKeywordChange,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(top = 12.dp)
+                            .focusRequester(focusRequester),
+                        singleLine = true,
+                        enabled = !searching,
+                        placeholder = { Text("输入关键词") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        trailingIcon = if (keyword.isEmpty()) {
+                            null
+                        } else {
+                            {
+                                IconButton(onClick = { onKeywordChange("") }) {
+                                    Icon(Icons.Default.Clear, contentDescription = "清空")
+                                }
+                            }
+                        },
+                        keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                        keyboardActions = KeyboardActions(
+                            onSearch = {
+                                keyboard?.hide()
+                                onSubmit()
+                            },
+                        ),
+                    )
+                    if (error != null) {
+                        Text(
+                            error,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.error,
+                            modifier = Modifier.padding(top = 8.dp),
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.fillMaxWidth().padding(top = 16.dp),
+                        horizontalArrangement = Arrangement.End,
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        TextButton(onClick = onDismiss) { Text("取消") }
+                        Button(
+                            onClick = {
+                                keyboard?.hide()
+                                onSubmit()
+                            },
+                            enabled = keyword.isNotBlank() && !searching,
+                            modifier = Modifier.padding(start = 8.dp),
+                        ) { Text("搜索") }
+                    }
+                }
+            }
         }
-        if (error != null) {
-            Text(
-                error,
-                style = MaterialTheme.typography.labelSmall,
-                color = MaterialTheme.colorScheme.error,
-                modifier = Modifier.padding(top = 4.dp),
-            )
+    }
+}
+
+/** 搜索中的 loading 弹窗：模态遮罩，点外部与返回键都不关闭 */
+@Composable
+private fun SearchLoadingDialog(keyword: String) {
+    Dialog(
+        onDismissRequest = {},
+        properties = DialogProperties(dismissOnBackPress = false, dismissOnClickOutside = false),
+    ) {
+        Surface(
+            shape = RoundedCornerShape(16.dp),
+            color = MaterialTheme.colorScheme.surface,
+            tonalElevation = 6.dp,
+        ) {
+            Row(
+                modifier = Modifier.padding(horizontal = 24.dp, vertical = 20.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 2.dp)
+                Text(
+                    if (keyword.isBlank()) "正在搜索…" else "正在搜索「$keyword」…",
+                    style = MaterialTheme.typography.bodyMedium,
+                    modifier = Modifier.padding(start = 16.dp),
+                )
+            }
         }
     }
 }
