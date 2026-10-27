@@ -1,6 +1,6 @@
 > **状态**：approved
-> **版本**：v1.18
-> **最后更新**：2026-10-25
+> **版本**：v1.19
+> **最后更新**：2026-10-27
 > **取代/被取代**：取代同文件 v1.12
 
 # 文档总索引
@@ -78,7 +78,8 @@ docs/
 | [02-architecture/adr/ADR-0006-webdav-sync.md](02-architecture/adr/ADR-0006-webdav-sync.md) | 决策：配置同步用 WebDAV，v1 手动 + 冲突提示 | approved | 2026-10-19 |
 | [02-architecture/adr/ADR-0007-local-store-unified-sync.md](02-architecture/adr/ADR-0007-local-store-unified-sync.md) | 决策：本地仓库为唯一数据源，导出/导入/同步统一到仓库层 | approved | 2026-10-19 |
 | [02-architecture/adr/ADR-0008-http-proxy-two-channels.md](02-architecture/adr/ADR-0008-http-proxy-two-channels.md) | 决策：HTTP 代理对应用请求与无头 WebView 两条通道同时生效 | approved | 2026-10-19 |
-| [02-architecture/adr/ADR-0009-proxy-whitelist-single-decision.md](02-architecture/adr/ADR-0009-proxy-whitelist-single-decision.md) | 决策：白名单是唯一代理判定点；转发代理进 v1；未配置即直连 | approved | 2026-10-19 |
+| [02-architecture/adr/ADR-0009-proxy-whitelist-single-decision.md](02-architecture/adr/ADR-0009-proxy-whitelist-single-decision.md) | 决策：白名单是唯一代理判定点；转发代理进 v1；未配置即直连（已被 ADR-0018 取代） | superseded | 2026-10-19 |
+| [02-architecture/adr/ADR-0018-proxy-per-config-policy.md](02-architecture/adr/ADR-0018-proxy-per-config-policy.md) | 决策：设备只留代理开关 + 代理列表；来源级 `isProxy` / `forceProxy` 由配置声明，判定仍是一处 | approved | 2026-10-27 |
 | [02-architecture/adr/ADR-0010-challenge-top-activity.md](02-architecture/adr/ADR-0010-challenge-top-activity.md) | 决策：人机校验用独立顶层 Activity；校验后带 Cookie 优先 OkHttp 重试 | approved | 2026-10-19 |
 | [02-architecture/adr/ADR-0011-drop-remote-mode.md](02-architecture/adr/ADR-0011-drop-remote-mode.md) | 决策：移除远程服务模式，只保留内置引擎（部分取代 ADR-0002） | approved | 2026-10-19 |
 | [02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md](02-architecture/adr/ADR-0012-html-sanitize-to-blocks.md) | 决策：正文接受任意 HTML，清洗后统一转结构块 | approved | 2026-10-19 |
@@ -149,3 +150,4 @@ docs/
 | v1.16 | 2026-10-25 | 新增工具资产 `.dsh/skills/ghs-site-to-config/`（站点 → 配置技能）并登记索引；文档头版本号补齐到实际值（原停留在 v1.13） |
 | v1.17 | 2026-10-25 | 技能补充第 16 条坑（同一站点搜索页与列表页是两个列表块：id、页码参数、翻页路由各不相同）；索引描述同步 |
 | v1.18 | 2026-10-25 | 技能补充第 17 条坑（配置内 `getHtml` 不补全相对地址，`jumpUrl` 必须写成绝对地址）；索引描述同步 |
+| v1.19 | 2026-10-27 | 新增 [ADR-0018](02-architecture/adr/ADR-0018-proxy-per-config-policy.md)（来源级 `isProxy` / `forceProxy`，设备只留开关 + 代理列表），ADR-0009 标 superseded；索引状态同步 |

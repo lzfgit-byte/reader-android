@@ -292,7 +292,7 @@ WHPX 报告 operational，qemu 却几乎不耗 CPU（虚拟机未真正执行）
 | 底部导航 | 首页 / 收藏 / 历史（读取时按 tab 重新加载） | — |
 | 搜索 | 顶栏搜索框 → `adapterSearchUrl` → 取页 → 复用列表；结果页可清除 | 演示 `search.html` |
 | 设置 | 主题（跟随/浅/深）、字号（小→特大）、阅读器默认模式 | `app_setting(prefs)`，全局立即生效 |
-| 网络代理 | 启用开关、地址、用户名/密码、白名单；OkHttp 与无头 WebView 同时生效 | `app_setting(device)`，默认 `http://192.168.31.245:4000` |
+| 网络代理 | 启用开关 + 代理列表（多条单选）；OkHttp 与无头 WebView 共用一处判定；来源级 `isProxy` / `forceProxy` 由配置提供 | `app_setting(device)`，默认 `http://192.168.31.245:10808` |
 | 视频播放器 | Media3（ExoPlayer + HLS）：进度续播、5 秒回写、失败显示错误码与地址 | 详情页清晰度行 |
 | 列表封面 | Coil 加载 `coverImg`（4:3 Crop）；为空/失败退回字母占位 | 与应用请求同一代理 |
 | 列表形态 | 双列（封面卡片）/ 单列（左图右文），顶栏按钮切换；星标收藏 | 收藏、历史复用同一卡片 |

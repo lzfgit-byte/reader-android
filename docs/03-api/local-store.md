@@ -34,7 +34,7 @@
 |---|---|---|---|---|---|
 | **配置** `configs` | 配置单元（清单 + 脚本） | Room `config_unit` | ✅ | ✅ | 格式见 [config-spec](config-spec.md) §2 |
 | **偏好设置** `prefs` | 主题、字号、列表密度、阅读器默认模式、状态胶囊开关、历史保留条数 | DataStore | ✅ | ✅ | 跨设备有意义 |
-| **设备设置** `device` | Web 服务开关/端口/绑定、WebDAV 地址与凭证、缓存上限、**代理（HTTP 地址/端口/认证/白名单）**、超时、并发 | DataStore + 加密存储 | ❌ | ⚠️ 导出但导入时忽略 | 见 L6；导出仅为备份本机配置 |
+| **设备设置** `device` | Web 服务开关/端口/绑定、WebDAV 地址与凭证、缓存上限、**代理（HTTP 总开关 / 代理列表）**、超时、并发 | DataStore + 加密存储 | ❌ | ⚠️ 导出但导入时忽略 | 见 L6；导出仅为备份本机配置（来源是否走代理由配置 `isProxy` / `forceProxy` 决定，不在本表） |
 | **凭据与 Cookie** | WebDAV 密码、代理认证、站点 Cookie（含人机校验通过后的通行 Cookie） | EncryptedSharedPreferences + Room | ❌ | ❌ | 不导出、不同步；界面不可明文查看 |
 | **阅读进度** `progress` | 文本章节与位置、图集页码、视频播放位置 | Room `reading_progress` | ✅ | ✅ | 见 §3.3 |
 | **收藏** `collects` | 收藏条目 | Room `collect` | ✅ | ✅ | |

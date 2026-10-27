@@ -1,13 +1,13 @@
-> **状态**：approved
+> **状态**：superseded
 > **版本**：v1.0
 > **最后更新**：2026-10-19
-> **取代/被取代**：修订 [ADR-0008](ADR-0008-http-proxy-two-channels.md) 的阶段划分（阶段二提前至 v1）并补入白名单判定；ADR-0008 的通道决策仍然有效
+> **取代/被取代**：**已被 [ADR-0018](ADR-0018-proxy-per-config-policy.md) 取代**（白名单判定模型改为来源级 `isProxy` / `forceProxy`，设备侧只留总开关 + 代理列表）；本文修订 [ADR-0008](ADR-0008-http-proxy-two-channels.md) 的阶段划分（阶段二提前至 v1）并补入白名单判定；ADR-0008 的通道决策仍然有效
 
 # ADR-0009：白名单是唯一的代理判定点，转发代理进入 v1
 
 ## 状态
 
-`approved`
+`superseded by ADR-0018`（2026-10-27：白名单模型被来源级 `isProxy` / `forceProxy` 取代）
 
 ## 背景
 
