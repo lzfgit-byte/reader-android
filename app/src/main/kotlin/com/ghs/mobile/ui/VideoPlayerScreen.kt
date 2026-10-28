@@ -11,8 +11,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -22,12 +24,15 @@ import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Lock
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -48,6 +53,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -109,6 +115,15 @@ private const val SEEK_STEP_MS = 10_000L
 /** 控制层自动隐藏时间 */
 private const val CONTROLS_HIDE_MS = 3_500L
 
+/** 长按多久算“按住加速”（太短会把单击误判成倍速） */
+private const val LONG_PRESS_MS = 350L
+
+/** 隐藏态细进度条的高度：固定值，别让它随内容/inset 被拉伸 */
+private val HIDDEN_BAR_HEIGHT = 3.dp
+
+/** 播放器里可选的快进/快退倍速 */
+private val PLAY_RATE_OPTIONS = listOf(1.5f, 2f, 3f, 4f)
+
 /** 自动重连（重拨）最多试几次；三次仍失败就把决定权交回用户 */
 private const val AUTO_REDIAL_MAX = 3
 
@@ -167,6 +182,12 @@ fun VideoPlayerScreen(
     onSelectEpisode: (Int) -> Unit = {},
     onPlayEpisode: (lineUrl: String, episodeIndex: Int) -> Unit = { _, _ -> },
     loadEpisodes: suspend (lineUrl: String) -> List<AnalysisDetail> = { emptyList() },
+    /** 长按右半侧的快进倍速（播放器内可改） */
+    fastRate: Float = 3f,
+    /** 长按左半侧的快退倍速（播放器内可改） */
+    rewindRate: Float = 3f,
+    /** 改倍速：由上层落库，播放器只负责展示与调用 */
+    onRatesChange: (fast: Float, rewind: Float) -> Unit = { _, _ -> },
     onProgress: (sourceUrl: String, positionMs: Long, durationMs: Long) -> Unit,
     onBack: () -> Unit,
 ) {
@@ -194,6 +215,12 @@ fun VideoPlayerScreen(
     var reachedEnd by remember(currentUrl) { mutableStateOf(false) }
     // 长按倍速是否生效中
     var boostActive by remember(currentUrl) { mutableStateOf(false) }
+    // 长按方向：true=右侧快进 / false=左侧快退（用于屏幕上的提示）
+    var boostForward by remember(currentUrl) { mutableStateOf(true) }
+    // 长按快退时先暂停，松手恢复原来的播放状态
+    var wasPlayingBeforeRewind by remember(currentUrl) { mutableStateOf(false) }
+    // 播放设置弹窗（长按快进/快退倍速）
+    var ratesOpen by remember { mutableStateOf(false) }
     // 评论面板：显示当前视频源自带的评论
     var commentsOpen by remember(currentUrl) { mutableStateOf(false) }
     val currentComments = sources.getOrNull(index)?.comments.orEmpty()
@@ -553,18 +580,44 @@ fun VideoPlayerScreen(
                                 smartSeek(dir * if (continued) 2 else 1)
                             }
                         },
-                        // 长按 2x 倍速：按住生效，松手恢复
-                        onPress = {
+                        // 长按倍速：右半侧快进、左半侧快退；按住在放，松手恢复。
+                        // 快进用播放速率实现；快退没有负速率，改成"暂停 + 按倍率往回 seek"。
+                        onPress = { offset ->
                             if (locked) return@detectTapGestures
-                            val boostJob = scope.launch {
-                                delay(400)
-                                player.setPlaybackSpeed(2f)
-                                boostActive = true
+                            val forward = offset.x >= size.width / 2f
+                            var held = false
+                            val holdJob = scope.launch {
+                                delay(LONG_PRESS_MS)
+                                held = true
+                                if (forward) {
+                                    boostForward = true
+                                    boostActive = true
+                                    player.setPlaybackSpeed(fastRate)
+                                } else {
+                                    boostForward = false
+                                    boostActive = true
+                                    wasPlayingBeforeRewind = player.playWhenReady
+                                    player.pause()
+                                    // 每 100ms 往回退 rate×100ms：观感就是"以 rate 倍速倒放"
+                                    val stepMs = 100L
+                                    while (true) {
+                                        val target = (player.currentPosition - (rewindRate * stepMs).toLong())
+                                            .coerceAtLeast(0L)
+                                        player.seekTo(target)
+                                        if (target <= 0L) break
+                                        delay(stepMs)
+                                    }
+                                }
                             }
                             tryAwaitRelease()
-                            boostJob.cancel()
-                            if (boostActive) {
-                                player.setPlaybackSpeed(1f)
+                            holdJob.cancel()
+                            if (held) {
+                                if (forward) {
+                                    player.setPlaybackSpeed(1f)
+                                } else if (wasPlayingBeforeRewind) {
+                                    player.playWhenReady = true
+                                    player.play()
+                                }
                                 boostActive = false
                             }
                         },
@@ -627,23 +680,41 @@ fun VideoPlayerScreen(
             )
         }
 
-        // 控制层隐藏时，底部留一条细进度条：随时知道播到哪，又不挡画面、不接受点击
+        // 控制层隐藏时，底部留一条细进度条：随时知道播到哪，又不挡画面、不接受点击。
+        // 用 Canvas 画而不是嵌套 Box：高度写死在 Canvas 上，不会被内层 fillMaxWidth/inset 拉伸
+        // （曾经出现过"播完后这条变粗成一条紫色横条"）
         if (!controlsVisible && error == null && durationMs > 0) {
             val played = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-            Box(
+            Canvas(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(3.dp)
+                    .height(HIDDEN_BAR_HEIGHT)
                     .align(Alignment.BottomCenter)
-                    .background(Color(0x66000000)),
+                    // 让开系统手势条：压在它下面会被系统栏裁/染色，看着就像"变粗了"
+                    .navigationBarsPadding()
+                    .clipToBounds(),
             ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(played)
-                        .height(3.dp)
-                        .background(Color(0xFF7C4DFF)),
+                drawRect(Color(0x66000000))
+                drawRect(
+                    color = Color(0xFF7C4DFF),
+                    size = androidx.compose.ui.geometry.Size(size.width * played, size.height),
                 )
             }
+        }
+
+        // 长按加速提示
+        if (boostActive) {
+            Text(
+                (if (boostForward) "快进 " else "快退 ") +
+                    String.format("%.1fx", if (boostForward) fastRate else rewindRate),
+                color = Color.White,
+                style = MaterialTheme.typography.labelLarge,
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 64.dp)
+                    .background(Color(0xB3000000), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 12.dp, vertical = 6.dp),
+            )
         }
 
         // 播完自动从头再来一遍时给一句提示，避免用户以为是"没播完就跳回去"
@@ -755,6 +826,13 @@ fun VideoPlayerScreen(
                         }
                     }
                 }
+                IconButton(onClick = { ratesOpen = true }) {
+                    Icon(
+                        imageVector = Icons.Default.Settings,
+                        contentDescription = "播放设置",
+                        tint = Color.White,
+                    )
+                }
                 if (series != null) {
                     TextButton(onClick = { sheet = PlayerSheet.SWITCHER }) { Text("线路 / 选集") }
                 }
@@ -791,13 +869,8 @@ fun VideoPlayerScreen(
                             dragging = false
                             controlsVisible = true
                         },
-                        thumb = {
-                            Box(
-                                Modifier
-                                    .size(12.dp)
-                                    .background(Color.White, CircleShape),
-                            )
-                        },
+                        // 不要圆点：自绘的 thumb 与轨道不是垂直居中的（看着偏上），干脆去掉
+                        thumb = { },
                         track = { state ->
                             val fraction = ((if (dragging) dragPosition else positionMs).toFloat() /
                                 durationMs.coerceAtLeast(1).toFloat()).coerceIn(0f, 1f)
@@ -903,6 +976,54 @@ fun VideoPlayerScreen(
                     }
                 }
             }
+        }
+
+        // 播放设置：长按快进 / 快退的倍速（按住生效，松手恢复）
+        if (ratesOpen) {
+            AlertDialog(
+                onDismissRequest = { ratesOpen = false },
+                title = { Text("播放设置") },
+                text = {
+                    Column {
+                        Text("长按右半屏：快进倍速", style = MaterialTheme.typography.labelLarge)
+                        Row(
+                            modifier = Modifier.padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            PLAY_RATE_OPTIONS.forEach { rate ->
+                                FilterChip(
+                                    selected = fastRate == rate,
+                                    onClick = { onRatesChange(rate, rewindRate) },
+                                    label = { Text(String.format("%.1fx", rate)) },
+                                )
+                            }
+                        }
+                        Spacer(Modifier.height(16.dp))
+                        Text("长按左半屏：快退倍速", style = MaterialTheme.typography.labelLarge)
+                        Row(
+                            modifier = Modifier.padding(top = 8.dp),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        ) {
+                            PLAY_RATE_OPTIONS.forEach { rate ->
+                                FilterChip(
+                                    selected = rewindRate == rate,
+                                    onClick = { onRatesChange(fastRate, rate) },
+                                    label = { Text(String.format("%.1fx", rate)) },
+                                )
+                            }
+                        }
+                        Text(
+                            "按住不放生效，松手恢复原来的播放速度。",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(top = 16.dp),
+                        )
+                    }
+                },
+                confirmButton = {
+                    TextButton(onClick = { ratesOpen = false }) { Text("完成") }
+                },
+            )
         }
 
         // 续看提示
@@ -1159,12 +1280,12 @@ private fun LockIcon(locked: Boolean, tint: Color, boxSize: androidx.compose.ui.
 
 
 /**
- * �ܰ�ȫ�Ž� HTTP ͷ�� URL��
+ * 能安全放进 HTTP 头的 URL。
  *
- * OkHttp �� `Headers.checkValue` ֻ���� `0x20..0x7e`�������ַ�������ʱ������
- * `https://avjoy.me/video/103701/���aav-��`����`Request.Builder.header("Referer", ��)` ��ֱ����
- * `IllegalArgumentException: Unexpected char 0x570b`���������������ȥ����������"һ���������ͱ�
- * ���Ŵ��������ز�ȫʧ��"������ͷֵͳһ��һ��ٷֺű��롣
+ * OkHttp 的 `Headers.checkValue` 只接受 `0x20..0x7e`：详情地址里带中文时（例如
+ * `https://avjoy.me/video/103701/國產av-…`），`Request.Builder.header("Referer", …)` 会直接抛
+ * `IllegalArgumentException: Unexpected char 0x570b`，请求根本发不出去——表现是"一进播放器就报
+ * 播放错误、三次重拨全失败"。所以头值统一过一遍百分号编码。
  */
 internal fun asciiHeaderValue(raw: String): String = runCatching {
     java.net.URI(raw).toASCIIString()

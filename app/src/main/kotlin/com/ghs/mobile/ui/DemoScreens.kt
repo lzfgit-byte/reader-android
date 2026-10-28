@@ -355,6 +355,9 @@ fun DemoApp(
     var layoutMode by remember { mutableStateOf(ItemCardLayout.GRID) }
     // 图片清晰度：默认原图（fullUrl），可切到展示图（url）
     var imageQuality by remember { mutableStateOf(ImageQuality.ORIGINAL) }
+    // 播放器里长按快进/快退的倍速（设备级设置，改完立即生效并落库）
+    var playerFastRate by remember { mutableStateOf(3f) }
+    var playerRewindRate by remember { mutableStateOf(3f) }
     var loadingMore by remember { mutableStateOf(false) }
     var noMore by remember { mutableStateOf(false) }
     // 从标签进入的列表：标题显示标签名；null 表示首页
@@ -626,6 +629,10 @@ fun DemoApp(
             "preview" -> ImageQuality.PREVIEW
             else -> ImageQuality.ORIGINAL
         }
+        // 恢复长按快进/快退倍速（默认 3.0x）
+        val playerPrefs = repository.settings(SettingScope.PREFS)
+        playerFastRate = playerPrefs["playerFastRate"]?.toFloatOrNull()?.coerceIn(1f, 4f) ?: 3f
+        playerRewindRate = playerPrefs["playerRewindRate"]?.toFloatOrNull()?.coerceIn(1f, 4f) ?: 3f
     }
 
     // 网页端保存/新建/删除后，服务端会发通知：列表页立刻重载
@@ -1121,6 +1128,18 @@ fun DemoApp(
                 referer = reader.referer,
                 resumePositionMs = reader.resumePositionMs,
                 series = reader.series,
+                fastRate = playerFastRate,
+                rewindRate = playerRewindRate,
+                onRatesChange = { fast, rewind ->
+                    playerFastRate = fast
+                    playerRewindRate = rewind
+                    scope.launch {
+                        withContext(Dispatchers.IO) {
+                            repository.putSetting(SettingScope.PREFS, "playerFastRate", fast.toString())
+                            repository.putSetting(SettingScope.PREFS, "playerRewindRate", rewind.toString())
+                        }
+                    }
+                },
                 onPrevEpisode = reader.series?.takeIf { ctx -> ctx.currentIndex > 0 }?.let { ctx ->
                     {
                         playSeriesEpisode(
