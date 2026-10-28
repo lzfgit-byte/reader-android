@@ -1,6 +1,8 @@
 package com.ghs.mobile.ui
 
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.VectorConverter
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
@@ -46,6 +48,7 @@ import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
@@ -72,6 +75,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.SubcomposeAsyncImage
 import coil.request.ImageRequest
+import kotlinx.coroutines.launch
 
 /**
  * 站点选择抽屉：标题 + 搜索 + 两列站点卡片，当前项打勾。
@@ -94,6 +98,13 @@ fun SitePickerSheet(
     val order = remember { mutableStateListOf<ConfigStore.StoredConfig>().apply { addAll(sites) } }
     var dragKey by remember { mutableStateOf<String?>(null) }
     var dragPointer by remember { mutableStateOf(Offset.Zero) }
+    // 拖动中卡片相对"自己格子"的位移。跟手 = 手指移动量 + 换位/滚动时的格子补偿，
+    // 全部在这一处累加：不依赖每帧去读布局坐标，否则位移会把自己上一帧的位移再算一遍
+    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    // 松手后让卡片从松手处滑回自己的格子，避免瞬移
+    var settleKey by remember { mutableStateOf<String?>(null) }
+    var settleOffset by remember { mutableStateOf(Offset.Zero) }
+    val scope = rememberCoroutineScope()
     var autoScroll by remember { mutableStateOf(0) }
     // 每张卡片在窗口里的位置：拖动时靠它判断手指落在哪个格子上
     val bounds = remember { mutableStateMapOf<String, Rect>() }
@@ -117,14 +128,21 @@ fun SitePickerSheet(
         val from = order.indexOfFirst { it.key == key }
         val to = order.indexOfFirst { it.key == target }
         if (from < 0 || to < 0) return
+        // 换位前先记住两个格子左上角的差：换完之后被拖的卡片要减去同样的差值，
+        // 否则它会跟着格子一起跳一格，看着就不跟手了
+        val oldSlot = bounds[key]?.topLeft
+        val newSlot = bounds[target]?.topLeft
         order.add(to, order.removeAt(from))
+        if (oldSlot != null && newSlot != null) dragOffset += oldSlot - newSlot
     }
 
     // 拖到列表上下边缘时自动滚动：20 个站点一屏放不下，不自动滚就只能拖到当前可见的那一行
     LaunchedEffect(autoScroll, dragKey) {
         if (dragKey == null) return@LaunchedEffect
         while (autoScroll != 0) {
-            gridState.scrollBy(autoScroll * edgeSlopPx * 0.35f)
+            val scrolled = gridState.scrollBy(autoScroll * edgeSlopPx * 0.35f)
+            // 列表滚动会把格子整体带走，位移补回去，卡片才会停在手指下
+            dragOffset += Offset(0f, scrolled)
             withFrameNanos { }
             moveDraggedTo(dragPointer)
         }
@@ -192,22 +210,42 @@ fun SitePickerSheet(
                     )
                     Row(
                         modifier = Modifier
+                            // 位置要按窗口坐标记：抽屉在独立的 Dialog 窗口里，局部坐标对不上手指。
+                            // 必须留在最外层——放进 graphicsLayer 里面会把本层的位移也算进坐标
+                            .onGloballyPositioned { bounds[site.key] = it.boundsInWindow() }
                             .fillMaxWidth()
-                            // 换位时让卡片滑动过去，而不是瞬移
-                            .animateItem(placementSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing))
+                            // 换位时让卡片滑动过去，而不是瞬移。
+                            // 正在拖的那张不加：它的位置由"跟手"位移决定，槽位动画会和位移叠加，
+                            // 手指下就会漂——其它卡片照常滑，被拖的那张必须老老实实贴住手指。
+                            .then(
+                                if (dragging) {
+                                    Modifier
+                                } else {
+                                    Modifier.animateItem(
+                                        placementSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing),
+                                    )
+                                },
+                            )
                             // 浮到最上层
                             .zIndex(if (dragging) 1f else 0f)
-                            // 阴影与缩放放在同一个 graphicsLayer 里：分成两层时阴影按未缩放的
-                            // 边界绘制，会被裁成一条贴在卡片边上的白边
+                            // 阴影、缩放、跟手位移都在同一个 graphicsLayer 里：分成两层时阴影按
+                            // 未缩放的边界绘制，会被裁成一条贴在卡片边上的白边
                             .graphicsLayer {
                                 val scale = 1f + 0.03f * lift
                                 scaleX = scale
                                 scaleY = scale
                                 shadowElevation = 8.dp.toPx() * lift
                                 shape = itemShape
+                                if (dragging) {
+                                    // 跟手：位移由手指移动量 + 换位/滚动补偿累加而来
+                                    translationX = dragOffset.x
+                                    translationY = dragOffset.y
+                                } else if (settleKey == site.key) {
+                                    // 松手回落：从松手处滑回自己的格子
+                                    translationX = settleOffset.x
+                                    translationY = settleOffset.y
+                                }
                             }
-                            // 位置要按窗口坐标记：抽屉在独立的 Dialog 窗口里，局部坐标对不上手指
-                            .onGloballyPositioned { bounds[site.key] = it.boundsInWindow() }
                             .border(
                                 width = if (selected) 1.5.dp else 1.dp,
                                 color = borderColor,
@@ -221,7 +259,10 @@ fun SitePickerSheet(
                                     onDragStart = { local ->
                                         val box = bounds[site.key]
                                         if (box != null) {
+                                            settleKey = null
+                                            settleOffset = Offset.Zero
                                             dragKey = site.key
+                                            dragOffset = Offset.Zero
                                             dragPointer = box.topLeft + local
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         }
@@ -230,6 +271,7 @@ fun SitePickerSheet(
                                         change.consume()
                                         if (dragKey == site.key) {
                                             dragPointer += amount
+                                            dragOffset += amount
                                             moveDraggedTo(dragPointer)
                                             autoScroll = when {
                                                 gridBounds.height <= 0f -> 0
@@ -240,14 +282,33 @@ fun SitePickerSheet(
                                         }
                                     },
                                     onDragEnd = {
-                                        val changed = dragKey != null &&
+                                        val key = dragKey
+                                        val changed = key != null &&
                                             order.map { it.key } != sites.map { it.key }
-                                        dragKey = null
+                                        // 松手时卡片通常还偏离自己的格子一段：让它滑回去，
+                                        // 直接清位移会"啪"地跳一下
+                                        val residual = dragOffset
                                         autoScroll = 0
+                                        dragKey = null
+                                        if (key != null && residual != Offset.Zero) {
+                                            settleOffset = residual
+                                            settleKey = key
+                                            scope.launch {
+                                                val anim = Animatable(residual, Offset.VectorConverter)
+                                                anim.animateTo(
+                                                    Offset.Zero,
+                                                    tween(durationMillis = 140, easing = FastOutSlowInEasing),
+                                                ) { settleOffset = value }
+                                                settleKey = null
+                                                settleOffset = Offset.Zero
+                                            }
+                                        }
                                         if (changed) onReorder(order.map { it.key })
                                     },
                                     onDragCancel = {
                                         dragKey = null
+                                        settleKey = null
+                                        settleOffset = Offset.Zero
                                         autoScroll = 0
                                     },
                                 )
