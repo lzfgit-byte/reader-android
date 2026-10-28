@@ -1988,6 +1988,17 @@ fun DemoApp(
                     }
                 }
             },
+            onReorder = { keys ->
+                // 抽屉里只列启用中的站点（外加当前站点）：把这份顺序塞回**全量**列表原来的格子里再落库，
+                // 否则停用站点会留着旧序号，将来重新启用时插到莫名其妙的位置
+                val wanted = keys.toSet()
+                val rest = keys.iterator()
+                val merged = configs.map { if (it.key in wanted) rest.next() else it.key }
+                scope.launch {
+                    withContext(Dispatchers.IO) { app.configs.reorder(merged) }
+                    configs = withContext(Dispatchers.IO) { app.configs.list() }
+                }
+            },
             onDismiss = { showSiteSheet = false },
         )
     }

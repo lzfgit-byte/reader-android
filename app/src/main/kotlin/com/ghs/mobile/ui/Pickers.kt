@@ -4,6 +4,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -19,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -33,13 +36,28 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.boundsInWindow
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -62,12 +80,56 @@ fun SitePickerSheet(
     sites: List<ConfigStore.StoredConfig>,
     currentKey: String?,
     onPick: (String) -> Unit,
+    /** 长按拖动后的新顺序（按 key 排列），由调用方落库 */
+    onReorder: (List<String>) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var keyword by remember { mutableStateOf("") }
-    val filtered = remember(sites, keyword) {
-        if (keyword.isBlank()) sites else sites.filter {
+    // 拖动时用本地顺序立即反馈，松手才回调落库；外部列表被重新读取时，非拖动状态才覆盖本地顺序
+    val order = remember { mutableStateListOf<ConfigStore.StoredConfig>().apply { addAll(sites) } }
+    var dragKey by remember { mutableStateOf<String?>(null) }
+    var dragPointer by remember { mutableStateOf(Offset.Zero) }
+    var autoScroll by remember { mutableStateOf(0) }
+    // 每张卡片在窗口里的位置：拖动时靠它判断手指落在哪个格子上
+    val bounds = remember { mutableStateMapOf<String, Rect>() }
+    var gridBounds by remember { mutableStateOf(Rect.Zero) }
+    val gridState = rememberLazyGridState()
+    val haptics = LocalHapticFeedback.current
+    val edgeSlopPx = with(LocalDensity.current) { 72.dp.toPx() }
+
+    LaunchedEffect(sites) {
+        if (dragKey == null) {
+            order.clear()
+            order.addAll(sites)
+        }
+    }
+
+    /** 把正在拖的卡片移到手指所在的格子（同一格不重复移动，避免抖动） */
+    fun moveDraggedTo(pointer: Offset) {
+        val key = dragKey ?: return
+        val target = bounds.entries.firstOrNull { it.value.contains(pointer) }?.key ?: return
+        if (target == key) return
+        val from = order.indexOfFirst { it.key == key }
+        val to = order.indexOfFirst { it.key == target }
+        if (from < 0 || to < 0) return
+        order.add(to, order.removeAt(from))
+    }
+
+    // 拖到列表上下边缘时自动滚动：20 个站点一屏放不下，不自动滚就只能拖到当前可见的那一行
+    LaunchedEffect(autoScroll, dragKey) {
+        if (dragKey == null) return@LaunchedEffect
+        while (autoScroll != 0) {
+            gridState.scrollBy(autoScroll * edgeSlopPx * 0.35f)
+            withFrameNanos { }
+            moveDraggedTo(dragPointer)
+        }
+    }
+
+    val filtered = if (keyword.isBlank()) {
+        order.toList()
+    } else {
+        order.filter {
             it.key.contains(keyword, ignoreCase = true) || siteName(it).contains(keyword, ignoreCase = true)
         }
     }
@@ -77,7 +139,8 @@ fun SitePickerSheet(
         Column(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp).padding(bottom = 24.dp)) {
             Text("选择站点", style = MaterialTheme.typography.titleLarge)
             Text(
-                "共 ${sites.size} 个站点 · 当前 $currentName",
+                "共 ${sites.size} 个站点 · 当前 $currentName" +
+                    if (keyword.isBlank()) " · 长按卡片拖动排序" else "",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp, bottom = 12.dp),
@@ -93,24 +156,80 @@ fun SitePickerSheet(
 
             LazyVerticalGrid(
                 columns = GridCells.Fixed(2),
-                modifier = Modifier.fillMaxWidth().height(420.dp).padding(top = 12.dp),
+                state = gridState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(420.dp)
+                    .padding(top = 12.dp)
+                    .onGloballyPositioned { gridBounds = it.boundsInWindow() },
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(filtered, key = { it.key }) { site ->
                     val selected = site.key == currentKey
+                    val dragging = dragKey == site.key
+                    val itemShape = RoundedCornerShape(10.dp)
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
+                            // 拖动中的卡片浮到最上层并轻微放大，看得出"拿起来了"
+                            .zIndex(if (dragging) 1f else 0f)
+                            .then(if (dragging) Modifier.shadow(10.dp, itemShape) else Modifier)
+                            .graphicsLayer {
+                                if (dragging) {
+                                    scaleX = 1.05f
+                                    scaleY = 1.05f
+                                }
+                            }
+                            // 位置要按窗口坐标记：抽屉在独立的 Dialog 窗口里，局部坐标对不上手指
+                            .onGloballyPositioned { bounds[site.key] = it.boundsInWindow() }
                             .border(
                                 width = if (selected) 1.5.dp else 1.dp,
                                 color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
-                                shape = RoundedCornerShape(10.dp),
+                                shape = itemShape,
                             )
                             .background(
                                 if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent,
-                                RoundedCornerShape(10.dp),
+                                itemShape,
                             )
+                            // 长按拖动排序：只在不搜索时启用——搜索结果只是列表的子集，拖它无法表达整体顺序
+                            .pointerInput(site.key, keyword.isBlank()) {
+                                if (keyword.isNotBlank()) return@pointerInput
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { local ->
+                                        val box = bounds[site.key]
+                                        if (box != null) {
+                                            dragKey = site.key
+                                            dragPointer = box.topLeft + local
+                                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                        }
+                                    },
+                                    onDrag = { change, amount ->
+                                        change.consume()
+                                        if (dragKey == site.key) {
+                                            dragPointer += amount
+                                            moveDraggedTo(dragPointer)
+                                            autoScroll = when {
+                                                gridBounds.height <= 0f -> 0
+                                                dragPointer.y < gridBounds.top + edgeSlopPx -> -1
+                                                dragPointer.y > gridBounds.bottom - edgeSlopPx -> 1
+                                                else -> 0
+                                            }
+                                        }
+                                    },
+                                    onDragEnd = {
+                                        val changed = dragKey != null &&
+                                            order.map { it.key } != sites.map { it.key }
+                                        dragKey = null
+                                        autoScroll = 0
+                                        if (changed) onReorder(order.map { it.key })
+                                    },
+                                    onDragCancel = {
+                                        dragKey = null
+                                        autoScroll = 0
+                                    },
+                                )
+                            }
                             .clickable { onPick(site.key) }
                             .padding(horizontal = 12.dp, vertical = 14.dp),
                         verticalAlignment = Alignment.CenterVertically,
