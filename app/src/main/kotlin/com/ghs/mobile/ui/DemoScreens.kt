@@ -1322,11 +1322,11 @@ fun DemoApp(
                                         }
                                     }
                                     // 当前 Tab：底栏已经高亮，这里只作次要提示，不抢标题的位置；
-                                    // 首页在看某个标签的列表时，这里显示标签名（否则看不出筛过什么）
+                                    // 首页在看某个标签的列表时，这里显示标签名（否则看不出筛过什么）。
+                                    // 收藏/历史不显示：底栏已高亮当前 tab，本站顶栏只留站点名，避免重复。
                                     val tabName = when (tab) {
                                         DemoTab.HOME -> activeTagTitle?.takeIf { screen is Screen.List } ?: ""
-                                        DemoTab.FAVORITES -> "收藏"
-                                        DemoTab.HISTORY -> "历史"
+                                        DemoTab.FAVORITES, DemoTab.HISTORY -> ""
                                     }
                                     if (tabName.isNotEmpty()) {
                                         Text(
