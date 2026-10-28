@@ -1,6 +1,10 @@
 package com.ghs.mobile.ui
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -46,11 +50,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
@@ -74,7 +78,7 @@ import coil.request.ImageRequest
  *
  * 对应"右上角点站点名 → 选站点"的交互。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun SitePickerSheet(
     sites: List<ConfigStore.StoredConfig>,
@@ -169,29 +173,47 @@ fun SitePickerSheet(
                     val selected = site.key == currentKey
                     val dragging = dragKey == site.key
                     val itemShape = RoundedCornerShape(10.dp)
+                    // "拿起来"的程度做成 0→1 的动画量：底色、阴影、缩放一起过渡，
+                    // 之前是二值切换，按下/松手那一下会硬跳一下（生硬）
+                    val lift by animateFloatAsState(
+                        targetValue = if (dragging) 1f else 0f,
+                        animationSpec = tween(durationMillis = 140, easing = FastOutSlowInEasing),
+                        label = "site-lift",
+                    )
+                    val scheme = MaterialTheme.colorScheme
+                    // 抬起态要"实心 + 阴影"：卡片平时是透明底的，只加阴影/放大挡不住阴影层，
+                    // 会透出一块白板。所以按状态换底色与描边，让抬起的那张看起来是张真卡片。
+                    val restingColor = if (selected) scheme.primary.copy(alpha = 0.08f) else Color.Transparent
+                    val containerColor = lerp(restingColor, scheme.surfaceContainerHighest, lift)
+                    val borderColor = lerp(
+                        if (selected) scheme.primary else scheme.outlineVariant,
+                        scheme.primary,
+                        lift,
+                    )
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            // 拖动中的卡片浮到最上层并轻微放大，看得出"拿起来了"
+                            // 换位时让卡片滑动过去，而不是瞬移
+                            .animateItem(placementSpec = tween(durationMillis = 160, easing = FastOutSlowInEasing))
+                            // 浮到最上层
                             .zIndex(if (dragging) 1f else 0f)
-                            .then(if (dragging) Modifier.shadow(10.dp, itemShape) else Modifier)
+                            // 阴影与缩放放在同一个 graphicsLayer 里：分成两层时阴影按未缩放的
+                            // 边界绘制，会被裁成一条贴在卡片边上的白边
                             .graphicsLayer {
-                                if (dragging) {
-                                    scaleX = 1.05f
-                                    scaleY = 1.05f
-                                }
+                                val scale = 1f + 0.03f * lift
+                                scaleX = scale
+                                scaleY = scale
+                                shadowElevation = 8.dp.toPx() * lift
+                                shape = itemShape
                             }
                             // 位置要按窗口坐标记：抽屉在独立的 Dialog 窗口里，局部坐标对不上手指
                             .onGloballyPositioned { bounds[site.key] = it.boundsInWindow() }
                             .border(
                                 width = if (selected) 1.5.dp else 1.dp,
-                                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.outlineVariant,
+                                color = borderColor,
                                 shape = itemShape,
                             )
-                            .background(
-                                if (selected) MaterialTheme.colorScheme.primary.copy(alpha = 0.08f) else Color.Transparent,
-                                itemShape,
-                            )
+                            .background(containerColor, itemShape)
                             // 长按拖动排序：只在不搜索时启用——搜索结果只是列表的子集，拖它无法表达整体顺序
                             .pointerInput(site.key, keyword.isBlank()) {
                                 if (keyword.isNotBlank()) return@pointerInput
