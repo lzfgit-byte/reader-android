@@ -255,7 +255,7 @@ fun VideoPlayerScreen(
         val httpFactory = OkHttpDataSource.Factory(mediaClient)
             .setDefaultRequestProperties(
                 buildMap {
-                    referer?.takeIf { it.isNotBlank() }?.let { put("Referer", it) }
+                    referer?.takeIf { it.isNotBlank() }?.let { put("Referer", asciiHeaderValue(it)) }
                     put(
                         "User-Agent",
                         com.ghs.mobile.core.engine.net.UserAgents.UA,
@@ -263,6 +263,8 @@ fun VideoPlayerScreen(
                 },
             )
         val dataSource = DefaultDataSource.Factory(context, httpFactory)
+        // æŽ’æŸ¥åª’ä½“ 403 çš„ç¬¬ä¸€æ‰‹è¯æ®ï¼šCDN æ™®éæŒ‰ Referer æ”¾è¡Œï¼Œç¼ºäº†ä¼šè¢«é‡å®šå‘åˆ° 403 é¡µ
+        android.util.Log.i("GHS", "video source referer=${referer ?: "(ç©º)"} url=$currentUrl")
         DefaultMediaSourceFactory(dataSource)
     }
 
@@ -1155,3 +1157,27 @@ private fun LockIcon(locked: Boolean, tint: Color, boxSize: androidx.compose.ui.
     }
 }
 
+
+/**
+ * ÄÜ°²È«·Å½ø HTTP Í·µÄ URL¡£
+ *
+ * OkHttp µÄ `Headers.checkValue` Ö»½ÓÊÜ `0x20..0x7e`£ºÏêÇéµØÖ·Àï´øÖÐÎÄÊ±£¨ÀýÈç
+ * `https://avjoy.me/video/103701/‡ø®aav-¡­`£©£¬`Request.Builder.header("Referer", ¡­)` »áÖ±½ÓÅ×
+ * `IllegalArgumentException: Unexpected char 0x570b`£¬ÇëÇó¸ù±¾·¢²»³öÈ¥¡ª¡ª±íÏÖÊÇ"Ò»½ø²¥·ÅÆ÷¾Í±¨
+ * ²¥·Å´íÎó¡¢Èý´ÎÖØ²¦È«Ê§°Ü"¡£ËùÒÔÍ·ÖµÍ³Ò»¹ýÒ»±é°Ù·ÖºÅ±àÂë¡£
+ */
+internal fun asciiHeaderValue(raw: String): String = runCatching {
+    java.net.URI(raw).toASCIIString()
+}.getOrElse {
+    buildString {
+        raw.forEach { ch ->
+            if (ch.code in 0x20..0x7e) {
+                append(ch)
+            } else {
+                ch.toString().toByteArray(Charsets.UTF_8).forEach { byte ->
+                    append('%').append(String.format("%02X", byte.toInt() and 0xFF))
+                }
+            }
+        }
+    }
+}

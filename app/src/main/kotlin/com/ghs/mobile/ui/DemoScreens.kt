@@ -2541,10 +2541,14 @@ private fun deviceReferer(session: ReaderSession?, item: Item): String? {
  * 优先用**详情页地址**：站点自己的播放器就是从这个页面发起 m3u8 请求的，CDN 按页面地址放行；
  * `jumpUrl` 不是绝对地址（或没有来源会话）时退回站点 origin。
  * 该值挂在 DataSource 的默认请求头上，所以 playlist 里后续的子列表 / 分片请求也带同一个 Referer。
+ *
+ * **必须是 ASCII**：OkHttp 的 `Headers.checkValue` 不接受非 ASCII 头值（中文详情地址会在
+ * `Request.Builder.header` 直接抛 IllegalArgumentException，表现成"一进播放器就失败"），
+ * 所以这里统一过一遍百分号编码。
  */
 private fun playbackReferer(session: ReaderSession?, item: Item): String? {
     val page = item.jumpUrl.trim()
-    if (page.startsWith("http://") || page.startsWith("https://")) return page
+    if (page.startsWith("http://") || page.startsWith("https://")) return asciiHeaderValue(page)
     return deviceReferer(session, item)
 }
 /**
