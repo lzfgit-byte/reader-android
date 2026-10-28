@@ -116,7 +116,9 @@ class HttpScriptHost(
                                 // 等只会让界面白转两分钟；只有会自算的（工作量验证）才值得等
                                 val selfSolving = challenge && !isInteractiveChallenge(peek)
                                 val html = fetchWithWebView(url, expectChallenge = selfSolving)
-                                if (html.isNotBlank() && !isChallengePage(html) && !tooShortToBeContent(html)) {
+                                if (html.isNotBlank() && !isChallengePage(html) &&
+                                    !tooShortToBeContent(html) && !isWebViewErrorPage(html)
+                                ) {
                                     htmlCache?.put(url, html)
                                     return html
                                 }
@@ -126,7 +128,7 @@ class HttpScriptHost(
                                 if (!challengeSeen) {
                                     android.util.Log.w(
                                         "GHS",
-                                        "webview 取回空白/短页（${html.length} 字符），按取页失败处理 $url",
+                                        "webview 取回非正文页（${describeNonContent(html)}），按取页失败处理 $url",
                                     )
                                 }
                                 if (challengeSeen && !challengeTried) {
@@ -147,7 +149,13 @@ class HttpScriptHost(
                                         }
                                     }
                                 }
-                                throw IllegalStateException("取页失败：站点要求人机校验且未通过 $url")
+                                throw IllegalStateException(
+                                    if (challengeSeen) {
+                                        "取页失败：站点要求人机校验且未通过 $url"
+                                    } else {
+                                        "取页失败：HTTP ${response.code} · ${describeNonContent(html)} $url"
+                                    },
+                                )
                             }
                             throw IllegalStateException("取页失败：HTTP ${response.code} $url")
                         }
@@ -156,8 +164,10 @@ class HttpScriptHost(
                         // 把 Set-Cookie 同步给 WebView：否则无头取页拿到的登录态
                         // 不会带到「显示 webview」的窗口里，页面就是空白
                         syncCookies(url, response.headers)
-                        // 200 也可能是挑战页：不缓存，交给上层按失败处理
-                        if (!isChallengePage(body) && !tooShortToBeContent(body)) htmlCache?.put(url, body)
+                        // 200 也可能是挑战页 / 代理的错误页：不缓存，交给上层按失败处理
+                        if (!isChallengePage(body) && !tooShortToBeContent(body) && !isWebViewErrorPage(body)) {
+                            htmlCache?.put(url, body)
+                        }
                         return body
                     }
                 } catch (error: java.io.IOException) {
@@ -172,7 +182,9 @@ class HttpScriptHost(
             // WebView 是浏览器握手，抗干扰能力比 OkHttp 强，且能执行页面脚本。
             android.util.Log.w("GHS", "fetchHtml 连接失败(${lastError?.message}) → webview fallback $url")
             val viaWebView = fetchWithWebView(url)
-            if (viaWebView.isNotBlank() && !isChallengePage(viaWebView) && !tooShortToBeContent(viaWebView)) {
+            if (viaWebView.isNotBlank() && !isChallengePage(viaWebView) &&
+                !tooShortToBeContent(viaWebView) && !isWebViewErrorPage(viaWebView)
+            ) {
                 htmlCache?.put(url, viaWebView)
                 return viaWebView
             }
@@ -193,8 +205,13 @@ class HttpScriptHost(
             } else {
                 android.util.Log.w(
                     "GHS",
-                    "webview 取回空白/短页（${viaWebView.length} 字符），按取页失败处理 $url",
+                    "webview 取回非正文页（${describeNonContent(viaWebView)}），按取页失败处理 $url",
                 )
+            }
+            // WebView 明确打不开时，把"打不开"这件事说清楚：抛原始 IOException 的话
+            // 界面只会显示一句连接错误，用户分不清是站点挂了还是自己网络没通
+            if (isWebViewErrorPage(viaWebView)) {
+                throw IllegalStateException("取页失败：${describeNonContent(viaWebView)} $url", lastError)
             }
             throw lastError ?: IllegalStateException("取页失败：站点要求人机校验且未通过 $url")
         } finally {
@@ -214,6 +231,12 @@ class HttpScriptHost(
 
     /** 短到不可能是正文：不弹校验窗、不进等待，直接按取页失败处理 */
     private fun tooShortToBeContent(html: String): Boolean = PageClassifier.tooShortToBeContent(html)
+
+    /** WebView / Chromium 的网络错误页（离线、代理不通、DNS 失败）：同样按取页失败处理 */
+    private fun isWebViewErrorPage(html: String): Boolean = PageClassifier.isWebViewErrorPage(html)
+
+    /** "这为什么不是正文"：日志与报错共用一句话，避免两边各写一套说法 */
+    private fun describeNonContent(html: String): String = PageClassifier.describeNonContent(html)
 
     /**
      * 用于非 2xx 的拒绝页：这类页面可能很短，但"短"本身不能作为挑战判据
@@ -285,8 +308,13 @@ class HttpScriptHost(
                 "GHS",
                 "webview html len=${last.length} title=${titleOf(last)} url=$url",
             )
-            // 短页不是挑战页，但也不可能是正文：多半是 WebView 自己的网络错误页
-            if (tooShortToBeContent(last)) {
+            // 短页 / 错误页都不是挑战页，但也不可能是正文：交给上层按取页失败处理
+            if (isWebViewErrorPage(last)) {
+                android.util.Log.w(
+                    "GHS",
+                    "webview 取回错误页（${titleOf(last)}），不作为正文 $url",
+                )
+            } else if (tooShortToBeContent(last)) {
                 android.util.Log.w("GHS", "webview 取回短页（${last.length} 字符），不作为正文 $url")
             }
             return last

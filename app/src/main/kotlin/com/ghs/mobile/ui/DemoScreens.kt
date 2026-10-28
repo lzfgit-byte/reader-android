@@ -1490,7 +1490,15 @@ fun DemoApp(
 
                 is Screen.Failed -> Centered {
                     Text("解析失败", style = MaterialTheme.typography.titleMedium)
-                    Text(current.message, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Monospace)
+                    // 失败原因可能很长（例如「WebView 打不开页面（…）」+ 完整 URL）：
+                    // 留边距并居中换行，否则文字会顶到屏幕两侧、看着像被裁掉
+                    Text(
+                        current.message,
+                        style = MaterialTheme.typography.bodySmall,
+                        fontFamily = FontFamily.Monospace,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.padding(top = 6.dp, start = 24.dp, end = 24.dp),
+                    )
 
                     // 失败原因常常是"配的地址不是 HTTP 代理"，把判定线索直接摆出来
                     val rules = app.proxyRules()

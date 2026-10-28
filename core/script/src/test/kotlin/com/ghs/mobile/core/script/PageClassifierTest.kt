@@ -73,4 +73,41 @@ class PageClassifierTest {
         assertEquals("示例站", PageClassifier.titleOf("<html><head><title> 示例站 </title></head></html>"))
         assertEquals("", PageClassifier.titleOf("<html></html>"))
     }
+
+    @Test
+    fun `WebView 错误页够长但按取页失败处理`() {
+        // Android WebView 打不开页面时渲染的本地错误页：两千多字节、带错误码与样例链接，
+        // 长度超过 MIN_CONTENT_LENGTH，早先会被当成正常页面解析 → 列表 0 条
+        val errorPage = buildString {
+            append("<html><head><title>Webpage not available</title></head><body>")
+            append("<h1>Webpage not available</h1>")
+            append("<p>The webpage at <b>https://bad.news/tag/porn</b> could not be loaded because:</p>")
+            append("<p>net::ERR_PROXY_CONNECTION_FAILED</p>")
+            append("<p>Check your connection and try again.</p>")
+            repeat(40) { append("<div class='tips'>排查建议 $it：检查网络连接、代理设置、DNS 解析</div>") }
+            append("</body></html>")
+        }
+        assertTrue(errorPage.length > PageClassifier.MIN_CONTENT_LENGTH)
+        assertTrue(PageClassifier.isWebViewErrorPage(errorPage))
+        assertFalse(PageClassifier.isChallenge(errorPage))
+        assertFalse(PageClassifier.tooShortToBeContent(errorPage))
+        assertEquals("WebView 打不开页面（Webpage not available）", PageClassifier.describeNonContent(errorPage))
+    }
+
+    @Test
+    fun `chromium 内部地址也认作错误页`() {
+        val html = "<html><head><title>示例站</title></head><body><a href='chrome-error://chromewebdata/'>重试</a></body></html>"
+        assertTrue(PageClassifier.isWebViewErrorPage(html))
+    }
+
+    @Test
+    fun `正常页面不会被误判成错误页`() {
+        val page = buildString {
+            append("<html><head><title>最近更新 - 示例站</title></head><body>")
+            repeat(40) { append("<div class='item'><a href='/p/$it'>条目 $it 的标题</a></div>") }
+            append("</body></html>")
+        }
+        assertFalse(PageClassifier.isWebViewErrorPage(page))
+        assertEquals("取回的不是正文页", PageClassifier.describeNonContent(page))
+    }
 }
