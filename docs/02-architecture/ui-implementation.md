@@ -1,5 +1,5 @@
 > **状态**：draft
-> **版本**：v1.24
+> **版本**：v1.25
 > **最后更新**：2026-10-28
 > **取代/被取代**：取代同文件 v1.5
 
@@ -210,7 +210,7 @@ Scaffold
 |---|---|---|---|
 | `ContentCard` | 内容卡片 | 默认/按下/已收藏/加载中/加载失败 | 尺寸由 `imgWidth/imgHeight` 决定（支持 `px`/`dp`/`vw`/`%`）；`cardStyle` 切换三种排布；有 `author` 时在标题下显示一行次要文字 |
 | `SiteAvatar` | 站点图标（顶栏来源切换 18dp / 站点选择器 34dp） | 有图标 / 无图标（首字色块） | 取配置 `favicon`，格式支持见 [config-spec](../03-api/config-spec.md) §3.1（位图 / **svg** / `data:` 内联图）；取不到或解不开时露出底下的**首字色块**，不留空位；图标必须由 `AsyncImage` 自己绘制——用 `painter.state` 在外层做分支会因为没人绘制而永远停在 Loading |
-| `SitePickerSheet` | 站点抽屉（顶栏来源名 / 抽屉「来源」） | 默认 / 搜索过滤 / 拖动中 | 两列卡片 + 顶部搜索框，当前站点打勾；**长按卡片拖动排序**：拖动中的卡片**换成实心底色（`surfaceContainerHighest`）+ 主色描边 + 8dp 阴影 + 放大 1.03**，越过目标格即换位（同一格不重复移动）。动画分两层：**抬起**用 0→1 的 `animateFloatAsState`（140ms `tween`）驱动底色/阴影/缩放，**换位**用 `Modifier.animateItem(placementSpec = tween(160ms))`（`ExperimentalFoundationApi`）让卡片滑到新格而不是瞬移；命中判断读的是布局坐标，动画只作用在绘制层，所以位移动画不会让人自己"追"着手指来回换位。注意三处坑：①卡片平时是**透明底**，只加阴影或放大时阴影层会透成一块白板，必须先给抬起态一个实心底色；②阴影与缩放要放在**同一个** `graphicsLayer` 里（`shadowElevation` + `shape` + `scale`），拆成两层时阴影按未缩放边界绘制，会在卡片边上留一条白边；③抬起态是连续量（`lift`），不要再写成 `if (dragging)` 的二值切换，否则按下/松手会硬跳。用每张卡片的 `boundsInWindow` 命中判断手指落在哪一格，**抽屉在独立 Dialog 窗口，必须用窗口坐标**而不是局部坐标；拖到列表上下边缘 72dp 内自动滚动（`LazyGridState.scrollBy` + `withFrameNanos` 逐帧），滚动后按最新位置重新判定目标；松手回调 `onReorder(keys)` 落库，搜索框有内容时禁用拖动（子集顺序无法表达整体） |
+| `SitePickerSheet` | 站点抽屉（顶栏来源名 / 抽屉「来源」） | 默认 / 搜索过滤 / 拖动中 | 两列卡片 + 顶部搜索框，当前站点打勾；**长按卡片拖动排序**：拖动中的卡片**换成实心底色（`surfaceContainerHighest`）+ 主色描边 + 8dp 阴影 + 放大 1.03**，并且**严格跟手**——卡片被"拿起来"后贴在手指下随手指移动，越过目标格才换位（同一格不重复移动），槽位处留出空位。动画分两层：**抬起**用 0→1 的 `animateFloatAsState`（140ms `tween`）驱动底色/阴影/缩放，**换位**用 `Modifier.animateItem(placementSpec = tween(160ms))`（`ExperimentalFoundationApi`）让**其它**卡片滑到新格；被拖的那张**不能**加 `animateItem`，它的位置由跟手位移决定，槽位动画叠上去会让人自己"追"着手指漂。四处坑：①跟手位移必须**自己累加**（手指增量 + 换位时的格子差 + 自动滚动的滚动量），不要每帧去读布局坐标反推——`onGloballyPositioned` 若放在 `graphicsLayer` 里面会把本层位移算进坐标，位移于是拿上一帧的自己修正自己，卡片会越飞越远；②卡片平时是**透明底**，只加阴影或放大时阴影层会透成一块白板，必须先给抬起态一个实心底色；③阴影与缩放要放在**同一个** `graphicsLayer` 里（`shadowElevation` + `shape` + `scale`），拆成两层时阴影按未缩放边界绘制，会在卡片边上留一条白边；④抬起态是连续量（`lift`），不要写成 `if (dragging)` 的二值切换，否则按下/松手会硬跳。命中判断仍用每张卡片的 `boundsInWindow`（布局坐标，不含位移），**抽屉在独立 Dialog 窗口，必须用窗口坐标**；拖到列表上下边缘 72dp 内自动滚动（`LazyGridState.scrollBy` + `withFrameNanos` 逐帧），滚动量补进跟手位移后按最新位置重新判定目标；松手时用 140ms 把残余位移滑回 0（别直接清，会"啪"地跳一下），再回调 `onReorder(keys)` 落库；搜索框有内容时禁用拖动（子集顺序无法表达整体） |
 | `TypeBadge` | 右上角类型角标 | 视频/图片/图集 | 文案 ≤ 4 字符；半透明黑底白字 |
 | `CollectStar` | 收藏星标 | 未收藏/已收藏/提交中 | 点击不进入详情（拦截事件） |
 | `MarqueeTitle` | 单行滚动标题 | 静止/滚动 | 仅在文本超宽时滚动；页面不可见时暂停 |
@@ -421,3 +421,4 @@ Idle ──► Loading(first) ──► Content ──► Loading(more) ──�
 | v1.22 | 2026-10-28 | §5 新增 `SitePickerSheet`：两列卡片 + 搜索 + **长按拖动排序**（窗口坐标命中判断、边缘自动滚动、松手落库）；搜索过滤时禁用拖动 |
 | v1.23 | 2026-10-28 | §5 `SitePickerSheet` 调整拖动中的视觉：实心底色 + 主色描边 + 8dp 阴影 + 放大 1.03，并把「透明底透成白板」「阴影与缩放必须同一层」两条坑记进文档 |
 | v1.24 | 2026-10-28 | §5 `SitePickerSheet` 拖动加动画：抬起用 140ms 的 `lift` 连续量、换位用 `animateItem` 160ms placement，并记明动画只作用在绘制层、命中判断仍读布局坐标 |
+| v1.25 | 2026-10-28 | §5 `SitePickerSheet` 改为**严格跟手**：卡片贴在手指下移动、槽位留空；跟手位移自己累加（手指增量 + 换位格子差 + 滚动量），记明「`onGloballyPositioned` 不能放进 `graphicsLayer` 里面」的坑，松手用 140ms 回落 |
