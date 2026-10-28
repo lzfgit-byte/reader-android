@@ -109,6 +109,32 @@ private const val SEEK_STEP_MS = 10_000L
 /** 控制层自动隐藏时间 */
 private const val CONTROLS_HIDE_MS = 3_500L
 
+/** 自动重连（重拨）最多试几次；三次仍失败就把决定权交回用户 */
+private const val AUTO_REDIAL_MAX = 3
+
+/** 每次重拨前的等待：2s / 4s / 8s，避开"刚断就重连"的抖动窗口 */
+private val AUTO_REDIAL_DELAYS_MS = longArrayOf(2_000L, 4_000L, 8_000L)
+
+/**
+ * 哪些播放错误值得自动重拨。
+ *
+ * 只重连**连接/传输**这一类：网络断开、连接超时、HTTP 4xx/5xx、直播落后窗口、IO 未分类。
+ * 解析/解码/容器不支持（`ERROR_CODE_PARSING_*`、`ERROR_CODE_DECODING_*`、
+ * `ERROR_CODE_DECODER_INIT_FAILED`、`ERROR_CODE_UNSUPPORTED_*`）重连多少次都一样，
+ * 直接留给用户（换线路 / 外部播放器）。
+ */
+private fun isAutoRetryable(error: PlaybackException): Boolean = when (error.errorCode) {
+    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+    PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+    PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+    PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+    PlaybackException.ERROR_CODE_TIMEOUT,
+    PlaybackException.ERROR_CODE_REMOTE_ERROR,
+    PlaybackException.ERROR_CODE_BEHIND_LIVE_WINDOW,
+    -> true
+    else -> false
+}
+
 /**
  * 视频播放器：Media3（ExoPlayer）+ HLS，控制层自绘（**不用 PlayerView 自带控制器**）。
  *
@@ -208,7 +234,8 @@ fun VideoPlayerScreen(
         }
     }
 
-    val player = remember(currentUrl) {
+    // 媒体源工厂留一份：自动重连（重拨）要重新 createMediaSource，并把中断位置带进去
+    val mediaFactory = remember(currentUrl) {
         // 视频 CDN 常拦截代理出口 IP（直连 200、走代理 403）：403 时直连重试一次
         val baseClient = GhsApp.instance.proxiedClient()
         val directClient = baseClient.newBuilder()
@@ -236,11 +263,43 @@ fun VideoPlayerScreen(
                 },
             )
         val dataSource = DefaultDataSource.Factory(context, httpFactory)
+        DefaultMediaSourceFactory(dataSource)
+    }
+
+    val player = remember(currentUrl) {
         ExoPlayer.Builder(context).build().apply {
-            setMediaSource(DefaultMediaSourceFactory(dataSource).createMediaSource(MediaItem.fromUri(currentUrl)))
+            setMediaSource(mediaFactory.createMediaSource(MediaItem.fromUri(currentUrl)))
             prepare()
             // 默认从 0 开始；有历史进度时由「继续观看」按钮决定是否跳转
             playWhenReady = true
+        }
+    }
+
+    // 自动重连（重拨）：网络/HTTP 中断后按 2s / 4s / 8s 各重拨一次，三次仍失败才把错误交给用户。
+    // 解码类错误不重拨——重连解决不了格式问题，直接保留手动出口。
+    var retryAttempt by remember(currentUrl) { mutableIntStateOf(0) }
+    var retryPending by remember(currentUrl) { mutableStateOf(false) }
+    var retryIn by remember(currentUrl) { mutableIntStateOf(0) }
+    var retryToken by remember(currentUrl) { mutableIntStateOf(0) }
+    // 中断位置：重拨后用 setMediaSource(source, startPositionMs) 从那里接着播
+    var retryPositionMs by remember(currentUrl) { mutableLongStateOf(0L) }
+    // 自动重播提示：播完从头再来时闪一下，几秒后自己消失
+    var replayHint by remember(currentUrl) { mutableStateOf(false) }
+
+    /** 立刻重拨：重建媒体源并从 [retryPositionMs] 续播（错误叠层先撤掉，失败会再弹回来） */
+    fun redialNow() {
+        val pos = retryPositionMs
+        retryPending = false
+        retryIn = 0
+        error = null
+        android.util.Log.i(
+            "GHS",
+            "video redial ${retryAttempt}/$AUTO_REDIAL_MAX at ${pos}ms $currentUrl",
+        )
+        runCatching {
+            player.setMediaSource(mediaFactory.createMediaSource(MediaItem.fromUri(currentUrl)), pos)
+            player.prepare()
+            player.playWhenReady = true
         }
     }
 
@@ -248,9 +307,24 @@ fun VideoPlayerScreen(
         val listener = object : Player.Listener {
             override fun onPlayerError(playerError: PlaybackException) {
                 error = playerError.errorCodeName + " · " + (playerError.message ?: "")
-                // mp4 直链在应用内解不了时交给系统播放器，避免只剩一张错误页
                 val path = currentUrl.substringBefore("?").lowercase()
-                if (path.endsWith(".mp4")) openExternally()
+                val retryable = isAutoRetryable(playerError)
+                if (retryable && retryAttempt < AUTO_REDIAL_MAX) {
+                    val delayMs = AUTO_REDIAL_DELAYS_MS[retryAttempt]
+                    retryAttempt += 1
+                    retryPositionMs = player.currentPosition.coerceAtLeast(0)
+                    retryIn = (delayMs / 1000).toInt()
+                    retryPending = true
+                    retryToken += 1
+                    android.util.Log.w(
+                        "GHS",
+                        "video error ${playerError.errorCodeName} → 自动重连 " +
+                            "$retryAttempt/$AUTO_REDIAL_MAX，${delayMs}ms 后从 ${retryPositionMs}ms 重拨 $currentUrl",
+                    )
+                } else if (!retryable && path.endsWith(".mp4")) {
+                    // 重连也解决不了的 mp4（格式/解码不支持）：交给系统播放器，避免只剩一张错误页
+                    openExternally()
+                }
             }
 
             // 播放状态必须由播放器回调即时驱动：靠 500ms 轮询镜像会让按钮和图标滞后、连点还会切反
@@ -264,7 +338,19 @@ fun VideoPlayerScreen(
 
             override fun onPlaybackStateChanged(playbackState: Int) {
                 buffering = playbackState == Player.STATE_BUFFERING
-                if (playbackState == Player.STATE_ENDED) playing = false
+                if (playbackState == Player.STATE_ENDED) {
+                    playing = false
+                    // 自动重播：播完立刻从头再放。直播/时长未知的流不重播，避免原地空转
+                    if (player.duration > 0) {
+                        android.util.Log.i("GHS", "video ended → 自动重播 $currentUrl")
+                        replayHint = true
+                        // 上一轮"看完"的标记要清掉，否则重播后不再回写进度、也不会再触发下一轮重播
+                        reachedEnd = false
+                        player.seekTo(0)
+                        player.playWhenReady = true
+                        player.play()
+                    }
+                }
             }
         }
         player.addListener(listener)
@@ -279,6 +365,27 @@ fun VideoPlayerScreen(
         }
     }
 
+    // 倒计时结束就重拨；用户点「立即重连」会把 retryPending 置 false，这里随即退出
+    LaunchedEffect(retryToken) {
+        while (retryPending) {
+            delay(1_000)
+            if (!retryPending) break
+            retryIn -= 1
+            if (retryIn <= 0) {
+                redialNow()
+                break
+            }
+        }
+    }
+
+    // 「自动重播」提示只亮一小会儿
+    LaunchedEffect(replayHint) {
+        if (replayHint) {
+            delay(2_000)
+            replayHint = false
+        }
+    }
+
     // 每 500ms 刷新进度条，同时每 5s 回写一次进度
     LaunchedEffect(player) {
         var tick = 0
@@ -289,6 +396,11 @@ fun VideoPlayerScreen(
             durationMs = player.duration.coerceAtLeast(0)
             playing = player.isPlaying
             buffering = player.playbackState == Player.STATE_BUFFERING
+            // 真正"恢复"的判据是位置往前走了 10 秒，而不是 playing 变 true：
+            // 断网时播放器会短暂报告 playing，按时间判断会把重连计数清零，变成无限重试
+            if (retryAttempt > 0 && !retryPending && positionMs > retryPositionMs + 10_000) {
+                retryAttempt = 0
+            }
             // 播到结尾附近即视为看完：进度写 0，下次进来从头播
             if (!reachedEnd && durationMs > 0 && positionMs >= durationMs - 1_000) {
                 reachedEnd = true
@@ -510,6 +622,39 @@ fun VideoPlayerScreen(
             CircularProgressIndicator(
                 modifier = Modifier.align(Alignment.Center).size(44.dp),
                 color = Color(0xFF4DD0E1),
+            )
+        }
+
+        // 控制层隐藏时，底部留一条细进度条：随时知道播到哪，又不挡画面、不接受点击
+        if (!controlsVisible && error == null && durationMs > 0) {
+            val played = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(3.dp)
+                    .align(Alignment.BottomCenter)
+                    .background(Color(0x66000000)),
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth(played)
+                        .height(3.dp)
+                        .background(Color(0xFF7C4DFF)),
+                )
+            }
+        }
+
+        // 播完自动从头再来一遍时给一句提示，避免用户以为是"没播完就跳回去"
+        if (replayHint) {
+            Text(
+                "自动重播",
+                color = Color(0xFFE6E6EA),
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .padding(bottom = 96.dp)
+                    .background(Color(0x99000000), RoundedCornerShape(12.dp))
+                    .padding(horizontal = 10.dp, vertical = 4.dp),
             )
         }
 
@@ -798,7 +943,23 @@ fun VideoPlayerScreen(
                 contentAlignment = Alignment.Center,
             ) {
                 Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                    Text("无法播放", color = Color(0xFFE6E6EA), style = MaterialTheme.typography.titleSmall)
+                    Text(
+                        when {
+                            retryPending -> "播放中断 · 正在自动重连（第 $retryAttempt/$AUTO_REDIAL_MAX 次）"
+                            retryAttempt >= AUTO_REDIAL_MAX -> "自动重连 $AUTO_REDIAL_MAX 次仍失败"
+                            else -> "无法播放"
+                        },
+                        color = Color(0xFFE6E6EA),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                    if (retryPending) {
+                        Text(
+                            "$retryIn 秒后自动重拨…",
+                            color = Color(0xFFFFD180),
+                            style = MaterialTheme.typography.bodySmall,
+                            modifier = Modifier.padding(top = 6.dp),
+                        )
+                    }
                     Text(
                         error.orEmpty(),
                         color = Color(0xFFFF8A80),
@@ -812,6 +973,17 @@ fun VideoPlayerScreen(
                         modifier = Modifier.padding(top = 8.dp),
                     )
                     Row {
+                        if (retryPending) {
+                            // 不等倒计时：立刻重拨（次数已计过）
+                            TextButton(onClick = { redialNow() }) { Text("立即重连") }
+                        } else {
+                            // 手动重连：计数归零重新开始，位置取当前进度
+                            TextButton(onClick = {
+                                retryAttempt = 1
+                                retryPositionMs = player.currentPosition.coerceAtLeast(0)
+                                redialNow()
+                            }) { Text("重连") }
+                        }
                         TextButton(onClick = { sheet = PlayerSheet.SWITCHER }) { Text("换线路") }
                         TextButton(onClick = { openExternally() }) { Text("用外部播放器打开") }
                     }
