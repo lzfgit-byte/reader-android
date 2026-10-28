@@ -98,9 +98,9 @@ fun SitePickerSheet(
     val order = remember { mutableStateListOf<ConfigStore.StoredConfig>().apply { addAll(sites) } }
     var dragKey by remember { mutableStateOf<String?>(null) }
     var dragPointer by remember { mutableStateOf(Offset.Zero) }
-    // 拖动中卡片相对"自己格子"的位移。跟手 = 手指移动量 + 换位/滚动时的格子补偿，
-    // 全部在这一处累加：不依赖每帧去读布局坐标，否则位移会把自己上一帧的位移再算一遍
-    var dragOffset by remember { mutableStateOf(Offset.Zero) }
+    // 抓取点：手指落在卡片里的位置。跟手位移 = (手指 - 抓取点) - 卡片当前格子左上角，
+    // 每次都从当前格子重算（不累加），换位/滚动之后也不会攒出误差
+    var grabOffset by remember { mutableStateOf(Offset.Zero) }
     // 松手后让卡片从松手处滑回自己的格子，避免瞬移
     var settleKey by remember { mutableStateOf<String?>(null) }
     var settleOffset by remember { mutableStateOf(Offset.Zero) }
@@ -128,21 +128,14 @@ fun SitePickerSheet(
         val from = order.indexOfFirst { it.key == key }
         val to = order.indexOfFirst { it.key == target }
         if (from < 0 || to < 0) return
-        // 换位前先记住两个格子左上角的差：换完之后被拖的卡片要减去同样的差值，
-        // 否则它会跟着格子一起跳一格，看着就不跟手了
-        val oldSlot = bounds[key]?.topLeft
-        val newSlot = bounds[target]?.topLeft
         order.add(to, order.removeAt(from))
-        if (oldSlot != null && newSlot != null) dragOffset += oldSlot - newSlot
     }
 
     // 拖到列表上下边缘时自动滚动：20 个站点一屏放不下，不自动滚就只能拖到当前可见的那一行
     LaunchedEffect(autoScroll, dragKey) {
         if (dragKey == null) return@LaunchedEffect
         while (autoScroll != 0) {
-            val scrolled = gridState.scrollBy(autoScroll * edgeSlopPx * 0.35f)
-            // 列表滚动会把格子整体带走，位移补回去，卡片才会停在手指下
-            dragOffset += Offset(0f, scrolled)
+            gridState.scrollBy(autoScroll * edgeSlopPx * 0.35f)
             withFrameNanos { }
             moveDraggedTo(dragPointer)
         }
@@ -237,9 +230,13 @@ fun SitePickerSheet(
                                 shadowElevation = 8.dp.toPx() * lift
                                 shape = itemShape
                                 if (dragging) {
-                                    // 跟手：位移由手指移动量 + 换位/滚动补偿累加而来
-                                    translationX = dragOffset.x
-                                    translationY = dragOffset.y
+                                    // 跟手：卡片左上角 = 手指 - 抓取点。槽位（bounds）是布局坐标、
+                                    // 不含本层位移；每帧从当前格子重算，换位/滚动都不会攒误差
+                                    val box = bounds[site.key]
+                                    if (box != null) {
+                                        translationX = dragPointer.x - grabOffset.x - box.left
+                                        translationY = dragPointer.y - grabOffset.y - box.top
+                                    }
                                 } else if (settleKey == site.key) {
                                     // 松手回落：从松手处滑回自己的格子
                                     translationX = settleOffset.x
@@ -262,7 +259,7 @@ fun SitePickerSheet(
                                             settleKey = null
                                             settleOffset = Offset.Zero
                                             dragKey = site.key
-                                            dragOffset = Offset.Zero
+                                            grabOffset = local
                                             dragPointer = box.topLeft + local
                                             haptics.performHapticFeedback(HapticFeedbackType.LongPress)
                                         }
@@ -271,7 +268,6 @@ fun SitePickerSheet(
                                         change.consume()
                                         if (dragKey == site.key) {
                                             dragPointer += amount
-                                            dragOffset += amount
                                             moveDraggedTo(dragPointer)
                                             autoScroll = when {
                                                 gridBounds.height <= 0f -> 0
@@ -287,7 +283,15 @@ fun SitePickerSheet(
                                             order.map { it.key } != sites.map { it.key }
                                         // 松手时卡片通常还偏离自己的格子一段：让它滑回去，
                                         // 直接清位移会"啪"地跳一下
-                                        val residual = dragOffset
+                                        val box = key?.let { bounds[it] }
+                                        val residual = if (key != null && box != null) {
+                                            Offset(
+                                                dragPointer.x - grabOffset.x - box.left,
+                                                dragPointer.y - grabOffset.y - box.top,
+                                            )
+                                        } else {
+                                            Offset.Zero
+                                        }
                                         autoScroll = 0
                                         dragKey = null
                                         if (key != null && residual != Offset.Zero) {
