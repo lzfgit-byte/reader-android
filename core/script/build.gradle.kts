@@ -33,4 +33,14 @@ dependencies {
 
     // WebView 代理覆盖（ProxyController，ADR-0008）
     implementation("androidx.webkit:webkit:1.11.0")
+
+    // 取页结果分类器（PageClassifier）是纯逻辑，用 JVM 单测守住：
+    // "短页不等于挑战页"这条判据被破坏过一次，代价是纯网络故障也弹校验窗
+    testImplementation(kotlin("test"))
+    testImplementation("org.junit.jupiter:junit-jupiter:5.10.2")
+    testRuntimeOnly("org.junit.platform:junit-platform-launcher")
+}
+
+tasks.withType<Test>().configureEach {
+    useJUnitPlatform()
 }

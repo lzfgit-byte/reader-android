@@ -116,11 +116,20 @@ class HttpScriptHost(
                                 // 等只会让界面白转两分钟；只有会自算的（工作量验证）才值得等
                                 val selfSolving = challenge && !isInteractiveChallenge(peek)
                                 val html = fetchWithWebView(url, expectChallenge = selfSolving)
-                                if (html.isNotBlank() && !isChallengePage(html)) {
+                                if (html.isNotBlank() && !isChallengePage(html) && !tooShortToBeContent(html)) {
                                     htmlCache?.put(url, html)
                                     return html
                                 }
-                                if (!challengeTried) {
+                                // 只有**确实命中挑战特征**（响应体或 WebView 拿回的都是）才弹窗口：
+                                // 网络错误页、空白页、几十字节的拒绝页都不是挑战，弹窗没有可确认的内容
+                                val challengeSeen = challenge || isChallengePage(html)
+                                if (!challengeSeen) {
+                                    android.util.Log.w(
+                                        "GHS",
+                                        "webview 取回空白/短页（${html.length} 字符），按取页失败处理 $url",
+                                    )
+                                }
+                                if (challengeSeen && !challengeTried) {
                                     challengeTried = true
                                     val handler = challengeHandler
                                     if (handler != null) {
@@ -148,7 +157,7 @@ class HttpScriptHost(
                         // 不会带到「显示 webview」的窗口里，页面就是空白
                         syncCookies(url, response.headers)
                         // 200 也可能是挑战页：不缓存，交给上层按失败处理
-                        if (!isChallengePage(body)) htmlCache?.put(url, body)
+                        if (!isChallengePage(body) && !tooShortToBeContent(body)) htmlCache?.put(url, body)
                         return body
                     }
                 } catch (error: java.io.IOException) {
@@ -163,21 +172,29 @@ class HttpScriptHost(
             // WebView 是浏览器握手，抗干扰能力比 OkHttp 强，且能执行页面脚本。
             android.util.Log.w("GHS", "fetchHtml 连接失败(${lastError?.message}) → webview fallback $url")
             val viaWebView = fetchWithWebView(url)
-            if (viaWebView.isNotBlank() && !isChallengePage(viaWebView)) {
+            if (viaWebView.isNotBlank() && !isChallengePage(viaWebView) && !tooShortToBeContent(viaWebView)) {
                 htmlCache?.put(url, viaWebView)
                 return viaWebView
             }
-            // WebView 也撞到挑战：弹窗口让用户完成
-            val handler = challengeHandler
-            if (handler != null) {
-                android.util.Log.w("GHS", "fetchHtml 回退仍是校验页 → 展示校验窗口 $url")
-                if (handler(url)) {
-                    val retried = retryOnce(request)
-                    if (retried != null && !isChallengePage(retried)) {
-                        htmlCache?.put(url, retried)
-                        return retried
+            // 只有确实像挑战页才弹窗口。连接失败时 WebView 拿回的往往是网络错误页
+            // （离线 / 代理不通），弹窗既无内容可确认，还要白等两分钟——直接按原错误抛出。
+            if (isChallengePage(viaWebView)) {
+                val handler = challengeHandler
+                if (handler != null) {
+                    android.util.Log.w("GHS", "fetchHtml 回退拿到挑战页 → 展示校验窗口 $url")
+                    if (handler(url)) {
+                        val retried = retryOnce(request)
+                        if (retried != null && !isChallengePage(retried)) {
+                            htmlCache?.put(url, retried)
+                            return retried
+                        }
                     }
                 }
+            } else {
+                android.util.Log.w(
+                    "GHS",
+                    "webview 取回空白/短页（${viaWebView.length} 字符），按取页失败处理 $url",
+                )
             }
             throw lastError ?: IllegalStateException("取页失败：站点要求人机校验且未通过 $url")
         } finally {
@@ -188,39 +205,29 @@ class HttpScriptHost(
     /**
      * 判断拿回来的是不是「挑战页 / 拦截页」。
      *
-     * 这类页面不能当成内容：不能缓存，也不能直接解析，需要弹窗口给用户完成。
-     * 只按标题判断是不够的：Cloudflare 的挑战页会按浏览器语言本地化标题
-     * （中文环境是「请稍候…」而不是 "Just a moment..."），漏判的后果是把
-     * 挑战页当成正文缓存下来，界面就一直是"没有更多了"。
+     * **只认标题与结构标记**（规则见 [PageClassifier]），不再用长度当判据：WebView 的
+     * 网络错误页（离线、代理不通、DNS 失败）同样是空白或短页面，按长度判会把纯网络故障
+     * 当成"需要人机校验"——先白等两分钟，再弹一个没有任何可确认内容的空白校验窗。
+     * 短页面交给 [tooShortToBeContent] 判为取页失败。
      */
-    private fun isChallengePage(html: String): Boolean {
-        if (html.length < 512) return true
-        return looksLikeChallenge(html)
-    }
+    private fun isChallengePage(html: String): Boolean = PageClassifier.isChallenge(html)
+
+    /** 短到不可能是正文：不弹校验窗、不进等待，直接按取页失败处理 */
+    private fun tooShortToBeContent(html: String): Boolean = PageClassifier.tooShortToBeContent(html)
 
     /**
-     * 标题或结构标记任一命中即视为挑战页。
-     *
      * 用于非 2xx 的拒绝页：这类页面可能很短，但"短"本身不能作为挑战判据
-     * （否则一个空的 404 也会被当成挑战，被当成正文缓存下来）。
+     * （否则一个空的 404 也会被当成挑战页）。
      */
-    private fun looksLikeChallenge(html: String): Boolean {
-        if (html.isBlank()) return false
-        if (looksLikeChallengeTitle(titleOf(html))) return true
-        return CHALLENGE_MARKERS.any { html.contains(it, ignoreCase = true) }
-    }
+    private fun looksLikeChallenge(html: String): Boolean = PageClassifier.isChallenge(html)
 
-    private fun looksLikeChallengeTitle(title: String): Boolean {
-        if (title.isEmpty()) return false
-        return CHALLENGE_TITLES.any { title.contains(it, ignoreCase = true) }
-    }
+    private fun looksLikeChallengeTitle(title: String): Boolean = PageClassifier.isChallengeTitle(title)
 
     /** Cloudflare「托管挑战」需要人点一下（Turnstile 组件），等它自己过是白等 */
     private fun isInteractiveChallenge(html: String): Boolean =
         html.isNotBlank() && CF_INTERACTIVE_MARKERS.any { html.contains(it, ignoreCase = true) }
 
-    private fun titleOf(html: String): String =
-        TITLE_REGEX.find(html)?.groupValues?.getOrNull(1)?.trim().orEmpty()
+    private fun titleOf(html: String): String = PageClassifier.titleOf(html)
 
     /** 校验完成后重放一次原请求；仍失败则返回 null 交给上层兜底 */
     private fun retryOnce(request: Request): String? = runCatching {
@@ -278,6 +285,10 @@ class HttpScriptHost(
                 "GHS",
                 "webview html len=${last.length} title=${titleOf(last)} url=$url",
             )
+            // 短页不是挑战页，但也不可能是正文：多半是 WebView 自己的网络错误页
+            if (tooShortToBeContent(last)) {
+                android.util.Log.w("GHS", "webview 取回短页（${last.length} 字符），不作为正文 $url")
+            }
             return last
         }
         if (last.isBlank()) return last
@@ -695,26 +706,8 @@ class HttpScriptHost(
         /** 这些状态码说明直连被挡（Cloudflare / 校验页），值得用无头 WebView 再试一次 */
         private val WEBVIEW_FALLBACK_CODES = setOf(403, 492, 429, 503)
 
-        /** 挑战页标题特征：命中即视为需要人机校验 */
-        private val CHALLENGE_TITLES = listOf(
-            // Cloudflare 一类：标题按浏览器语言本地化，英文、中文都要覆盖
-            "just a moment", "checking your browser", "attention required",
-            "please wait", "captcha", "verify you are human",
-            "请稍候", "請稍候", "正在进行安全验证", "正在验证您是否", "安全验证",
-            "人机验证", "人机校验",
-            // 工作量验证（proof-of-work）类拦截页：标题常见「安全防御 - 工作量验证」
-            "工作量验证", "安全防御",
-        )
-
-        /** 挑战页结构标记：标题被改掉也认得出（只取挑战页独有、正文页不会出现的） */
-        private val CHALLENGE_MARKERS = listOf(
-            "_cf_chl_opt", "cf-chl-", "challenge-platform", "cf-browser-verification",
-        )
-
         /** 需要人点一下的挑战页（Cloudflare 托管挑战 / Turnstile）：等它自己过没用 */
         private val CF_INTERACTIVE_MARKERS = listOf("_cf_chl_opt", "challenge-platform")
-        private val TITLE_REGEX =
-            Regex("<title[^>]*>(.*?)</title>", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
         private val JSON_MEDIA_TYPE = "application/json; charset=utf-8".toMediaType()
 
         private fun defaultClient(rules: () -> ProxyRules): OkHttpClient = OkHttpClient.Builder()
