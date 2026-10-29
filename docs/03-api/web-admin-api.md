@@ -1,6 +1,6 @@
 > **状态**：draft
-> **版本**：v1.4
-> **最后更新**：2026-10-27
+> **版本**：v1.5
+> **最后更新**：2026-10-29
 > **取代/被取代**：取代同文件 v1.2
 
 # 内置 Web 管理服务 API
@@ -140,8 +140,8 @@ POST /api/validate
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
-| GET | `/api/backup/export` | 整包备份：**全部配置 + 全部收藏**，`application/json` + `Content-Disposition: attachment; filename="ghs-backup-<yyyyMMdd-HHmm>.json"`；格式见 [local-store](local-store.md) §5.1 |
-| POST | `/api/backup/restore` | 请求体为备份文件原文；**全量替换**配置与收藏，返回逐项计数；文件不合法时返回 400 + `E-BAK-*`，且**不写入任何数据** |
+| GET | `/api/backup/export` | 整包备份：**全部配置 + 全部收藏 + 全部阅读进度**，`application/json` + `Content-Disposition: attachment; filename="ghs-backup-<yyyyMMdd-HHmm>.json"`；格式见 [local-store](local-store.md) §5.1 |
+| POST | `/api/backup/restore` | 请求体为备份文件原文；**全量替换**配置、收藏与进度，返回逐项计数；文件不合法时返回 400 + `E-BAK-*`，且**不写入任何数据** |
 
 恢复成功返回：
 
@@ -149,7 +149,8 @@ POST /api/validate
 {
   "ok": true,
   "configs":  { "added": 2, "updated": 1, "removed": 3 },
-  "collects": { "imported": 12, "removed": 9 }
+  "collects": { "imported": 12, "removed": 9 },
+  "progress": { "imported": 7, "removed": 5 }
 }
 ```
 
@@ -158,14 +159,17 @@ POST /api/validate
 | 错误码 | HTTP | 含义 |
 |---|---|---|
 | `E-BAK-001` | 400 | `$schema` 不是 `ghs-backup/1` |
-| `E-BAK-002` | 400 | 空文件 / JSON 不合法 / 缺 `sections` / 两个类别都没有 |
+| `E-BAK-002` | 400 | 空文件 / JSON 不合法 / 缺 `sections` / 三个类别都没有 |
 | `E-BAK-003` | 400 | 配置 key 不合法、`source` 为空，或源码里的 `key:` 与记录不一致 |
 | `E-BAK-004` | 400 | 配置 key 重复 |
 | `E-BAK-005` | 400 | 超过 16MB |
 | `E-BAK-006` | 400 | `configs` 是空数组（拒绝清空全部站点） |
+| `E-BAK-007` | 400 | 进度的 `itemUrl` 为空或重复、`kind` 不是 `text`/`image`/`video` |
+| `E-BAK-008` | 400 | 仅 App 端「从链接恢复」：链接不是 http/https、HTTP 非 2xx、超时或连不上 |
 
-> 恢复只影响配置与收藏，**不动**端口、绑定、代理、凭证与 Cookie（[local-store](local-store.md) L6）。
-> 该动作不可撤销，Web 控制台与 App 端都在提交前展示"将替换多少配置/收藏"并要求确认。
+> 恢复只影响配置、收藏与进度，**不动**端口、绑定、代理、凭证与 Cookie（[local-store](local-store.md) L6）。
+> 该动作不可撤销，Web 控制台与 App 端都在提交前展示"将替换多少配置 / 收藏 / 进度"并要求确认。
+> App 端另有「从链接恢复」：下载后与选文件走同一条解析 → 预览 → 确认流程，不经过本 HTTP 接口。
 
 ### 4.5 运行时控制
 
@@ -384,3 +388,4 @@ GET /engine/listConfigUnits
 | v1.2 | 2026-10-19 | 调试接口补人机校验：`options.waitForChallenge` / `challengeTimeoutMs`、事件 `challenge` 与 `challengeResolved`、`E-CHALLENGE-*` 说明；修正错误表重复行 |
 | v1.3 | 2026-10-19 | WebDAV 明确**不走代理**（独立客户端 + `Proxy.NO_PROXY`）；`/engine` 定位补注为「本地调试出口」而非远程服务 |
 | v1.4 | 2026-10-27 | 新增 §4.4 备份与恢复（F20）：`GET /api/backup/export`、`POST /api/backup/restore`（全量替换、`E-BAK-*` 错误码、恢复报告）；原「运行时控制」顺延为 §4.5；顺带修掉收藏接口说明里两行多余的引号 |
+| v1.5 | 2026-10-29 | §4.4 备份范围加 `progress`：导出多一个进度段、恢复报告多 `progress { imported, removed }`；错误表补 `E-BAK-007`（进度校验）与 `E-BAK-008`（App 端从链接恢复）；注明恢复只动配置/收藏/进度 |
