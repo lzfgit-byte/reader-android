@@ -14,9 +14,9 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -117,9 +117,6 @@ private const val CONTROLS_HIDE_MS = 3_500L
 
 /** 长按多久算“按住加速”（太短会把单击误判成倍速） */
 private const val LONG_PRESS_MS = 350L
-
-/** 隐藏态细进度条的高度：固定值，别让它随内容/inset 被拉伸 */
-private val HIDDEN_BAR_HEIGHT = 3.dp
 
 /** 播放器里可选的快进/快退倍速 */
 private val PLAY_RATE_OPTIONS = listOf(1.5f, 2f, 3f, 4f)
@@ -680,26 +677,23 @@ fun VideoPlayerScreen(
             )
         }
 
-        // 控制层隐藏时，底部留一条细进度条：随时知道播到哪，又不挡画面、不接受点击。
-        // 用 Canvas 画而不是嵌套 Box：高度写死在 Canvas 上，不会被内层 fillMaxWidth/inset 拉伸
-        // （曾经出现过"播完后这条变粗成一条紫色横条"）
-        if (!controlsVisible && error == null && durationMs > 0) {
-            val played = (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
-            Canvas(
+        // 控制层隐藏时，右上角常驻「当前时间 / 总时长」：随时知道播到哪，
+        // 又不像底部进度条那样在画面最下缘画一条横线（手势条那一带，容易看着像"变粗"）。
+        if (!controlsVisible && error == null) {
+            val current = formatDuration(positionMs)
+            val total = if (durationMs > 0) formatDuration(durationMs) else "--:--"
+            Text(
+                "$current / $total",
+                color = Color(0xFFE6E6EA),
+                style = MaterialTheme.typography.labelMedium,
                 modifier = Modifier
-                    .fillMaxWidth()
-                    .height(HIDDEN_BAR_HEIGHT)
-                    .align(Alignment.BottomCenter)
-                    // 让开系统手势条：压在它下面会被系统栏裁/染色，看着就像"变粗了"
-                    .navigationBarsPadding()
-                    .clipToBounds(),
-            ) {
-                drawRect(Color(0x66000000))
-                drawRect(
-                    color = Color(0xFF7C4DFF),
-                    size = androidx.compose.ui.geometry.Size(size.width * played, size.height),
-                )
-            }
+                    .align(Alignment.TopEnd)
+                    // 让开状态栏：竖屏/分屏时状态栏还在，贴着顶边会被它压住
+                    .statusBarsPadding()
+                    .padding(top = 8.dp, end = 12.dp)
+                    .background(Color(0x99000000), RoundedCornerShape(10.dp))
+                    .padding(horizontal = 8.dp, vertical = 4.dp),
+            )
         }
 
         // 长按加速提示
