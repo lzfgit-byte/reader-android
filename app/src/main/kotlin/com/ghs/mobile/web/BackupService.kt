@@ -1,6 +1,8 @@
 package com.ghs.mobile.web
 
 import com.ghs.mobile.core.data.LocalRepository
+import com.ghs.mobile.core.model.ReaderKind
+import com.ghs.mobile.core.model.ReadingProgress
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -12,7 +14,8 @@ import org.json.JSONTokener
 /**
  * 备份与恢复（F20）。
  *
- * 一个文件装两类数据：**全部配置**与**全部收藏**（含"看过次数"）。
+ * 一个文件装三类数据：**全部配置**、**全部收藏**（含"看过次数"）与**全部阅读进度**
+ * （文本章节 / 图集页码 / 视频位置——漫画的“读到第几话第几页”就在这里）。
  * 恢复是 **replace**：文件里有的类别整体替换，不做合并——用户选"恢复"的语义是
  * "把设备变回备份时的样子"，合并会留下备份里没有的旧条目，反而不可预期。
  *
@@ -24,7 +27,8 @@ import org.json.JSONTokener
  *   "exportedAt": 1761550000000,
  *   "sections": {
  *     "configs":  [ { "key", "name", "enabled", "sort", "source" } ],
- *     "collects": [ { "configKey", "url", "payload", "count", "createTime" } ]
+ *     "collects": [ { "configKey", "url", "payload", "count", "createTime" } ],
+ *     "progress": [ { "itemUrl", "kind", "chapterUrl", "chapterIndex", … } ]
  *   }
  * }
  * ```
@@ -54,9 +58,28 @@ class BackupService(
     )
 
     /**
+     * 一条阅读进度。
+     *
+     * `kind` 用 `ReadingProgress` 自己的枚举，落库时与仓库一致（小写）。
+     * 图集（含漫画）靠 `chapterIndex` / `chapterOffset` 续到"第几话第几页"。
+     */
+    data class ProgressEntry(
+        val itemUrl: String,
+        val kind: ReaderKind,
+        val chapterUrl: String,
+        val chapterIndex: Int,
+        val chapterCount: Int,
+        val chapterOffset: Int,
+        val positionMs: Long,
+        val durationMs: Long,
+        val percent: Double,
+        val updatedAt: Long,
+    )
+
+    /**
      * 解析后的备份文件。
      *
-     * 两个列表都可能为 `null`：表示文件里**没有这个类别**（该类别保持原样）。
+     * 三个列表都可能为 `null`：表示文件里**没有这个类别**（该类别保持原样）。
      * 这与"空数组"不同——空数组是明确的"清空"意图。
      */
     data class Bundle(
@@ -64,9 +87,10 @@ class BackupService(
         val exportedAt: Long,
         val configs: List<ConfigEntry>?,
         val collects: List<CollectEntry>?,
+        val progress: List<ProgressEntry>? = null,
     ) {
         fun summary(): String =
-            "配置 ${configs?.size ?: 0} 份 · 收藏 ${collects?.size ?: 0} 条" +
+            "配置 ${configs?.size ?: 0} 份 · 收藏 ${collects?.size ?: 0} 条 · 进度 ${progress?.size ?: 0} 条" +
                 if (appVersion.isNotBlank()) " · 来自 $appVersion" else ""
     }
 
@@ -76,11 +100,17 @@ class BackupService(
         val configsRemoved: Int,
         val collectsImported: Int,
         val collectsRemoved: Int,
+        val progressImported: Int = 0,
+        val progressRemoved: Int = 0,
     ) {
         fun summary(): String = buildString {
             append("配置：新增 $configsAdded · 覆盖 $configsUpdated · 删除 $configsRemoved")
             append("；收藏：写入 $collectsImported 条")
             if (collectsRemoved > 0) append("（原有 $collectsRemoved 条已清空）")
+            if (progressImported > 0 || progressRemoved > 0) {
+                append("；进度：写入 $progressImported 条")
+                if (progressRemoved > 0) append("（原有 $progressRemoved 条已清空）")
+            }
         }
     }
 
@@ -114,6 +144,23 @@ class BackupService(
             )
         }
 
+        val progress = JSONArray()
+        runBlocking { repository.allProgress() }.forEach { item ->
+            progress.put(
+                JSONObject()
+                    .put("itemUrl", item.itemUrl)
+                    .put("kind", item.kind.name.lowercase())
+                    .put("chapterUrl", item.chapterUrl)
+                    .put("chapterIndex", item.chapterIndex)
+                    .put("chapterCount", item.chapterCount)
+                    .put("chapterOffset", item.chapterOffset)
+                    .put("positionMs", item.positionMs)
+                    .put("durationMs", item.durationMs)
+                    .put("percent", item.percent)
+                    .put("updatedAt", item.updatedAt),
+            )
+        }
+
         return JSONObject()
             .put(SCHEMA_KEY, SCHEMA)
             .put("appVersion", appVersion)
@@ -122,7 +169,8 @@ class BackupService(
                 "sections",
                 JSONObject()
                     .put("configs", configs)
-                    .put("collects", collects),
+                    .put("collects", collects)
+                    .put("progress", progress),
             )
             .toString(2)
     }
@@ -161,8 +209,9 @@ class BackupService(
             throw BackupException("E-BAK-006", "备份文件里没有配置，已中止（避免清空现有配置）")
         }
         val collects = sections.optJSONArray("collects")?.let { parseCollects(it) }
-        if (configs == null && collects == null) {
-            throw BackupException("E-BAK-002", "文件里既没有配置也没有收藏")
+        val progress = sections.optJSONArray("progress")?.let { parseProgress(it) }
+        if (configs == null && collects == null && progress == null) {
+            throw BackupException("E-BAK-002", "文件里既没有配置也没有收藏与进度")
         }
 
         return Bundle(
@@ -170,6 +219,7 @@ class BackupService(
             exportedAt = root.optLong("exportedAt", 0L),
             configs = configs,
             collects = collects,
+            progress = progress,
         )
     }
 
@@ -225,6 +275,45 @@ class BackupService(
         return entries
     }
 
+    /**
+     * 进度逐条校验：`itemUrl` 是唯一键（恢复时按 replace 落库），
+     * `kind` 只认仓库里的三种媒介，其余一律判为文件损坏——不猜。
+     */
+    private fun parseProgress(array: JSONArray): List<ProgressEntry> {
+        val entries = mutableListOf<ProgressEntry>()
+        val seen = mutableSetOf<String>()
+        for (i in 0 until array.length()) {
+            val item = array.optJSONObject(i)
+                ?: throw BackupException("E-BAK-007", "progress[$i] 不是对象")
+            val itemUrl = item.optString("itemUrl").trim()
+            if (itemUrl.isEmpty()) {
+                throw BackupException("E-BAK-007", "progress[$i] 缺少 itemUrl")
+            }
+            if (!seen.add(itemUrl)) {
+                throw BackupException("E-BAK-007", "progress 的 itemUrl 重复：$itemUrl")
+            }
+            val kindName = item.optString("kind").trim().lowercase().ifBlank { KIND_IMAGE }
+            val kind = ReaderKind.entries.firstOrNull { it.name.lowercase() == kindName }
+                ?: throw BackupException("E-BAK-007", "progress[$i] 的 kind 不合法：$kindName")
+            val percent = item.optDouble("percent", 0.0).let {
+                if (it.isNaN()) 0.0 else it.coerceIn(0.0, 100.0)
+            }
+            entries += ProgressEntry(
+                itemUrl = itemUrl,
+                kind = kind,
+                chapterUrl = item.optString("chapterUrl"),
+                chapterIndex = item.optInt("chapterIndex", 0).coerceAtLeast(0),
+                chapterCount = item.optInt("chapterCount", 0).coerceAtLeast(0),
+                chapterOffset = item.optInt("chapterOffset", 0).coerceAtLeast(0),
+                positionMs = item.optLong("positionMs", 0L).coerceAtLeast(0L),
+                durationMs = item.optLong("durationMs", 0L).coerceAtLeast(0L),
+                percent = percent,
+                updatedAt = item.optLong("updatedAt", 0L),
+            )
+        }
+        return entries
+    }
+
     // ── 恢复 ────────────────────────────────────────────────────────────────
 
     /**
@@ -270,12 +359,40 @@ class BackupService(
             }
         }
 
+        var progressImported = 0
+        var progressRemoved = 0
+        bundle.progress?.let { progress ->
+            progressRemoved = runBlocking { repository.allProgress().size }
+            runBlocking { repository.clearAllProgress() }
+            progress.forEach { entry ->
+                runBlocking {
+                    repository.saveProgress(
+                        ReadingProgress(
+                            itemUrl = entry.itemUrl,
+                            kind = entry.kind,
+                            chapterUrl = entry.chapterUrl,
+                            chapterIndex = entry.chapterIndex,
+                            chapterCount = entry.chapterCount,
+                            chapterOffset = entry.chapterOffset,
+                            positionMs = entry.positionMs,
+                            durationMs = entry.durationMs,
+                            percent = entry.percent,
+                            updatedAt = entry.updatedAt,
+                        ),
+                    )
+                }
+                progressImported += 1
+            }
+        }
+
         return Report(
             configsAdded = added,
             configsUpdated = updated,
             configsRemoved = removed,
             collectsImported = collectsImported,
             collectsRemoved = collectsRemoved,
+            progressImported = progressImported,
+            progressRemoved = progressRemoved,
         )
     }
 
@@ -284,8 +401,11 @@ class BackupService(
         private const val SCHEMA_KEY = "\$schema"
         private const val UNKNOWN_KEY = "unknown"
 
+        /** 进度里缺 `kind` 时的默认值：老备份没有这一段，真缺就是图集 */
+        private const val KIND_IMAGE = "image"
+
         /** 16MB：正常备份远小于它，超过基本可以确定选错文件了 */
-        private const val MAX_BYTES = 16 * 1024 * 1024
+        internal const val MAX_BYTES = 16 * 1024 * 1024
 
         private val KEY_IN_SOURCE = Regex("""\bkey\s*:\s*(['"])([^'"]+)\1""")
         private val NAME_IN_SOURCE = Regex("""\bname\s*:\s*(['"])([^'"]+)\1""")

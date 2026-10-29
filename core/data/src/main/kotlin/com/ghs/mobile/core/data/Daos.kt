@@ -18,6 +18,14 @@ interface ProgressDao {
     @Query("SELECT * FROM reading_progress WHERE kind = :kind ORDER BY updatedAt DESC LIMIT :limit")
     suspend fun recentByKind(kind: String, limit: Int): List<ProgressEntity>
 
+    /** 全量进度：备份导出用，不分媒介类型 */
+    @Query("SELECT * FROM reading_progress ORDER BY updatedAt ASC")
+    suspend fun all(): List<ProgressEntity>
+
+    /** 全量恢复前清空：恢复语义是 replace，不做合并 */
+    @Query("DELETE FROM reading_progress")
+    suspend fun clearAll()
+
     @Upsert
     suspend fun upsert(entity: ProgressEntity): Long
 

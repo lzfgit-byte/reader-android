@@ -72,7 +72,14 @@ class LocalRepository(private val database: GhsDatabase) {
     suspend fun recentProgress(limit: Int = 20): List<ReadingProgress> =
         progressDao.recent(limit).map { it.toModel() }
 
+    /** 全量进度（备份导出用）：文本 / 图集 / 视频一并取出 */
+    suspend fun allProgress(): List<ReadingProgress> =
+        progressDao.all().map { it.toModel() }
+
     suspend fun clearProgress(itemUrl: String) = progressDao.delete(itemUrl)
+
+    /** 清空全部进度：全量恢复（replace）用，调用方负责先确认 */
+    suspend fun clearAllProgress() = progressDao.clearAll()
 
     // ── 设置镜像 ────────────────────────────────────────────────────────────
 

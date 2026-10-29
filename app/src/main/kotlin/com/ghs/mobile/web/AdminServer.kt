@@ -414,6 +414,12 @@ class AdminServer(
                         JSONObject()
                             .put("imported", report.collectsImported)
                             .put("removed", report.collectsRemoved),
+                    )
+                    .put(
+                        "progress",
+                        JSONObject()
+                            .put("imported", report.progressImported)
+                            .put("removed", report.progressRemoved),
                     ),
             )
         } catch (failure: BackupService.BackupException) {
