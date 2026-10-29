@@ -127,6 +127,14 @@ fun ComicReaderScreen(
     onNextChapter: (() -> Unit)? = null,
     /** 双击某张图：进入单图阅读（独立模式） */
     onOpenSinglePage: (Int) -> Unit = {},
+    /**
+     * 正在切换到的目录下标（`null` = 没在切）。
+     *
+     * 切话是**一次网络请求**（取新一话的图片列表），在拿到结果前整屏还是上一话的画面：
+     * 不给状态就成了"点了目录没反应，像卡住"。这里盖一层遮罩 + 转圈，顺便挡住遮罩下的
+     * 所有手势，避免连点叠出第二个请求。
+     */
+    switchingChapter: Int? = null,
 ) {
     val scope = rememberCoroutineScope()
     // 切话时整块状态重建：不这样会沿用上一话的滚动位置
@@ -439,6 +447,52 @@ fun ComicReaderScreen(
                     .align(Alignment.BottomEnd)
                     .padding(end = 16.dp, bottom = 96.dp),
             )
+        }
+
+        // 切话中：整屏遮罩（画在最后 = 盖住图片、顶栏、两个 FAB），挡住底下所有手势
+        switchingChapter?.let { target ->
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color(0xB3000000))
+                    .pointerInput(Unit) {
+                        awaitEachGesture {
+                            do {
+                                val event = awaitPointerEvent()
+                                event.changes.forEach { it.consume() }
+                            } while (event.changes.any { it.pressed })
+                        }
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(10.dp),
+                    modifier = Modifier.padding(horizontal = 32.dp),
+                ) {
+                    CircularProgressIndicator(
+                        modifier = Modifier.size(32.dp),
+                        strokeWidth = 2.dp,
+                        color = Color(0xFFB9A7FF),
+                    )
+                    Text(
+                        "正在打开第 ${target + 1} 话…",
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = Color(0xFFE6E6EA),
+                    )
+                    val targetTitle = chapters.getOrNull(target)?.title.orEmpty()
+                    if (targetTitle.isNotBlank()) {
+                        Text(
+                            targetTitle,
+                            style = MaterialTheme.typography.labelSmall,
+                            color = Color(0xFF9A9AA5),
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                            textAlign = TextAlign.Center,
+                        )
+                    }
+                }
+            }
         }
     }
 

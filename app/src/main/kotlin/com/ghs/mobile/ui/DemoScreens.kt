@@ -204,6 +204,7 @@ fun DemoApp(
 ) {
     val app = GhsApp.instance
     val repository = app.repository
+    val appContext = androidx.compose.ui.platform.LocalContext.current
     // 会话（WebView 引擎）必须在后台线程创建：引擎内部会等待页面就绪，主线程等待会死锁
     var session by remember { mutableStateOf<ReaderSession?>(null) }
     var screen by remember { mutableStateOf<Screen>(Screen.Loading) }
@@ -280,6 +281,8 @@ fun DemoApp(
     // 放在单图那个分支里（局部 remember）时，系统返回键只拿得到「进入单图时那一页」，
     // 结果是退出后既跳回旧位置、又用旧页码把单图里推进的进度覆盖回去。
     var singlePageIndex by remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    // 切话（目录 / 下一话）进行中的目标下标：漫画阅读器据此盖一层 loading 遮罩
+    var switchingChapter by remember { mutableStateOf<Int?>(null) }
 
     // 只要当前不是「列表页」就说明有上一级可回。这里不能只列具体 Screen 类型：
     // 新增的界面（如分段/线路选集的详情态）一旦漏掉，按返回就会被系统当成退出应用
@@ -654,6 +657,16 @@ fun DemoApp(
     // 配置切换或收到重载通知：关掉旧会话再按配置重建（引擎较重，不能并行两份）
     LaunchedEffect(configKey, reloadRequest) {
         val key = configKey ?: return@LaunchedEffect
+        // 正在「打开条目」的那次解析用的是即将被关掉的旧会话：不取消就会一直等一个
+        // 永远回不来的取页结果，界面上表现为「正在解析详情」卡到取消为止。
+        detailJob?.cancel()
+        detailJob = null
+        if (opening) {
+            opening = false
+            parseTarget = null
+            detailError = null
+            detailElapsedSec = 0
+        }
         // 切站点：把「从哪来回哪去」的缓存一起清掉，否则返回会回到上一个站点的列表
         returnScreen = null
         // 标签名同理：那是上一站点的标签，重建后列表会回到首页全量
@@ -909,20 +922,48 @@ fun DemoApp(
     // 阅读器自带顶栏：直接整屏渲染，避免与外层 Scaffold 叠成双顶栏
     when (val reader = screen) {
         is Screen.ComicReader -> {
-            // 章节切换：取新章节的图片，保留目录与「预加载下一话」开关
+            // 章节切换：取新章节的图片，保留目录与「预加载下一话」开关。
+            // 切话是一次网络请求（取新一话的图片列表），请求期间置 switchingChapter
+            // 让阅读器盖遮罩转圈——否则屏幕还是上一话的画面，点完像"没反应/卡住"。
             fun openChapter(index: Int) {
                 val chapter = reader.chapters.getOrNull(index) ?: return
                 val active = session ?: return
+                if (switchingChapter != null) return
+                switchingChapter = index
+                android.util.Log.i("GHS", "chapter switch start #${index + 1} ${chapter.url}")
                 scope.launch {
-                    val images = runCatching {
-                        withContext(Dispatchers.IO) { active.comicPages(chapter.url) }
-                    }.getOrDefault(emptyList())
-                    if (images.isEmpty()) return@launch
-                    screen = reader.copy(
-                        pages = images.map { com.ghs.mobile.core.model.Detail(url = it.url) },
-                        startIndex = 0,
-                        chapterIndex = index,
-                    )
+                    try {
+                        val outcome = withContext(Dispatchers.IO) {
+                            runCatching { active.comicPages(chapter.url) }
+                        }
+                        val images = outcome.getOrDefault(emptyList())
+                        if (images.isEmpty()) {
+                            android.util.Log.w(
+                                "GHS",
+                                "chapter switch failed #${index + 1}: " +
+                                    (outcome.exceptionOrNull()?.message ?: "no images"),
+                            )
+                            android.widget.Toast.makeText(
+                                appContext,
+                                "第 ${index + 1} 话没取到图片，稍后再试",
+                                android.widget.Toast.LENGTH_SHORT,
+                            ).show()
+                            return@launch
+                        }
+                        android.util.Log.i(
+                            "GHS",
+                            "chapter switch done #${index + 1}: ${images.size} pages",
+                        )
+                        // 等待期间用户退出了阅读器：不要把人家拽回来
+                        if (screen !is Screen.ComicReader) return@launch
+                        screen = reader.copy(
+                            pages = images.map { com.ghs.mobile.core.model.Detail(url = it.url) },
+                            startIndex = 0,
+                            chapterIndex = index,
+                        )
+                    } finally {
+                        switchingChapter = null
+                    }
                 }
             }
 
@@ -971,6 +1012,7 @@ fun DemoApp(
                     }
                 },
                 onNextChapter = { openChapter(reader.chapterIndex + 1) },
+                switchingChapter = switchingChapter,
                 onOpenSinglePage = { index ->
                     singlePageIndex = index
                     screen = Screen.SinglePage(
